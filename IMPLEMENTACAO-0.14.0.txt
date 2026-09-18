@@ -1,0 +1,17 @@
+Lumo 0.14.0 — Fotto Web Monitor
+
+Mudança de estratégia:
+- O Lumo não tenta mais autenticar ou enviar arquivos pela API interna do Fotto.
+- Entrega abre o próprio painel do Fotto em WebView integrada à identidade do Lumo.
+- Cookies/sessão da WebView são persistidos.
+- O Lumo observa o DOM da página de Monitoramento de pasta e lê:
+  CARREGADOS, NA FILA, COM ERRO, IGNORADOS, estado ativo/pausado, pasta e ID do evento.
+- Esses números alimentam a aba Entrega e o status global do Lumo.
+- Erros mostrados pelo próprio Fotto podem gerar alerta sonoro no Modo Evento.
+- A antiga FottoSync não é mais chamada pelo fluxo de captura/edição.
+- Gallery abre o Fotto em vez de tentar envio direto.
+- A pasta de saída Editadas continua sendo produzida pelo Lumo; o Fotto é quem monitora/envia.
+
+Observação:
+O seletor de arquivos padrão da WebView foi habilitado. O comportamento específico do seletor de pasta do Fotto
+depende da implementação do site/Chromium no aparelho e deve ser validado no dispositivo real.
