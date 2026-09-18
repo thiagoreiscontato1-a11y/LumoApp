@@ -1,0 +1,61 @@
+name: Compilar Lumo 0.9.4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+
+    env:
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_HOME: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v5
+
+      - name: Configurar Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          echo "SDK Manager:"
+          "$SDKMANAGER" --version
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Verificar Android SDK
+        run: |
+          test -f "$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
+          test -f "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt2"
+          test -f "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign"
+
+      - name: Compilar Lumo
+        run: |
+          python3 build.py
+
+      - name: Verificar APK
+        run: |
+          test -f Lumo.apk
+          ls -lh Lumo.apk
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumo
+          path: Lumo.apk
+          if-no-files-found: error
