@@ -1,0 +1,9 @@
+LUMO 0.9.4 - Fotto debug
+
+CONFIRMACAO OBRIGATORIA APOS SUBIR AO GITHUB:
+1. Abra app/src/main/java/com/hisho/tether/FottoApi.java
+2. Pesquise por CREATE_MEDIA. Deve existir.
+3. Pesquise por fottoAccessTokenV4. Deve existir.
+4. Abra build.py e confirme version-code 14 e version-name 0.9.4-fotto-debug.
+
+Se CREATE_MEDIA nao existir no GitHub, os arquivos Java novos nao foram substituidos e o APK ainda sera o antigo.
