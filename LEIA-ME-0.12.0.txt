@@ -1,0 +1,23 @@
+LUMO 0.12.0 — UX/UI de fluxo + nota de curadoria
+
+Principais mudanças:
+- Captura virou uma central de trabalho com estados de Câmera, Captura, Curadoria e Fotto.
+- Navegação em português: Captura, Galeria, Editar, Entrega.
+- Foto grande como protagonista, filmstrip e status sobre a imagem.
+- Galeria com filtros: Todas, Aprovadas, Revisão, Enviadas e Pendentes.
+- Cada foto analisada pela curadoria recebe nota técnica de 1 a 10.
+- Fotos em revisão mostram motivo e continuam bloqueadas para upload.
+- Editor com foto grande, filmstrip, Antes/Depois, ajustes em faixa horizontal e preview contínua.
+- Sincronização seletiva em lote: exposição, contraste, luz, cor, preset ou tudo.
+- Entrega virou fila visual com Enviadas, Enviando, Pendentes e Falhas, com nova tentativa.
+- Configurações de entrega ficam recolhidas em painel secundário.
+- Recuperação retroativa ficou discreta: ao reconectar, o LUMO identifica fotos novas e mostra “Baixar agora”. A captura ao vivo pode continuar.
+- Banco migrado para versão 3 com coluna score, preservando instalações anteriores.
+
+Nota de curadoria:
+A nota de 1 a 10 é técnica e considera principalmente nitidez, exposição, contraste, clipping e indícios de enquadramento. A sensibilidade Baixa/Média/Alta muda o limiar para revisão, não a nota.
+
+Build:
+versionCode 23
+versionName 0.12.0-ux-workflow-curation-score
+APK: Lumo.apk
