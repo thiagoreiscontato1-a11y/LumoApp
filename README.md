@@ -1,3 +1,7 @@
+## Lumo 0.9.6 — Fotto Bearer fix
+
+A API do Fotto agora usa o mesmo cabeçalho do app de referência: `Authorization: Bearer <token>` + `App-Code: fotto`.
+
 # LUMO Tether Android 0.9 — identidade visual LUMO
 
 Esta versão preserva o fluxo técnico da 0.8.1 (captura, edição, galeria, pasta de exportação e Fotto) e reorganiza a interface na identidade LUMO: Capture, Gallery, Edit e Deliver.

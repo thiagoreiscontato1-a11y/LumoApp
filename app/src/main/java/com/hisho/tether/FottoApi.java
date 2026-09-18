@@ -9,10 +9,10 @@ final class FottoApi {
  static android.content.SharedPreferences prefs(Context c){return c.getSharedPreferences("hisho",0);}
  static String accessToken(Context c){String v=prefs(c).getString("fottoAccessTokenV5","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoAccessTokenV4","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoTokenV3","").trim();return stripBearer(v);}
  static String apiKey(Context c){String v=prefs(c).getString("fottoApiKeyV5","").trim();if(!v.isEmpty())return stripBearer(v);return stripBearer(prefs(c).getString("fottoApiKeyV4","").trim());}
- static String token(Context c){String k=apiKey(c);return !k.isEmpty()?k:accessToken(c);}
+ static String token(Context c){String a=accessToken(c);return !a.isEmpty()?a:apiKey(c);}
  static HttpURLConnection connection(String url,String method,String token)throws IOException{
   HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.9.5 Android");
-  if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization",stripBearer(token));}
+  if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization","Bearer "+stripBearer(token));}
   return c;
  }
  static String stripBearer(String s){s=s==null?"":s.trim();return s.regionMatches(true,0,"Bearer ",0,7)?s.substring(7).trim():s;}
