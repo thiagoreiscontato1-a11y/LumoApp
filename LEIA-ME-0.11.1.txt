@@ -1,0 +1,9 @@
+Lumo 0.11.1 — Editor Base Auto + Preset em tempo real
+
+- Sliders começam no valor resultante de Auto + Preset, em vez de zero.
+- Cada controle mostra Base, contribuição estimada do Auto e contribuição exata do Preset XMP.
+- Sombras usa máscara de luminância e deixa de alterar a imagem inteira.
+- Realces, Brancos e Pretos também usam máscaras tonais dedicadas.
+- Prévia atualiza continuamente durante o arraste, com processamento em fila e atualização da última posição.
+- Controles de contraste/saturação/etc. trabalham em passos de 0,1; exposição em 0,01 EV.
+- Copiar/Colar continua copiando apenas o refinamento sobre a base de cada foto.

@@ -17,6 +17,13 @@ final class PhotoEditor {
  static double clamp(double v){return Math.max(0,Math.min(1,v));}
  static int rgb(double r,double g,double b){return 0xff000000|((int)Math.round(clamp(r)*255)<<16)|((int)Math.round(clamp(g)*255)<<8)|(int)Math.round(clamp(b)*255);}
  static double p(JSONObject j,String k){return j.optDouble(k,0);}
+ static double limit(double v,double lo,double hi){return Math.max(lo,Math.min(hi,v));}
+ static double smooth(double a,double b,double x){if(x<=a)return 0;if(x>=b)return 1;double t=(x-a)/(b-a);return t*t*(3-2*t);}
+ static JSONObject presetControls(JSONObject p){JSONObject r=new JSONObject();if(p==null)return r;try{r.put("exposure",p(p,"Exposure2012"));r.put("contrast",p(p,"Contrast2012"));r.put("highlights",p(p,"Highlights2012"));r.put("shadows",p(p,"Shadows2012"));r.put("whites",p(p,"Whites2012"));r.put("blacks",p(p,"Blacks2012"));r.put("temperature",p(p,"IncrementalTemperature"));r.put("tint",p(p,"IncrementalTint"));r.put("vibrance",p(p,"Vibrance"));r.put("saturation",p(p,"Saturation"));}catch(Exception ignored){}return r;}
+ static JSONObject autoControls(int[] data){JSONObject out=new JSONObject();if(data==null||data.length==0)return out;int[] hist=new int[256];int stride=Math.max(1,data.length/65536),count=0,neutral=0;double saturation=0,rs=0,gs=0,bs=0;for(int i=0;i<data.length;i+=stride){int v=data[i];double r=((v>>16)&255)/255.,g=((v>>8)&255)/255.,b=(v&255)/255.,l=.2126*r+.7152*g+.0722*b,max=Math.max(r,Math.max(g,b)),min=Math.min(r,Math.min(g,b)),sat=max==0?0:(max-min)/max;hist[(int)Math.round(l*255)]++;count++;saturation+=sat;if(l>.18&&l<.82&&sat<.18){neutral++;rs+=r;gs+=g;bs+=b;}}if(count==0)return out;double lo=percentile(hist,count,.1),mid=percentile(hist,count,.5),hi=percentile(hist,count,.9);double ev=0;if(mid>.02&&mid<.38)ev=limit(Math.log(.40/mid)/Math.log(2)*.35,0,.45);else if(mid>.65&&mid<.98)ev=limit(Math.log(.60/mid)/Math.log(2)*.28,-.35,0);double contrast=hi-lo<.35&&hi-lo>.06?4:0,sat=saturation/count<.3?4:0,temp=0,tint=0;if(neutral>=Math.max(32,count*.03)){double avg=(rs+gs+bs)/3;double gr=limit(1+.35*(avg/rs-1),.97,1.03),gg=limit(1+.35*(avg/gs-1),.97,1.03),gb=limit(1+.35*(avg/bs-1),.97,1.03);temp=limit((gr-gb)/.32*100,-20,20);double rb=(gr+gb)/2;tint=limit((1-gg/Math.max(.001,rb))/.12*100,-20,20);}try{out.put("exposure",ev);out.put("contrast",contrast);out.put("highlights",0);out.put("shadows",0);out.put("whites",0);out.put("blacks",0);out.put("temperature",temp);out.put("tint",tint);out.put("vibrance",0);out.put("saturation",sat);}catch(Exception ignored){}return out;}
+ static JSONObject autoControls(File source)throws Exception{Bitmap b=null;try{BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.toString(),bounds);if(bounds.outWidth<=0)return new JSONObject();BitmapFactory.Options o=new BitmapFactory.Options();o.inPreferredConfig=Bitmap.Config.ARGB_8888;o.inSampleSize=1;while(Math.max(bounds.outWidth,bounds.outHeight)/(o.inSampleSize*2)>=720)o.inSampleSize*=2;b=BitmapFactory.decodeFile(source.toString(),o);if(b==null)return new JSONObject();int[] d=new int[b.getWidth()*b.getHeight()];b.getPixels(d,0,b.getWidth(),0,0,b.getWidth(),b.getHeight());return autoControls(d);}finally{if(b!=null)b.recycle();}}
+ static JSONObject sumControls(JSONObject a,JSONObject b){JSONObject r=new JSONObject();String[] keys={"exposure","contrast","highlights","shadows","whites","blacks","temperature","tint","vibrance","saturation"};for(String k:keys){double v=(a==null?0:a.optDouble(k,0))+(b==null?0:b.optDouble(k,0));double lo="exposure".equals(k)?-5:-100,hi="exposure".equals(k)?5:100;try{r.put(k,limit(v,lo,hi));}catch(Exception ignored){}}return r;}
+ static JSONObject baseControls(File source,JSONObject options)throws Exception{JSONObject a=options.optBoolean("auto",true)?autoControls(source):new JSONObject();JSONObject p=presetControls(options.optJSONObject("preset"));return sumControls(a,p);}
  static void auto(int[] data){
   int[] hist=new int[256];int stride=Math.max(1,data.length/65536),count=0,neutral=0;double saturation=0,rs=0,gs=0,bs=0;
   for(int i=0;i<data.length;i+=stride){int v=data[i];double r=((v>>16)&255)/255.,g=((v>>8)&255)/255.,b=(v&255)/255.,l=.2126*r+.7152*g+.0722*b,max=Math.max(r,Math.max(g,b)),min=Math.min(r,Math.min(g,b)),sat=max==0?0:(max-min)/max;hist[(int)Math.round(l*255)]++;count++;saturation+=sat;if(l>.18&&l<.82&&sat<.18){neutral++;rs+=r;gs+=g;bs+=b;}}
@@ -49,8 +56,24 @@ final class PhotoEditor {
  }
 
  static void manual(int[] data,int w,int h,JSONObject m){
-  if(m==null||m.length()==0)return;double exposure=Math.pow(2,m.optDouble("exposure",0)),contrast=1+m.optDouble("contrast",0)/100*.75,high=m.optDouble("highlights",0)/100,shad=m.optDouble("shadows",0)/100,white=m.optDouble("whites",0)/100,black=m.optDouble("blacks",0)/100,temp=m.optDouble("temperature",0)/100,tint=m.optDouble("tint",0)/100,vib=m.optDouble("vibrance",0)/100,satAdj=m.optDouble("saturation",0)/100;
-  for(int i=0;i<data.length;i++){int v=data[i];double r=((v>>16)&255)/255.,g=((v>>8)&255)/255.,b=(v&255)/255.;double l=.2126*r+.7152*g+.0722*b;double tone=shad*.26*Math.pow(1-l,2)+high*.22*l*l+white*.14*Math.pow(l,4)+black*.12*Math.pow(1-l,4);r=clamp(r*exposure*(1+temp*.16)+tone);g=clamp(g*exposure*(1-tint*.12)+tone);b=clamp(b*exposure*(1-temp*.16)+tone);r=clamp((r-.5)*contrast+.5);g=clamp((g-.5)*contrast+.5);b=clamp((b-.5)*contrast+.5);double y=.2126*r+.7152*g+.0722*b;double max=Math.max(r,Math.max(g,b)),min=Math.min(r,Math.min(g,b)),current=max<=0?0:(max-min)/max;double amount=1+satAdj+vib*(1-current);data[i]=rgb(y+(r-y)*amount,y+(g-y)*amount,y+(b-y)*amount);}
+  if(m==null||m.length()==0)return;double exposure=Math.pow(2,m.optDouble("exposure",0)),contrast=1+m.optDouble("contrast",0)/100*.72,high=m.optDouble("highlights",0)/100,shad=m.optDouble("shadows",0)/100,white=m.optDouble("whites",0)/100,black=m.optDouble("blacks",0)/100,temp=m.optDouble("temperature",0)/100,tint=m.optDouble("tint",0)/100,vib=m.optDouble("vibrance",0)/100,satAdj=m.optDouble("saturation",0)/100;
+  for(int i=0;i<data.length;i++){int v=data[i];double r=((v>>16)&255)/255.,g=((v>>8)&255)/255.,b=(v&255)/255.;
+   // Exposure and white balance remain global refinements.
+   r=clamp(r*exposure*(1+temp*.16));g=clamp(g*exposure*(1-tint*.12));b=clamp(b*exposure*(1-temp*.16));
+   // Tonal controls use luminosity masks. Shadows now fade out before the midtones
+   // instead of lifting/darkening the whole frame.
+   double l=.2126*r+.7152*g+.0722*b;
+   double shadowMask=smooth(.015,.12,l)*(1-smooth(.38,.66,l));
+   double highlightMask=smooth(.44,.72,l);
+   double whiteMask=smooth(.74,.97,l);
+   double blackMask=1-smooth(.025,.27,l);
+   double tone=shad*.30*shadowMask+high*.24*highlightMask+white*.16*whiteMask+black*.14*blackMask;
+   double target=clamp(l+tone),diff=target-l;
+   if(l>.018){double scale=target/l;r=clamp(r*scale);g=clamp(g*scale);b=clamp(b*scale);}else{r=clamp(r+diff);g=clamp(g+diff);b=clamp(b+diff);}
+   // Contrast works around luminance so it changes tone with less unwanted color shift.
+   l=.2126*r+.7152*g+.0722*b;target=clamp((l-.5)*contrast+.5);diff=target-l;if(l>.018){double scale=target/l;r=clamp(r*scale);g=clamp(g*scale);b=clamp(b*scale);}else{r=clamp(r+diff);g=clamp(g+diff);b=clamp(b+diff);}
+   double y=.2126*r+.7152*g+.0722*b,max=Math.max(r,Math.max(g,b)),min=Math.min(r,Math.min(g,b)),current=max<=0?0:(max-min)/max;double amount=Math.max(0,1+satAdj+vib*(1-current));data[i]=rgb(y+(r-y)*amount,y+(g-y)*amount,y+(b-y)*amount);
+  }
  }
  static void manualBitmap(Bitmap bitmap,JSONObject m){if(bitmap==null||m==null)return;int w=bitmap.getWidth(),h=bitmap.getHeight();int[] data=new int[w*h];bitmap.getPixels(data,0,w,0,0,w,h);manual(data,w,h,m);bitmap.setPixels(data,0,w,0,0,w,h);}
  static void edit(File source,File destination,JSONObject options)throws Exception{
