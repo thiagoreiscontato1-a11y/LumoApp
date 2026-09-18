@@ -1,8 +1,7 @@
 package com.hisho.tether;
 import android.app.*;import android.content.*;import android.content.pm.ServiceInfo;import android.hardware.usb.*;import android.os.*;import android.net.Uri;import org.json.*;import java.io.*;import java.security.*;import java.util.*;import java.util.concurrent.*;
 public class CaptureService extends Service{
- public static volatile CaptureService active;public volatile String status="Iniciando",detail="",lastImage="",cameraName="Canon";public volatile int received=0,edited=0,recovered=0,reviewed=0;public volatile boolean capturing=false;
- public volatile boolean backfillWaiting=false,backfillRunning=false;public volatile int backfillFound=0,backfillDone=0;private volatile boolean backfillApproved=false,backfillIgnored=false;private final ArrayList<int[]> retroPending=new ArrayList<>();
+ public static volatile CaptureService active;public volatile String status="Iniciando",detail="",lastImage="";public volatile int received=0,edited=0,recovered=0,reviewed=0;public volatile boolean capturing=false;
  public final ConnectionStatus link=new ConnectionStatus();private volatile UsbDevice attached;private android.net.Network wifiNetwork;private android.net.ConnectivityManager.NetworkCallback wifiCallback;private final java.util.concurrent.atomic.AtomicBoolean alertArmed=new java.util.concurrent.atomic.AtomicBoolean(false);private volatile Ptp transport;private boolean detachRegistered;
  private final BroadcastReceiver detach=new BroadcastReceiver(){public void onReceive(Context c,Intent intent){UsbDevice d=intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);if(d!=null&&attached!=null&&d.getDeviceId()==attached.getDeviceId()){link.fail("Câmera desconectada. Conecte o cabo e tente novamente.");status=link.error;capturing=false;finish=true;lostAlert(status);log(status);}}};
  void lostAlert(String reason){if(alertArmed.compareAndSet(true,false))DisconnectAlert.show(this,reason);}
@@ -15,7 +14,7 @@ public class CaptureService extends Service{
   if(intent==null){stopSelf();return START_NOT_STICKY;}
   if("stop".equals(intent.getAction())){alertArmed.set(false);capturing=false;finish=true;link.stop();status="Finalizando foto e fila…";return START_NOT_STICKY;}
   if(editThread!=null)return START_NOT_STICKY;
-  UsbDevice device=intent.getParcelableExtra("device");attached=device;String wifiHost=intent.getStringExtra("wifiHost");wifiNetwork=intent.getParcelableExtra("wifiNetwork");boolean hasCamera=device!=null||wifiHost!=null;if(device!=null){String n=device.getProductName();cameraName=(n==null||n.trim().isEmpty())?"Canon USB":n;}else if(wifiHost!=null)cameraName="Canon Wi‑Fi";if(hasCamera)link.connect();
+  UsbDevice device=intent.getParcelableExtra("device");attached=device;String wifiHost=intent.getStringExtra("wifiHost");wifiNetwork=intent.getParcelableExtra("wifiNetwork");boolean hasCamera=device!=null||wifiHost!=null;if(hasCamera)link.connect();
   int type=hasCamera?ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE:0;
   if(Build.VERSION.SDK_INT>=35)type|=ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING;else type|=ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
   try{if(Build.VERSION.SDK_INT>=29)startForeground(1,notification(),type);else startForeground(1,notification());}catch(Exception e){status="Não foi possível iniciar serviço: "+e.getMessage();link.fail(status);getSharedPreferences("hisho",0).edit().putString("lastStatus",status).apply();stopSelf();return START_NOT_STICKY;}
@@ -30,8 +29,6 @@ public class CaptureService extends Service{
  void log(String message){synchronized(logs){logs.append(new java.text.SimpleDateFormat("HH:mm:ss",Locale.ROOT).format(new Date())).append(" ").append(message).append('\n');if(logs.length()>15000)logs.delete(0,logs.length()-15000);}try{getSystemService(NotificationManager.class).notify(1,notification());}catch(Exception ignored){}}
  public String report(){synchronized(logs){return logs.toString();}}
  public int pending(){return jobs.pending();}
- public void approveBackfill(){backfillApproved=true;backfillWaiting=false;status=backfillFound>0?"Recuperando "+backfillFound+" foto(s) anteriores…":status;log("Recuperação retroativa autorizada pelo usuário.");}
- public void ignoreBackfill(){backfillIgnored=true;backfillWaiting=false;retroPending.clear();status="Fotos retroativas ignoradas nesta conexão.";log(status);}
  static String hash(String value)throws Exception{byte[] bytes=MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8"));StringBuilder b=new StringBuilder();for(byte v:bytes)b.append(String.format("%02x",v));return b.toString();}
  void originals()throws Exception{synchronized(originalLock){String[] item;while((item=jobs.originalPending())!=null){try{Uri uri=jobs.save(new File(item[1]),"Originais",item[2],item[0],"original");jobs.set(item[0],"ready","original",uri.toString());}catch(Exception e){jobs.set(item[0],"originalError","error",e.toString());throw e;}}}}
  void capture(UsbDevice device,String settings,String wifiHost){
@@ -49,24 +46,22 @@ public class CaptureService extends Service{
       String identity=getSharedPreferences("hisho",0).getString("wifiGuid",null);if(identity==null){identity=UUID.randomUUID().toString();getSharedPreferences("hisho",0).edit().putString("wifiGuid",identity).apply();}
       ptp=new WifiPtp(wifiNetwork,wifiHost,identity);status="Wi-Fi: autorize LUMO na câmera, se solicitado.";log(status);
      }transport=ptp;ptp.open();if(!capturing)return;
-     List<int[]> initial=ptp.objects();seen.clear();retroPending.clear();backfillFound=0;backfillDone=0;backfillApproved=false;backfillIgnored=false;backfillWaiting=false;backfillRunning=false;
+     List<int[]> initial=ptp.objects();seen.clear();
      if(backfill){
-      status="Verificando o que ainda não foi baixado…";log(status);int n=0;
-      for(int[] o:initial){if(!capturing)return;n++;status="Verificando cartão · "+n+" / "+initial.size();String key=o[0]+":"+o[1];Ptp.Info info=ptp.info(o[1]);String candidate=hash(serial+":"+o[0]+":"+info.name+":"+info.date+":"+info.size);seen.add(key);if(!jobs.exists(candidate))retroPending.add(new int[]{o[0],o[1]});}
-      backfillFound=retroPending.size();backfillWaiting=backfillFound>0;
-      if(backfillFound>0){status="Encontramos "+backfillFound+" foto(s) nova(s) na câmera.";log(status);}else log("Nenhuma foto retroativa pendente.");
+      status="Verificando fotos retroativas na câmera…";log(status);int n=0;
+      for(int[] o:initial){if(!capturing)return;n++;status="Retroativo · verificando "+n+" / "+initial.size();downloadObject(ptp,o,serial,settings,spool,seen,true);}
+      log("Retroativo concluído · "+recovered+" foto(s) nova(s) recuperada(s).");
      }else for(int[] o:initial)seen.add(o[0]+":"+o[1]);
      if(!capturing)return;ptp.captureMode();ptp.drain();if(!capturing)return;
-     link.ready();alertArmed.set(true);status=backfillWaiting?"Conectada · "+backfillFound+" foto(s) retroativas aguardando confirmação.":"Conexão confirmada. Fotografe na câmera.";log(status);break;
+     link.ready();alertArmed.set(true);status=recovered>0?"Conexão confirmada · "+recovered+" retroativa(s) recuperada(s).":"Conexão confirmada. Fotografe na câmera.";log(status);break;
     }catch(IOException e){log("Abertura falhou: "+e.getMessage());if(ptp!=null){ptp.close();ptp=null;transport=null;}if(!capturing)return;if(attempt==3)throw e;status="Câmera ainda não respondeu. Tentando novamente…";Thread.sleep(900L*attempt);}
    }
    int transientErrors=0;
    while(capturing){long start=SystemClock.elapsedRealtime();
     try{
-     if(backfillApproved&&!backfillIgnored&&!retroPending.isEmpty()){backfillRunning=true;backfillWaiting=false;ArrayList<int[]> batch=new ArrayList<>(retroPending);retroPending.clear();int total=batch.size();int done=0;for(int[] o:batch){if(!capturing)break;done++;status="Retroativo · baixando "+done+" / "+total;downloadObject(ptp,o,serial,settings,spool,seen,true);backfillDone=done;}backfillRunning=false;backfillApproved=false;status="Retroativo concluído · "+backfillDone+" foto(s) recuperada(s).";log(status);}
      ptp.drain();List<int[]> objects=ptp.objects();
      for(int[] o:objects){if(!capturing)break;String key=o[0]+":"+o[1];if(seen.contains(key))continue;downloadObject(ptp,o,serial,settings,spool,seen,false);}
-     transientErrors=0;if(capturing&&!backfillRunning){link.ready();if(backfillWaiting)status="Conectada · "+backfillFound+" foto(s) retroativas aguardando confirmação.";else status="Conexão confirmada · aguardando fotos";}
+     transientErrors=0;if(capturing){link.ready();status="Conexão confirmada · aguardando fotos";}
     }catch(Ptp.Failure e){if((e.code==0x2019||e.code==0x2009)&&++transientErrors<=5){link.busy();status="Câmera ocupada · aguardando resposta";log(status);}else throw e;}
     long wait=Math.max(1,800-(SystemClock.elapsedRealtime()-start));Thread.sleep(wait);
    }
@@ -93,8 +88,7 @@ public class CaptureService extends Service{
      jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);
      PhotoEditor.edit(new File(item[1]),output,cfg);
      boolean curate=cfg.optBoolean("curation",true);Curator.Result quality=null;
-     if(curate){try{quality=Curator.analyze(output,cfg.optInt("curationSensitivity",1));}catch(Exception e){quality=new Curator.Result(true,"Sob revisão: falha na análise técnica · "+e.getMessage(),1,0,0,0,0,0);}}
-     if(quality!=null)jobs.setScore(item[0],quality.score);
+     if(curate){try{quality=Curator.analyze(output,cfg.optInt("curationSensitivity",1));}catch(Exception e){quality=new Curator.Result(true,"Sob revisão: falha na análise técnica · "+e.getMessage(),0,0,0,0,0);}}
      if(quality!=null&&quality.review){
       Uri uri=jobs.save(output,"Sob Revisao",item[2].replace(".jpg","_REVISAO.jpg"),item[0],"edited");jobs.set(item[0],"review","error",quality.reason);new File(item[1]).delete();reviewed++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).apply();
       log("CURADORIA · SOB REVISÃO · "+item[2]+" · "+quality.reason+" · upload bloqueado");continue;

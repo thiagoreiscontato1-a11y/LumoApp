@@ -9,17 +9,16 @@ import java.util.Locale;
 
 /**
  * Curadoria técnica local, sem rede e sem modelo externo.
- * Além de decidir se a foto precisa de revisão, gera uma nota técnica de 1 a 10.
- * A nota é independente da sensibilidade; a sensibilidade altera apenas o limiar de revisão.
+ * Analisa a cópia editada para detectar indícios de desfoque, baixa nitidez,
+ * exposição/contraste problemáticos e enquadramento técnico suspeito.
  */
 final class Curator {
  static final class Result {
   final boolean review;
   final String reason;
-  final int score;
   final double sharpness, brightness, contrast, clipping, framing;
-  Result(boolean review,String reason,int score,double sharpness,double brightness,double contrast,double clipping,double framing){
-   this.review=review;this.reason=reason;this.score=score;this.sharpness=sharpness;this.brightness=brightness;this.contrast=contrast;this.clipping=clipping;this.framing=framing;
+  Result(boolean review,String reason,double sharpness,double brightness,double contrast,double clipping,double framing){
+   this.review=review;this.reason=reason;this.sharpness=sharpness;this.brightness=brightness;this.contrast=contrast;this.clipping=clipping;this.framing=framing;
   }
  }
 
@@ -33,7 +32,7 @@ final class Curator {
  }
 
  static Result measure(Bitmap b,int sensitivity){
-  int w=b.getWidth(),h=b.getHeight();if(w<16||h<16)return new Result(true,"Imagem pequena demais para análise técnica.",1,0,0,0,1,1);
+  int w=b.getWidth(),h=b.getHeight();if(w<16||h<16)return new Result(true,"Imagem pequena demais para análise técnica.",0,0,0,1,1);
   int[] px=new int[w*h];b.getPixels(px,0,w,0,0,w,h);
   int step=Math.max(1,Math.max(w,h)/640);
   long count=0;double sum=0,sum2=0,clip=0,colorClip=0;
@@ -50,30 +49,15 @@ final class Curator {
 
   double[] sharpMin={7.0,10.5,14.5},contrastMin={13.0,19.0,25.0},darkMin={20.0,30.0,40.0},brightMax={235.0,225.0,215.0},clipMax={.55,.38,.26},frameEdge={.018,.035,.065};
   ArrayList<String> reasons=new ArrayList<>();
-  if(sharp<sharpMin[sensitivity])reasons.add(String.format(Locale.ROOT,"Possível desfoque/baixa nitidez (%.1f)",sharp));
-  if(mean<darkMin[sensitivity])reasons.add(String.format(Locale.ROOT,"Exposição baixa (%.0f/255)",mean));
-  if(mean>brightMax[sensitivity])reasons.add(String.format(Locale.ROOT,"Exposição alta (%.0f/255)",mean));
-  if(contrast<contrastMin[sensitivity])reasons.add(String.format(Locale.ROOT,"Contraste baixo (%.1f)",contrast));
-  if(clipRatio>clipMax[sensitivity])reasons.add(String.format(Locale.ROOT,"Clipping/exposição excessiva (%.0f%%)",clipRatio*100));
-  if(sensitivity>0&&edgeDistance<frameEdge[sensitivity])reasons.add("Possível corte do assunto junto à borda");
-
-  int score=score(sharp,mean,contrast,clipRatio,edgeDistance);
-  String reason;
-  if(reasons.isEmpty())reason=String.format(Locale.ROOT,"Aprovada · nota %d/10 · nitidez %.1f · luz %.0f · contraste %.1f",score,sharp,mean,contrast);
-  else{StringBuilder out=new StringBuilder("Sob revisão · nota ").append(score).append("/10: ");for(int i=0;i<reasons.size();i++){if(i>0)out.append("; ");out.append(reasons.get(i));}reason=out.toString();}
-  return new Result(!reasons.isEmpty(),reason,score,sharp,mean,contrast,clipRatio,framing);
+  if(sharp<sharpMin[sensitivity])reasons.add(String.format(Locale.ROOT,"baixa nitidez/desfoque (%.1f)",sharp));
+  if(mean<darkMin[sensitivity])reasons.add(String.format(Locale.ROOT,"imagem muito escura (%.0f/255)",mean));
+  if(mean>brightMax[sensitivity])reasons.add(String.format(Locale.ROOT,"imagem muito clara (%.0f/255)",mean));
+  if(contrast<contrastMin[sensitivity])reasons.add(String.format(Locale.ROOT,"contraste muito baixo (%.1f)",contrast));
+  if(clipRatio>clipMax[sensitivity])reasons.add(String.format(Locale.ROOT,"clipping/exposição excessiva (%.0f%%)",clipRatio*100));
+  if(sensitivity>0&&edgeDistance<frameEdge[sensitivity])reasons.add("possível enquadramento/corte do assunto junto à borda");
+  String reason;if(reasons.isEmpty())reason=String.format(Locale.ROOT,"Aprovada · nitidez %.1f · luz %.0f · contraste %.1f",sharp,mean,contrast);else{StringBuilder out=new StringBuilder("Sob revisão: ");for(int i=0;i<reasons.size();i++){if(i>0)out.append("; ");out.append(reasons.get(i));}reason=out.toString();}
+  return new Result(!reasons.isEmpty(),reason,sharp,mean,contrast,clipRatio,framing);
  }
-
- static int score(double sharp,double mean,double contrast,double clipping,double edgeDistance){
-  double sharpPart=clamp((sharp-4.0)/22.0);                         // 45%
-  double exposurePart=clamp(1.0-Math.abs(mean-128.0)/118.0);       // 20%
-  double contrastPart=clamp((contrast-10.0)/42.0);                 // 15%
-  double clippingPart=clamp(1.0-clipping/.42);                     // 15%
-  double framingPart=clamp(edgeDistance/.12);                      // 5%
-  double q=.45*sharpPart+.20*exposurePart+.15*contrastPart+.15*clippingPart+.05*framingPart;
-  int result=(int)Math.round(1+9*q);return Math.max(1,Math.min(10,result));
- }
- static double clamp(double v){return Math.max(0,Math.min(1,v));}
  static double lum(int c){int r=(c>>16)&255,g=(c>>8)&255,b=c&255;return .2126*r+.7152*g+.0722*b;}
  private Curator(){}
 }

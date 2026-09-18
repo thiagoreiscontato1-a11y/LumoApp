@@ -1,0 +1,8 @@
+Lumo 0.11.2
+
+Correção do erro de compilação mostrado pelo GitHub Actions:
+incompatible types: <anonymous Runnable> cannot be converted to Context.
+
+O MainActivity agora usa MainActivity.this explicitamente sempre que um Context Android é necessário,
+removendo a ambiguidade de 'this' em callbacks/Runnables.
+Mantém o editor 0.11.1, curadoria, retroativo da câmera e integração Fotto.
