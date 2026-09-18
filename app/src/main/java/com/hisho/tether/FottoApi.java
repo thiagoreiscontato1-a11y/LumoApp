@@ -7,11 +7,11 @@ final class FottoApi {
  static final class Gallery {final String id,title;Gallery(String id,String title){this.id=id;this.title=title;}public String toString(){return title;}}
  static final class Uploaded {final String mediaId;final boolean skipped;Uploaded(String mediaId){this(mediaId,false);}Uploaded(String mediaId,boolean skipped){this.mediaId=mediaId;this.skipped=skipped;}}
  static android.content.SharedPreferences prefs(Context c){return c.getSharedPreferences("hisho",0);}
- static String accessToken(Context c){String v=prefs(c).getString("fottoAccessTokenV4","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoTokenV3","").trim();return stripBearer(v);}
- static String apiKey(Context c){return stripBearer(prefs(c).getString("fottoApiKeyV4","").trim());}
- static String token(Context c){String a=accessToken(c);return !a.isEmpty()?a:apiKey(c);}
+ static String accessToken(Context c){String v=prefs(c).getString("fottoAccessTokenV5","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoAccessTokenV4","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoTokenV3","").trim();return stripBearer(v);}
+ static String apiKey(Context c){String v=prefs(c).getString("fottoApiKeyV5","").trim();if(!v.isEmpty())return stripBearer(v);return stripBearer(prefs(c).getString("fottoApiKeyV4","").trim());}
+ static String token(Context c){String k=apiKey(c);return !k.isEmpty()?k:accessToken(c);}
  static HttpURLConnection connection(String url,String method,String token)throws IOException{
-  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.9.3 Android");
+  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.9.5 Android");
   if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization",stripBearer(token));}
   return c;
  }
