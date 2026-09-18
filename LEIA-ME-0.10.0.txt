@@ -1,0 +1,12 @@
+LUMO 0.10.0
+
+NOVO
+- Curadoria técnica automática: Baixa, Média e Alta.
+- Fotos suspeitas são salvas em "Sob Revisao" e NÃO entram no upload do Fotto.
+- A Gallery permite abrir e aprovar manualmente uma foto em revisão.
+- Recuperação retroativa: ao reconectar a câmera, o LUMO verifica os JPEGs do cartão e baixa somente os que ainda não constam no banco do app.
+- Fotos retroativas passam por edição e curadoria normalmente.
+
+ATENÇÃO
+- Na primeira vez com a recuperação retroativa ativada, fotos antigas do cartão que nunca foram registradas pelo LUMO também podem ser baixadas.
+- A curadoria é técnica/heurística; não substitui seleção artística humana.

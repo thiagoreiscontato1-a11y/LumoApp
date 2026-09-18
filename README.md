@@ -112,3 +112,15 @@ A chave incluída é uma chave de teste (senha android), para permitir atualizar
 
 ## 0.9.2 - Fotto session fix
 A captura de sessao agora aceita apenas chaves explicitas apiKey/api_key/apikey/access_token e valida a sessao em /me antes de consultar /me/galleries. Isso evita usar tokens irrelevantes do localStorage, uma causa comum de HTTP 500.
+
+
+## LUMO 0.10.0 — Curadoria + recuperação retroativa
+
+- Curadoria automática local com sensibilidade **Baixa / Média / Alta**.
+- Analisa nitidez/desfoque, exposição, clipping, contraste e sinais técnicos de enquadramento.
+- Fotos suspeitas vão para **Sob Revisao** e recebem estado `review`; o sincronizador Fotto aceita apenas `done`, portanto o upload fica bloqueado.
+- A aba Gallery mostra as fotos em revisão e permite **Aprovar para entrega** manualmente.
+- Opção **Recuperar fotos não baixadas**: ao reconectar a câmera, o LUMO lista os JPEGs do cartão, calcula o mesmo identificador persistente usado na captura e baixa apenas o que ainda não existe no banco local.
+- As fotos recuperadas entram no mesmo pipeline: **Original → Edição → Curadoria → Editadas/Sob Revisao → Fotto**.
+
+> A curadoria desta versão é técnica e local. Ela não usa reconhecimento semântico de pessoas/cenas; a checagem de assunto/enquadramento é heurística e deve ser tratada como indicação de revisão, não como julgamento artístico definitivo.
