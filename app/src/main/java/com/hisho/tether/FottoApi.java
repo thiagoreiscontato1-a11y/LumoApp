@@ -11,12 +11,12 @@ final class FottoApi {
  static String apiKey(Context c){String v=prefs(c).getString("fottoApiKeyV7","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoApiKeyV5","").trim();if(!v.isEmpty())return stripBearer(v);return stripBearer(prefs(c).getString("fottoApiKeyV4","").trim());}
  static String token(Context c){String k=apiKey(c);return !k.isEmpty()?k:accessToken(c);}
  static HttpURLConnection connection(String url,String method,String token)throws IOException{
-  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.9.7 Android");
+  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.13.0 Android");
   if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization",stripBearer(token));}
   return c;
  }
  static HttpURLConnection connectionBearer(String url,String method,String token)throws IOException{
-  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.9.7 Android");
+  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.13.0 Android");
   if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization","Bearer "+stripBearer(token));}
   return c;
  }
@@ -83,6 +83,16 @@ final class FottoApi {
   String mediaId=value(media.opt("id"));
   put(ctx,source,name,size,signed);
   return new Uploaded(mediaId);
+ }
+ static String confirmMedia(Context ctx,String galleryId,String expectedId,String name)throws Exception{
+  String json=call(ctx,"GET","/me/galleries/"+Uri.encode(galleryId)+"/medias",null);Object root=new JSONTokener(json).nextValue();JSONArray arr=findArray(root,"medias");
+  if(arr==null&&root instanceof JSONObject){Object d=((JSONObject)root).opt("data");if(d instanceof JSONArray)arr=(JSONArray)d;else if(d!=null)arr=findArray(d,"medias");}
+  if(arr==null)return "";
+  for(int i=0;i<arr.length();i++){JSONObject m=arr.optJSONObject(i);if(m==null)continue;String id=value(m.opt("id")),original=m.optString("originalFileName",m.optString("name",""));
+   if(expectedId!=null&&!expectedId.isEmpty()&&expectedId.equals(id))return id;
+   if(name!=null&&!name.isEmpty()&&name.equalsIgnoreCase(original))return id;
+  }
+  return "";
  }
  static String findExistingMedia(Context ctx,String galleryId,String name){
   try{String json=call(ctx,"GET","/me/galleries/"+Uri.encode(galleryId)+"/medias",null);Object root=new JSONTokener(json).nextValue();JSONArray arr=findArray(root,"medias");if(arr==null&&root instanceof JSONObject){Object d=((JSONObject)root).opt("data");if(d instanceof JSONArray)arr=(JSONArray)d;else if(d!=null)arr=findArray(d,"medias");}if(arr==null)return "";for(int i=0;i<arr.length();i++){JSONObject m=arr.optJSONObject(i);if(m==null)continue;String original=m.optString("originalFileName",m.optString("name",""));if(name.equalsIgnoreCase(original))return value(m.opt("id"));}}catch(Exception ignored){}return "";

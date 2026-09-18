@@ -7,7 +7,7 @@ run('java','-m','jdk.compiler/com.sun.tools.javac.Main','-encoding','UTF-8','-so
 run('java','-m','jdk.jartool/sun.tools.jar.Main','--create','--file',build/'classes.jar','-C',build/'classes','.')
 run('java','-cp',tools/'lib/d8.jar','com.android.tools.r8.D8','--lib',android,'--min-api','29','--output',build/'dex',build/'classes.jar')
 run(tools/'aapt2','compile','--dir',p/'app/src/main/res','-o',build/'resources.zip')
-run(tools/'aapt2','link','-I',android,'--manifest',p/'app/src/main/AndroidManifest.xml','-A',p/'app/src/main/assets','--version-code','24','--version-name','0.12.0-ux-pro','-o',build/'unsigned.apk',build/'resources.zip')
+run(tools/'aapt2','link','-I',android,'--manifest',p/'app/src/main/AndroidManifest.xml','-A',p/'app/src/main/assets','--version-code','25','--version-name','0.13.0-producao','-o',build/'unsigned.apk',build/'resources.zip')
 with zipfile.ZipFile(build/'unsigned.apk','a') as z:z.write(build/'dex/classes.dex','classes.dex')
 run(tools/'zipalign','-f','4',build/'unsigned.apk',build/'aligned.apk')
 run('java','-jar',tools/'lib/apksigner.jar','sign','--ks',p/'hisho-test.keystore','--ks-key-alias','hisho-test','--ks-pass','pass:android','--key-pass','pass:android','--out',p/'Lumo.apk',build/'aligned.apk')

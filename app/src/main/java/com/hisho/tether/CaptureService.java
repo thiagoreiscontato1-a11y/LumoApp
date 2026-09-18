@@ -53,7 +53,7 @@ public class CaptureService extends Service{
       log("Retroativo concluído · "+recovered+" foto(s) nova(s) recuperada(s).");
      }else for(int[] o:initial)seen.add(o[0]+":"+o[1]);
      if(!capturing)return;ptp.captureMode();ptp.drain();if(!capturing)return;
-     link.ready();alertArmed.set(true);status=recovered>0?"Conexão confirmada · "+recovered+" retroativa(s) recuperada(s).":"Conexão confirmada. Fotografe na câmera.";log(status);break;
+     link.ready();alertArmed.set(true);try{FottoSync.reconcile(this);}catch(Exception ignored){}status=recovered>0?"Conexão confirmada · "+recovered+" retroativa(s) recuperada(s).":"Conexão confirmada. Fotografe na câmera.";log(status);break;
     }catch(IOException e){log("Abertura falhou: "+e.getMessage());if(ptp!=null){ptp.close();ptp=null;transport=null;}if(!capturing)return;if(attempt==3)throw e;status="Câmera ainda não respondeu. Tentando novamente…";Thread.sleep(900L*attempt);}
    }
    int transientErrors=0;
@@ -67,6 +67,10 @@ public class CaptureService extends Service{
    }
   }catch(Exception e){if(link.error.isEmpty()&&capturing)link.fail("Captura pausada: "+e.getMessage());status=link.error.isEmpty()?"Captura encerrada.":link.error;if(!link.error.isEmpty())lostAlert(status);log(status);}finally{capturing=false;link.stop();try{if(ptp!=null)ptp.close();}catch(Exception e){log("Falha ao liberar USB: "+e.getMessage());}finally{transport=null;usbFinished=true;finish=true;}log("Conexão encerrada; concluindo edições pendentes.");}
  }
+ String settingsForNext(String fallback){
+  String live=getSharedPreferences("hisho",0).getString("liveSettings","");
+  return live==null||live.trim().isEmpty()?fallback:live;
+ }
  boolean downloadObject(Ptp ptp,int[] o,String serial,String settings,File spool,Set<String> seen,boolean retro)throws Exception{
   String key=o[0]+":"+o[1];Ptp.Info info=ptp.info(o[1]);String id=hash(serial+":"+o[0]+":"+info.name+":"+info.date+":"+info.size);
   if(jobs.exists(id)){seen.add(key);return false;}
@@ -75,7 +79,11 @@ public class CaptureService extends Service{
   log((retro?"Recuperando ":"Baixando ")+info.name+" · "+info.size+" bytes · "+(o[0])+" · "+(ptp instanceof WifiPtp?"Wi-Fi":"USB"));
   try{ptp.download(o[1],temp,info.size);if(!temp.renameTo(saved))throw new IOException("Falha ao guardar original.");}finally{temp.delete();}
   String name=info.name.replaceAll("[^a-zA-Z0-9_.-]","_").replaceFirst("\\.[^.]+$","")+"_"+id.substring(0,12)+".jpg";
-  jobs.add(id,saved,name,settings);originals();seen.add(key);received++;if(retro)recovered++;
+  String contentHash=PhotoHash.sha256(saved),pHash="";try{pHash=PhotoHash.perceptualHash(saved);}catch(Exception ignored){}
+  String duplicate=jobs.duplicateByContent(contentHash);if(!duplicate.isEmpty()){saved.delete();seen.add(key);log("Duplicata exata ignorada · "+info.name);return false;}
+  long capturedAt=PhotoTime.parsePtp(info.date);String current=settingsForNext(settings);
+  jobs.add(id,saved,name,current,capturedAt,contentHash,pHash,info.size);originals();seen.add(key);received++;if(retro)recovered++;
+  getSharedPreferences("hisho",0).edit().putLong("lastPhotoAt",System.currentTimeMillis()).putInt("lastReceived",received).apply();
   detail=(retro?"Retroativo":"Último recebimento")+" + gravação: "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s";
   status=retro?"Recuperando fotos anteriores · edição em fila":"Recebendo · edição em fila independente";log("Original salvo: "+name+" · "+detail);return true;
  }
@@ -87,14 +95,16 @@ public class CaptureService extends Service{
     try{
      jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);
      PhotoEditor.edit(new File(item[1]),output,cfg);
-     boolean curate=cfg.optBoolean("curation",true);Curator.Result quality;
-     try{quality=Curator.analyze(output,cfg.optInt("curationSensitivity",1));}catch(Exception e){quality=new Curator.Result(true,"Falha na análise técnica · "+e.getMessage(),0,0,0,0,0,1);}
-     // O score técnico é calculado sempre. A opção Curadoria controla apenas o bloqueio para Review.
+     boolean curate=cfg.optBoolean("curation",true);SmartCurator.Result quality;
+     try{quality=SmartCurator.analyze(output,cfg.optInt("curationSensitivity",1),jobs,item[0]);}catch(Exception e){quality=new SmartCurator.Result(true,1,"Falha na curadoria · "+e.getMessage(),"","","");}
+     jobs.setIntelligence(item[0],quality.pHash,quality.duplicateOf,quality.semantic);
+     jobs.markEdited(item[0],cfg.optString("presetName",""));
+     // O score é calculado sempre; a opção Curadoria controla apenas o bloqueio para Revisão.
      if(curate&&quality.review){
-      jobs.setQuality(item[0],quality.score,quality.reason);Uri uri=jobs.save(output,"Sob Revisao",item[2].replace(".jpg","_REVISAO.jpg"),item[0],"edited");jobs.set(item[0],"review","error",quality.reason);new File(item[1]).delete();reviewed++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).apply();
-      log("CURADORIA · SOB REVISÃO · "+item[2]+" · "+quality.reason+" · upload bloqueado");continue;
+      jobs.setQuality(item[0],quality.score,quality.reason);Uri uri=jobs.save(output,"Sob Revisao",item[2].replace(".jpg","_REVISAO.jpg"),item[0],"edited");jobs.set(item[0],"review","error",quality.reason);jobs.history(item[0],System.currentTimeMillis(),"Revisão","Bloqueada para envio · "+quality.reason);new File(item[1]).delete();reviewed++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastCurationAt",System.currentTimeMillis()).apply();
+      log("CURADORIA · SOB REVISÃO · "+item[2]+" · "+quality.reason+" · envio bloqueado");continue;
      }
-     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: score informativo");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).apply();FottoSync.kick(this);log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s · score "+quality.score+"/10 · "+jobs.pending()+" pendentes");
+     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: nota informativa");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);jobs.history(item[0],System.currentTimeMillis(),"Aprovada","Liberada para entrega");new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastEditAt",System.currentTimeMillis()).putLong("lastCurationAt",System.currentTimeMillis()).apply();FottoSync.kick(this);log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s · nota "+quality.score+"/10 · "+jobs.pending()+" pendentes");
     }catch(Exception|OutOfMemoryError e){jobs.set(item[0],"error","error",e.toString());log("Falha na edição; original preservado: "+e.getMessage());}
     finally{output.delete();}
    }

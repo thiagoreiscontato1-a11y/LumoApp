@@ -1,62 +1,33 @@
-# LUMO 0.12.0 — UX Pro
+# LUMO 0.13.0 — Produção
 
-Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
+Aplicativo Android para captura vinculada Canon, edição, curadoria, recuperação retroativa e entrega confirmada ao Fotto. A interface visível está em português.
 
-## Fluxo principal
+## Recursos desta versão
 
-**Capture → Gallery → Review → Deliver**
+1. **Confirmação real no Fotto** — após o envio binário, o LUMO consulta novamente o evento e só conta a foto como confirmada quando encontra o ID/nome da mídia. Estados: enviando, processando, confirmada, não confirmada e erro.
+2. **Saúde do fluxo** — painel com Câmera, Recebimento, Edição, Curadoria, Fotto, fila, última foto recebida, confirmadas e pendentes.
+3. **Fila persistente** — SQLite, retomada após reabrir o app, troca do APK e reinicialização do aparelho, com JobScheduler.
+4. **Reconexão inteligente** — ao conectar a câmera, verifica o cartão, recupera o que ainda não foi baixado e reconcilia a fila Fotto.
+5. **Curadoria inteligente local** — combina análise técnica com heurísticas locais de rosto para sinalizar possível olho fechado, rosto muito virado, corte de pessoa/rosto, obstrução e expressão desfavorável. É uma triagem experimental, não substitui revisão humana.
+6. **Rajadas** — fotos capturadas em sequência próxima são agrupadas e ordenadas pela nota; o detalhe mostra a melhor e alternativas.
+7. **Duplicatas** — SHA-256 para duplicata exata e hash perceptual para imagens visualmente muito semelhantes fora da mesma rajada.
+8. **Histórico por foto** — captura, download, edição/predefinição, curadoria/nota, aprovação, início/fim do envio e confirmação no Fotto.
+9. **Perfis de trabalho** — Corrida, Aniversário, Ensaio, Futebol e Personalizado. Cada perfil pode guardar curadoria, intensidade automática, predefinição, recuperação retroativa, pasta de exportação, evento Fotto e comportamento de envio automático.
+10. **Modo Evento** — mantém a tela ativa, habilita recuperação/curadoria, retoma filas, monitora Fotto, bateria e espaço e usa alerta sonoro para falhas críticas. A tela fica mais enxuta ocultando configurações gerais enquanto o modo está ativo.
 
-- **Capture**: última foto em destaque, filmstrip de recentes, estado da câmera/fila e configurações da sessão.
-- **Gallery**: grid de alto volume, score técnico, estado da foto e seleção múltipla.
-- **Review**: fotos bloqueadas pela curadoria, com motivo, score, Aprovar e Editar.
-- **Deliver**: conta/evento Fotto, fila, enviados e problemas.
-- **Editor contextual**: aberto pela Gallery/Review, com Original / Auto / Preset / Final, ajuste em tempo real e lote.
+## Predefinição durante o evento
 
-## Score técnico 1–10
+Na tela Captura existe um controle de **Predefinição**. É possível trocar entre predefinições já salvas, desligar a predefinição ou importar um novo XMP sem encerrar a captura. A mudança vale para as próximas fotos recebidas; fotos já processadas não são reprocessadas automaticamente.
 
-O score é uma triagem técnica, não uma nota estética. Ele considera:
+## Idioma
 
-- nitidez/desfoque;
-- exposição;
-- contraste;
-- clipping;
-- enquadramento técnico.
-
-O score é calculado mesmo quando o bloqueio automático da Curadoria estiver desligado. Fotos antigas sem score são analisadas gradualmente quando aparecem na Gallery.
-
-## Curadoria
-
-Sensibilidade Baixa, Média ou Alta. Quando uma foto é reprovada, ela é enviada para **Sob Revisao**, permanece fora da fila de upload e só volta a ficar apta para entrega depois de Aprovar ou corrigir no editor.
-
-## Editor
-
-O editor parte do original preservado e reconstrói:
-
-**Original → Auto → Preset → ajustes manuais**
-
-A interface mostra um controle por vez e os valores de Base / Auto / Preset. Segurar a foto exibe o Original; soltar retorna ao Final. Em lote, é possível copiar somente parâmetros escolhidos e aplicar o refinamento em várias fotos.
-
-## Modo escuro
-
-O botão de tema no cabeçalho alterna entre claro e escuro. A escolha é persistida e também vale para o editor.
-
-## Recuperação retroativa
-
-Ao reconectar a câmera, o LUMO pode verificar o cartão, ignorar itens já conhecidos e recuperar JPEGs que ainda não passaram pelo app. As fotos recuperadas seguem edição, score, curadoria e entrega normalmente.
+A interface, navegação, estados de entrega, configurações e mensagens operacionais estão em português. Termos técnicos internos de API/SQLite permanecem apenas no código e em diagnósticos técnicos.
 
 ## Compilação
 
-O projeto usa Java + Android SDK 35, sem Gradle. O workflow em `.github/workflows/build-apk.yml` instala API 35 / Build Tools 35.0.0, verifica que as mudanças UX 0.12.0 estão presentes e executa `python3 build.py`.
+- Android SDK 35 / Build Tools 35.0.0
+- `versionCode`: 25
+- `versionName`: `0.13.0-producao`
+- saída: `Lumo.apk`
 
-Saída: **Lumo.apk**
-
-- `versionCode`: 24
-- `versionName`: `0.12.0-ux-pro`
-- minSdk: 29
-- targetSdk: 35
-
-## Validação incluída
-
-Os testes locais de recuperação de fila e fila Fotto incluídos no projeto foram executados com sucesso. A compilação Android completa deve ser confirmada pelo GitHub Actions, pois ela depende do SDK Android 35.
-
-Veja `IMPLEMENTACAO-UX-0.12.0.txt` para a lista item a item das alterações solicitadas.
+O GitHub Actions executa as verificações de recursos, os testes de fila e então `python3 build.py`.
