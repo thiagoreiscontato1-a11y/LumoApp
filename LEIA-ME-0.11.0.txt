@@ -1,0 +1,30 @@
+LUMO 0.11.0 — Editor manual + edição em lote
+
+Mantém as funções da 0.10.1, incluindo curadoria, recuperação retroativa da câmera e correção CREATE_MEDIA_ARRAY do Fotto.
+
+NOVO EDITOR MANUAL
+- Refinamento depois da correção automática e do preset.
+- Controles: Exposição, Contraste, Realces, Sombras, Brancos, Pretos, Temperatura, Matiz, Vibração e Saturação.
+- Prévia em tempo real/debounce.
+- A edição final é sempre refeita a partir do original preservado + Auto + Preset + ajustes manuais; não edita JPEG sobre JPEG sucessivamente.
+- Copiar ajustes e Colar ajustes.
+- Os ajustes ficam salvos no histórico da foto.
+
+EDIÇÃO EM LOTE
+- Na Galeria, marque várias fotos com as caixas de seleção.
+- Abra o editor e use "Aplicar em N fotos selecionadas".
+- "Selecionar todas as recentes" marca até as 24 últimas editadas.
+- Cada foto mantém o Auto/Preset original e recebe os mesmos ajustes manuais copiados.
+
+CURADORIA APÓS EDIÇÃO MANUAL
+- A foto é analisada novamente ao salvar.
+- Se continuar tecnicamente suspeita, vai para Sob Revisao e o upload fica bloqueado.
+- Fotos de Sob Revisao têm botão "Editar para corrigir".
+- Se passar após a correção manual, volta para Editadas e pode entrar na entrega.
+
+FOTTO
+- Se a foto ainda não foi enviada e o monitor estiver ativo, a edição atualizada volta a ficar elegível para envio.
+- Se a foto já tinha sido confirmada como enviada, o LUMO não cria uma duplicata automaticamente; a tela do editor informa isso.
+
+Build: versionCode 21 / versionName 0.11.0-manual-editor
+APK: Lumo.apk

@@ -14,6 +14,7 @@
  <uses-permission android:name="android.permission.VIBRATE"/>
  <application android:icon="@drawable/ic_lumo" android:label="LUMO" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:supportsRtl="true">
   <activity android:name=".FottoLoginActivity" android:exported="false"/>
+  <activity android:name=".ManualEditorActivity" android:exported="false"/>
   <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
   <service android:name=".CaptureService" android:exported="false" android:foregroundServiceType="connectedDevice|mediaProcessing|dataSync"/>
  </application>

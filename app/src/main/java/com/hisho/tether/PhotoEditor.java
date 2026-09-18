@@ -47,6 +47,12 @@ final class PhotoEditor {
    double radius=Math.pow((x+.5)/w*2-1,2)+Math.pow((y+.5)/h*2-1,2),edge=clamp((radius-.3)/1.7),vignette=1+vg*.85*edge*edge*(3-2*edge);data[n]=rgb((rr+m)*vignette,(gg+m)*vignette,(bb+m)*vignette);
   }
  }
+
+ static void manual(int[] data,int w,int h,JSONObject m){
+  if(m==null||m.length()==0)return;double exposure=Math.pow(2,m.optDouble("exposure",0)),contrast=1+m.optDouble("contrast",0)/100*.75,high=m.optDouble("highlights",0)/100,shad=m.optDouble("shadows",0)/100,white=m.optDouble("whites",0)/100,black=m.optDouble("blacks",0)/100,temp=m.optDouble("temperature",0)/100,tint=m.optDouble("tint",0)/100,vib=m.optDouble("vibrance",0)/100,satAdj=m.optDouble("saturation",0)/100;
+  for(int i=0;i<data.length;i++){int v=data[i];double r=((v>>16)&255)/255.,g=((v>>8)&255)/255.,b=(v&255)/255.;double l=.2126*r+.7152*g+.0722*b;double tone=shad*.26*Math.pow(1-l,2)+high*.22*l*l+white*.14*Math.pow(l,4)+black*.12*Math.pow(1-l,4);r=clamp(r*exposure*(1+temp*.16)+tone);g=clamp(g*exposure*(1-tint*.12)+tone);b=clamp(b*exposure*(1-temp*.16)+tone);r=clamp((r-.5)*contrast+.5);g=clamp((g-.5)*contrast+.5);b=clamp((b-.5)*contrast+.5);double y=.2126*r+.7152*g+.0722*b;double max=Math.max(r,Math.max(g,b)),min=Math.min(r,Math.min(g,b)),current=max<=0?0:(max-min)/max;double amount=1+satAdj+vib*(1-current);data[i]=rgb(y+(r-y)*amount,y+(g-y)*amount,y+(b-y)*amount);}
+ }
+ static void manualBitmap(Bitmap bitmap,JSONObject m){if(bitmap==null||m==null)return;int w=bitmap.getWidth(),h=bitmap.getHeight();int[] data=new int[w*h];bitmap.getPixels(data,0,w,0,0,w,h);manual(data,w,h,m);bitmap.setPixels(data,0,w,0,0,w,h);}
  static void edit(File source,File destination,JSONObject options)throws Exception{
   Bitmap bitmap=null;try{
    int edge=options.optInt("edge",2560);BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.toString(),bounds);if(bounds.outWidth<=0)throw new IOException("JPEG inválido.");
@@ -58,7 +64,7 @@ final class PhotoEditor {
    int orientation=new ExifInterface(source.toString()).getAttributeInt(ExifInterface.TAG_ORIENTATION,1);Matrix matrix=new Matrix();switch(orientation){case 2:matrix.setScale(-1,1);break;case 3:matrix.setRotate(180);break;case 4:matrix.setScale(1,-1);break;case 5:matrix.setRotate(90);matrix.postScale(-1,1);break;case 6:matrix.setRotate(90);break;case 7:matrix.setRotate(-90);matrix.postScale(-1,1);break;case 8:matrix.setRotate(-90);break;}
    if(orientation>1){Bitmap rotated=Bitmap.createBitmap(bitmap,0,0,bitmap.getWidth(),bitmap.getHeight(),matrix,true);if(rotated!=bitmap)bitmap.recycle();bitmap=rotated;}
    if(!bitmap.isMutable()){Bitmap mutable=bitmap.copy(Bitmap.Config.ARGB_8888,true);bitmap.recycle();bitmap=mutable;if(bitmap==null)throw new IOException("Memória insuficiente.");}
-   int w=bitmap.getWidth(),h=bitmap.getHeight();int[] data=new int[w*h];bitmap.getPixels(data,0,w,0,0,w,h);if(options.optBoolean("auto",true))auto(data);JSONObject preset=options.optJSONObject("preset");if(preset!=null)preset(data,w,h,preset);bitmap.setPixels(data,0,w,0,0,w,h);
+   int w=bitmap.getWidth(),h=bitmap.getHeight();int[] data=new int[w*h];bitmap.getPixels(data,0,w,0,0,w,h);if(options.optBoolean("auto",true))auto(data);JSONObject preset=options.optJSONObject("preset");if(preset!=null)preset(data,w,h,preset);JSONObject manual=options.optJSONObject("manual");if(manual!=null)manual(data,w,h,manual);bitmap.setPixels(data,0,w,0,0,w,h);
    try(FileOutputStream output=new FileOutputStream(destination)){if(!bitmap.compress(Bitmap.CompressFormat.JPEG,95,output))throw new IOException("Falha ao gerar JPEG.");output.getFD().sync();}
   }finally{if(bitmap!=null)bitmap.recycle();}
  }

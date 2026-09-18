@@ -1,0 +1,8 @@
+Lumo 0.10.1 — correção CREATE_MEDIA
+
+A integração foi alinhada ao APK de referência:
+- POST /me/galleries/{galleryId}/medias recebe diretamente um array JSON.
+- Item: originalFileName, mediaType, mediaSize; replaceMediaId é opcional.
+- Authorization usa a mesma chave validada em /me, sem prefixo Bearer no fluxo por apiKey.
+- O fallback Bearer foi removido do CREATE_MEDIA para não mascarar o erro real.
+- Curadoria e recuperação retroativa da 0.10.0 foram mantidas.

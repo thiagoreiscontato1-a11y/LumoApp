@@ -38,28 +38,51 @@ final class FottoApi {
   ArrayList<Gallery> list=new ArrayList<>();if(arr==null)return list;for(int i=0;i<arr.length();i++){JSONObject g=arr.optJSONObject(i);if(g==null)continue;String id=value(g.opt("id")),title=g.optString("title",g.optString("name","Evento "+id));if(!id.isEmpty())list.add(new Gallery(id,title));}return list;
  }
  static Uploaded upload(Context ctx,Uri source,String name,String galleryId)throws Exception{
-  long size=size(ctx,source);if(size<0)size=count(ctx,source);if(size<=0)throw new IOException("CREATE_MEDIA · arquivo vazio: "+name);
-  JSONObject item=new JSONObject();item.put("originalFileName",name);item.put("mediaType","photo");item.put("mediaSize",size);
-  JSONArray medias=new JSONArray();medias.put(item);
-  JSONObject req=new JSONObject();req.put("galleryId",galleryId);req.put("medias",medias);
-  String path="/me/galleries/"+Uri.encode(galleryId)+"/medias";String response;String key=apiKey(ctx);String access=accessToken(ctx);
-  IOException first=null;
-  if(!key.isEmpty()){
-   try{response=callWithToken("POST",path,req.toString(),key);}
-   catch(IOException e){first=e;response=null;}
-  }else response=null;
-  if(response==null&&!access.isEmpty()){
-   try{response=callWithBearerToken("POST",path,req.toString(),access);}
-   catch(IOException e){
-    String before=first==null?"":(" | APIKEY: "+first.getMessage());
-    throw new IOException("CREATE_MEDIA · "+name+" · "+size+" bytes · payload=galleryId/medias"+before+" | BEARER: "+e.getMessage(),e);
-   }
+  long size=size(ctx,source);if(size<0)size=count(ctx,source);if(size<=0)throw new IOException("CREATE_MEDIA_ARRAY · arquivo vazio: "+name);
+
+  /*
+   * O app de referência do Fotto envia diretamente uma LISTA JSON para
+   * POST /me/galleries/{id}/medias.
+   *
+   * Formato real:
+   * [
+   *   {
+   *     "originalFileName":"IMG_0001.jpg",
+   *     "mediaType":"photo",
+   *     "mediaSize":123456
+   *   }
+   * ]
+   *
+   * Não existe wrapper {"gallery_id":...,"medias":[...]} nesse endpoint.
+   */
+  JSONObject item=new JSONObject();
+  item.put("originalFileName",name);
+  item.put("mediaType","photo");
+  item.put("mediaSize",size);
+  JSONArray body=new JSONArray();
+  body.put(item);
+
+  String path="/me/galleries/"+Uri.encode(galleryId)+"/medias";
+  String auth=apiKey(ctx);if(auth.isEmpty())auth=accessToken(ctx);
+  if(auth.isEmpty())throw new IOException("CREATE_MEDIA_ARRAY · sessão Fotto ausente. Reconecte a conta.");
+
+  String response;
+  try{
+   // O cliente do app de referência envia o accessToken/apiKey diretamente
+   // no cabeçalho Authorization, sem acrescentar "Bearer ".
+   response=callWithToken("POST",path,body.toString(),auth);
+  }catch(IOException e){
+   throw new IOException("CREATE_MEDIA_ARRAY · "+name+" · "+size+" bytes · "+e.getMessage(),e);
   }
-  if(response==null){
-   String msg=first==null?"Nenhuma credencial Fotto disponível.":first.getMessage();
-   throw new IOException("CREATE_MEDIA · "+name+" · "+size+" bytes · payload=galleryId/medias · "+msg,first);
-  }
-  Object root=new JSONTokener(response).nextValue();JSONObject media=findObject(root,"signedUrl");if(media==null)throw new IOException("O Fotto não retornou a URL de envio em CREATE_MEDIA.");String signed=media.optString("signedUrl","");if(signed.isEmpty())throw new IOException("URL assinada do Fotto vazia.");String mediaId=value(media.opt("id"));put(ctx,source,name,size,signed);return new Uploaded(mediaId);
+
+  Object root=new JSONTokener(response).nextValue();
+  JSONObject media=findObject(root,"signedUrl");
+  if(media==null)throw new IOException("CREATE_MEDIA_ARRAY · o Fotto não retornou signedUrl. Resposta: "+compact(response));
+  String signed=media.optString("signedUrl","");
+  if(signed.isEmpty())throw new IOException("CREATE_MEDIA_ARRAY · URL assinada vazia.");
+  String mediaId=value(media.opt("id"));
+  put(ctx,source,name,size,signed);
+  return new Uploaded(mediaId);
  }
  static String findExistingMedia(Context ctx,String galleryId,String name){
   try{String json=call(ctx,"GET","/me/galleries/"+Uri.encode(galleryId)+"/medias",null);Object root=new JSONTokener(json).nextValue();JSONArray arr=findArray(root,"medias");if(arr==null&&root instanceof JSONObject){Object d=((JSONObject)root).opt("data");if(d instanceof JSONArray)arr=(JSONArray)d;else if(d!=null)arr=findArray(d,"medias");}if(arr==null)return "";for(int i=0;i<arr.length();i++){JSONObject m=arr.optJSONObject(i);if(m==null)continue;String original=m.optString("originalFileName",m.optString("name",""));if(name.equalsIgnoreCase(original))return value(m.opt("id"));}}catch(Exception ignored){}return "";

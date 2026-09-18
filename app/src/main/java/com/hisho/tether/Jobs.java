@@ -21,6 +21,12 @@ final class Jobs extends SQLiteOpenHelper{
  synchronized void fottoRecover(String galleryId){ContentValues v=new ContentValues();v.put("state","error");v.put("error","Envio interrompido antes da confirmação.");v.put("updated",System.currentTimeMillis());getWritableDatabase().update("fotto_uploads",v,"gallery_id=? AND state='uploading'",new String[]{galleryId});}
  synchronized void fottoRetry(String galleryId){ContentValues v=new ContentValues();v.put("attempts",0);v.put("state","error");getWritableDatabase().update("fotto_uploads",v,"gallery_id=? AND state='error'",new String[]{galleryId});}
  synchronized int fottoDone(String galleryId){try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM fotto_uploads WHERE gallery_id=? AND state='done'",new String[]{galleryId})){c.moveToFirst();return c.getInt(0);}}
+ synchronized String[] editorJob(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,settings,original,edited,state FROM jobs WHERE id=?",new String[]{id})){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getString(4),c.getString(5)};}}
+ synchronized String idForEdited(String uri){try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM jobs WHERE edited=? LIMIT 1",new String[]{uri})){return c.moveToFirst()?c.getString(0):"";}}
+ synchronized void updateSettings(String id,String settings){ContentValues v=new ContentValues();v.put("settings",settings);getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
+ synchronized boolean fottoWasSent(String jobId){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM fotto_uploads WHERE job_id=? AND state='done' LIMIT 1",new String[]{jobId})){return c.moveToFirst();}}
+ synchronized void fottoDiscardUnsent(String jobId){getWritableDatabase().delete("fotto_uploads","job_id=? AND state<>'done'",new String[]{jobId});}
+ void overwrite(File source,String rawUri)throws IOException{if(rawUri==null||rawUri.isEmpty())throw new IOException("Destino editado indisponível.");ContentResolver r=context.getContentResolver();try(InputStream input=new FileInputStream(source);OutputStream output=r.openOutputStream(Uri.parse(rawUri),"wt")){if(output==null)throw new IOException("Não foi possível regravar a foto editada.");copy(input,output);}}
 
  Uri save(File source,String folder,String name,String id,String column)throws IOException{
   String tree=context.getSharedPreferences("hisho",0).getString("exportTreeUri","");
