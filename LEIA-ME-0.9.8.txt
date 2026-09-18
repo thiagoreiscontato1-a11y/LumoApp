@@ -1,0 +1,4 @@
+Lumo 0.9.8
+- Corrige o corpo JSON do CREATE_MEDIA para usar galleryId (camelCase), igual ao modelo do app de referência.
+- Tenta primeiro a API key sem Bearer; se necessário, tenta access token com Bearer.
+- Mantém diagnóstico detalhado em caso de falha.

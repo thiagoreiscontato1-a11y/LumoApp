@@ -38,11 +38,27 @@ final class FottoApi {
   ArrayList<Gallery> list=new ArrayList<>();if(arr==null)return list;for(int i=0;i<arr.length();i++){JSONObject g=arr.optJSONObject(i);if(g==null)continue;String id=value(g.opt("id")),title=g.optString("title",g.optString("name","Evento "+id));if(!id.isEmpty())list.add(new Gallery(id,title));}return list;
  }
  static Uploaded upload(Context ctx,Uri source,String name,String galleryId)throws Exception{
-  long size=size(ctx,source);if(size<=0)size=count(ctx,source);if(size<=0)throw new IOException("A foto editada ainda está vazia. Aguarde a gravação terminar e tente novamente.");
-  String existing=findExistingMedia(ctx,galleryId,name);if(!existing.isEmpty())return new Uploaded(existing,true);
-  JSONObject item=new JSONObject();item.put("originalFileName",name);item.put("mediaType","photo");item.put("mediaSize",size);JSONArray medias=new JSONArray();medias.put(item);JSONObject req=new JSONObject();req.put("gallery_id",galleryId);req.put("medias",medias);
-  String path="/me/galleries/"+Uri.encode(galleryId)+"/medias";String response;String mediaToken=accessToken(ctx);if(mediaToken.isEmpty())mediaToken=apiKey(ctx);
-  try{response=callWithBearerToken("POST",path,req.toString(),mediaToken);}catch(IOException e){throw new IOException("CREATE_MEDIA_BEARER · "+name+" · "+size+" bytes · "+e.getMessage(),e);}
+  long size=size(ctx,source);if(size<0)size=count(ctx,source);if(size<=0)throw new IOException("CREATE_MEDIA · arquivo vazio: "+name);
+  JSONObject item=new JSONObject();item.put("originalFileName",name);item.put("mediaType","photo");item.put("mediaSize",size);
+  JSONArray medias=new JSONArray();medias.put(item);
+  JSONObject req=new JSONObject();req.put("galleryId",galleryId);req.put("medias",medias);
+  String path="/me/galleries/"+Uri.encode(galleryId)+"/medias";String response;String key=apiKey(ctx);String access=accessToken(ctx);
+  IOException first=null;
+  if(!key.isEmpty()){
+   try{response=callWithToken("POST",path,req.toString(),key);}
+   catch(IOException e){first=e;response=null;}
+  }else response=null;
+  if(response==null&&!access.isEmpty()){
+   try{response=callWithBearerToken("POST",path,req.toString(),access);}
+   catch(IOException e){
+    String before=first==null?"":(" | APIKEY: "+first.getMessage());
+    throw new IOException("CREATE_MEDIA · "+name+" · "+size+" bytes · payload=galleryId/medias"+before+" | BEARER: "+e.getMessage(),e);
+   }
+  }
+  if(response==null){
+   String msg=first==null?"Nenhuma credencial Fotto disponível.":first.getMessage();
+   throw new IOException("CREATE_MEDIA · "+name+" · "+size+" bytes · payload=galleryId/medias · "+msg,first);
+  }
   Object root=new JSONTokener(response).nextValue();JSONObject media=findObject(root,"signedUrl");if(media==null)throw new IOException("O Fotto não retornou a URL de envio em CREATE_MEDIA.");String signed=media.optString("signedUrl","");if(signed.isEmpty())throw new IOException("URL assinada do Fotto vazia.");String mediaId=value(media.opt("id"));put(ctx,source,name,size,signed);return new Uploaded(mediaId);
  }
  static String findExistingMedia(Context ctx,String galleryId,String name){
