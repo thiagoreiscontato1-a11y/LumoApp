@@ -7,11 +7,16 @@ final class FottoApi {
  static final class Gallery {final String id,title;Gallery(String id,String title){this.id=id;this.title=title;}public String toString(){return title;}}
  static final class Uploaded {final String mediaId;final boolean skipped;Uploaded(String mediaId){this(mediaId,false);}Uploaded(String mediaId,boolean skipped){this.mediaId=mediaId;this.skipped=skipped;}}
  static android.content.SharedPreferences prefs(Context c){return c.getSharedPreferences("hisho",0);}
- static String accessToken(Context c){String v=prefs(c).getString("fottoAccessTokenV5","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoAccessTokenV4","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoTokenV3","").trim();return stripBearer(v);}
- static String apiKey(Context c){String v=prefs(c).getString("fottoApiKeyV5","").trim();if(!v.isEmpty())return stripBearer(v);return stripBearer(prefs(c).getString("fottoApiKeyV4","").trim());}
- static String token(Context c){String a=accessToken(c);return !a.isEmpty()?a:apiKey(c);}
+ static String accessToken(Context c){String v=prefs(c).getString("fottoAccessTokenV7","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoAccessTokenV5","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoAccessTokenV4","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoTokenV3","").trim();return stripBearer(v);}
+ static String apiKey(Context c){String v=prefs(c).getString("fottoApiKeyV7","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoApiKeyV5","").trim();if(!v.isEmpty())return stripBearer(v);return stripBearer(prefs(c).getString("fottoApiKeyV4","").trim());}
+ static String token(Context c){String k=apiKey(c);return !k.isEmpty()?k:accessToken(c);}
  static HttpURLConnection connection(String url,String method,String token)throws IOException{
-  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.9.5 Android");
+  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.9.7 Android");
+  if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization",stripBearer(token));}
+  return c;
+ }
+ static HttpURLConnection connectionBearer(String url,String method,String token)throws IOException{
+  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.9.7 Android");
   if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization","Bearer "+stripBearer(token));}
   return c;
  }
@@ -19,8 +24,10 @@ final class FottoApi {
  static String call(Context ctx,String method,String path,String body)throws IOException{
   String tok=token(ctx);if(tok.isEmpty())throw new IOException("Conecte sua conta Fotto novamente.");return callWithToken(method,path,body,tok);
  }
- static String callWithToken(String method,String path,String body,String tok)throws IOException{
-  HttpURLConnection c=connection(BASE+path,method,tok);
+ static String callWithToken(String method,String path,String body,String tok)throws IOException{return callWithTokenMode(method,path,body,tok,false);}
+ static String callWithBearerToken(String method,String path,String body,String tok)throws IOException{return callWithTokenMode(method,path,body,tok,true);}
+ static String callWithTokenMode(String method,String path,String body,String tok,boolean bearer)throws IOException{
+  HttpURLConnection c=bearer?connectionBearer(BASE+path,method,tok):connection(BASE+path,method,tok);
   if(body!=null){byte[] bytes=body.getBytes("UTF-8");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json; charset=utf-8");c.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=c.getOutputStream()){out.write(bytes);}}
   int code=c.getResponseCode();String text=read(code>=200&&code<300?c.getInputStream():c.getErrorStream(),1024*1024);c.disconnect();
   if(code<200||code>=300){if(code==401)throw new IOException("Sessão Fotto expirada. Toque em Conectar com Fotto novamente.");throw new IOException("Fotto HTTP "+code+" em "+path+(text.isEmpty()?"":" · "+compact(text)));}return text;
@@ -34,8 +41,8 @@ final class FottoApi {
   long size=size(ctx,source);if(size<=0)size=count(ctx,source);if(size<=0)throw new IOException("A foto editada ainda está vazia. Aguarde a gravação terminar e tente novamente.");
   String existing=findExistingMedia(ctx,galleryId,name);if(!existing.isEmpty())return new Uploaded(existing,true);
   JSONObject item=new JSONObject();item.put("originalFileName",name);item.put("mediaType","photo");item.put("mediaSize",size);JSONArray medias=new JSONArray();medias.put(item);JSONObject req=new JSONObject();req.put("gallery_id",galleryId);req.put("medias",medias);
-  String path="/me/galleries/"+Uri.encode(galleryId)+"/medias";String response;
-  try{response=call(ctx,"POST",path,req.toString());}catch(IOException e){throw new IOException("CREATE_MEDIA · "+name+" · "+size+" bytes · "+e.getMessage(),e);}
+  String path="/me/galleries/"+Uri.encode(galleryId)+"/medias";String response;String mediaToken=accessToken(ctx);if(mediaToken.isEmpty())mediaToken=apiKey(ctx);
+  try{response=callWithBearerToken("POST",path,req.toString(),mediaToken);}catch(IOException e){throw new IOException("CREATE_MEDIA_BEARER · "+name+" · "+size+" bytes · "+e.getMessage(),e);}
   Object root=new JSONTokener(response).nextValue();JSONObject media=findObject(root,"signedUrl");if(media==null)throw new IOException("O Fotto não retornou a URL de envio em CREATE_MEDIA.");String signed=media.optString("signedUrl","");if(signed.isEmpty())throw new IOException("URL assinada do Fotto vazia.");String mediaId=value(media.opt("id"));put(ctx,source,name,size,signed);return new Uploaded(mediaId);
  }
  static String findExistingMedia(Context ctx,String galleryId,String name){

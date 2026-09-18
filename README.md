@@ -1,6 +1,6 @@
-## Lumo 0.9.6 — Fotto Bearer fix
+## Lumo 0.9.7 — login restaurado + autenticação separada do upload
 
-A API do Fotto agora usa o mesmo cabeçalho do app de referência: `Authorization: Bearer <token>` + `App-Code: fotto`.
+O login volta a validar a sessão no formato aceito pelo /me. O CREATE_MEDIA usa Bearer isoladamente, sem quebrar a captura da sessão.
 
 # LUMO Tether Android 0.9 — identidade visual LUMO
 
