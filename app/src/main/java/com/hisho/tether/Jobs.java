@@ -1,30 +1,55 @@
 package com.hisho.tether;
-import android.content.*;import android.database.*;import android.database.sqlite.*;import android.net.Uri;import android.provider.MediaStore;import android.provider.DocumentsContract;import java.io.*;
+
+import android.content.*;
+import android.database.*;
+import android.database.sqlite.*;
+import android.net.Uri;
+import android.provider.MediaStore;
+import android.provider.DocumentsContract;
+import java.io.*;
+
 final class Jobs extends SQLiteOpenHelper{
  final Context context;
- Jobs(Context c){super(c,"queue.db",null,2);context=c;}
- public void onCreate(SQLiteDatabase d){d.execSQL("CREATE TABLE jobs (id TEXT PRIMARY KEY, file TEXT NOT NULL, name TEXT NOT NULL, settings TEXT NOT NULL, original TEXT, edited TEXT, state TEXT NOT NULL, error TEXT)");createFotto(d);}
- public void onUpgrade(SQLiteDatabase d,int a,int b){if(a<2)createFotto(d);}
+ Jobs(Context c){super(c,"queue.db",null,3);context=c;}
+
+ public void onCreate(SQLiteDatabase d){
+  d.execSQL("CREATE TABLE jobs (id TEXT PRIMARY KEY, file TEXT NOT NULL, name TEXT NOT NULL, settings TEXT NOT NULL, original TEXT, edited TEXT, state TEXT NOT NULL, error TEXT, score INTEGER NOT NULL DEFAULT 0, quality_note TEXT)");
+  createFotto(d);
+ }
+ public void onUpgrade(SQLiteDatabase d,int a,int b){
+  if(a<2)createFotto(d);
+  if(a<3){
+   try{d.execSQL("ALTER TABLE jobs ADD COLUMN score INTEGER NOT NULL DEFAULT 0");}catch(Exception ignored){}
+   try{d.execSQL("ALTER TABLE jobs ADD COLUMN quality_note TEXT");}catch(Exception ignored){}
+  }
+ }
  static void createFotto(SQLiteDatabase d){d.execSQL("CREATE TABLE IF NOT EXISTS fotto_uploads (job_id TEXT NOT NULL, gallery_id TEXT NOT NULL, state TEXT NOT NULL, media_id TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(job_id,gallery_id))");}
  synchronized boolean exists(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM jobs WHERE id=?",new String[]{id})){return c.moveToFirst();}}
  synchronized void add(String id,File file,String name,String settings){ContentValues v=new ContentValues();v.put("id",id);v.put("file",file.getAbsolutePath());v.put("name",name);v.put("settings",settings);v.put("state","original");getWritableDatabase().insertOrThrow("jobs",null,v);}
- synchronized void set(String id,String state,String field,String value){ContentValues v=new ContentValues();v.put("state",state);if(field!=null)v.put(field,value);getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
+ synchronized void set(String id,String state,String field,String value){ContentValues v=new ContentValues();v.put("state",state);if(field!=null){if(value==null)v.putNull(field);else v.put(field,value);}getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
+ synchronized void setQuality(String id,int score,String note){ContentValues v=new ContentValues();v.put("score",Math.max(0,Math.min(10,score)));if(note==null)v.putNull("quality_note");else v.put("quality_note",note);getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
+ synchronized int[] quality(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT score FROM jobs WHERE id=?",new String[]{id})){return c.moveToFirst()?new int[]{c.getInt(0)}:new int[]{0};}}
+ synchronized String qualityNote(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT quality_note FROM jobs WHERE id=?",new String[]{id})){return c.moveToFirst()&&!c.isNull(0)?c.getString(0):"";}}
  synchronized String[] next(){try(Cursor c=getReadableDatabase().rawQuery("SELECT id,file,name,settings FROM jobs WHERE state='ready' ORDER BY rowid LIMIT 1",null)){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1),c.getString(2),c.getString(3)};}}
  synchronized int pending(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE state NOT IN ('done','review')",null)){c.moveToFirst();return c.getInt(0);}}
+ synchronized int processingCount(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE state IN ('original','ready','editing','originalError','error')",null)){c.moveToFirst();return c.getInt(0);}}
  synchronized int reviewCount(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE state='review'",null)){c.moveToFirst();return c.getInt(0);}}
+ synchronized int doneCount(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE state='done'",null)){c.moveToFirst();return c.getInt(0);}}
  synchronized void clearEdited(String id){ContentValues v=new ContentValues();v.putNull("edited");getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
  synchronized void retry(){getWritableDatabase().execSQL("UPDATE jobs SET state='ready',error=NULL WHERE state IN ('error','editing') AND original IS NOT NULL");getWritableDatabase().execSQL("UPDATE jobs SET state='original',error=NULL WHERE state='originalError' OR (state='error' AND original IS NULL)");}
  synchronized String[] originalPending(){try(Cursor c=getReadableDatabase().rawQuery("SELECT id,file,name FROM jobs WHERE state='original' ORDER BY rowid LIMIT 1",null)){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1),c.getString(2)};}}
  synchronized long maxRowId(){try(Cursor c=getReadableDatabase().rawQuery("SELECT COALESCE(MAX(rowid),0) FROM jobs",null)){c.moveToFirst();return c.getLong(0);}}
  synchronized String[] nextFotto(String galleryId,long after){String sql="SELECT j.id,j.name,j.edited,j.rowid FROM jobs j LEFT JOIN fotto_uploads f ON f.job_id=j.id AND f.gallery_id=? WHERE j.state='done' AND j.edited IS NOT NULL AND j.rowid>? AND (f.state IS NULL OR (f.state='error' AND f.attempts<3)) ORDER BY j.rowid LIMIT 1";try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{galleryId,String.valueOf(after)})){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1).replaceFirst("(?i)\\.jpg$","_Editada.jpg"),c.getString(2),String.valueOf(c.getLong(3))};}}
+ synchronized int fottoPending(String galleryId){if(galleryId==null||galleryId.isEmpty())return 0;String sql="SELECT COUNT(*) FROM jobs j LEFT JOIN fotto_uploads f ON f.job_id=j.id AND f.gallery_id=? WHERE j.state='done' AND j.edited IS NOT NULL AND (f.state IS NULL OR f.state<>'done')";try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{galleryId})){c.moveToFirst();return c.getInt(0);}}
  synchronized void fottoSet(String jobId,String galleryId,String state,String mediaId,String error,boolean increment){int attempts=0;try(Cursor c=getReadableDatabase().rawQuery("SELECT attempts FROM fotto_uploads WHERE job_id=? AND gallery_id=?",new String[]{jobId,galleryId})){if(c.moveToFirst())attempts=c.getInt(0);}if(increment)attempts++;ContentValues v=new ContentValues();v.put("job_id",jobId);v.put("gallery_id",galleryId);v.put("state",state);v.put("media_id",mediaId==null?"":mediaId);v.put("error",error==null?"":error);v.put("attempts",attempts);v.put("updated",System.currentTimeMillis());getWritableDatabase().insertWithOnConflict("fotto_uploads",null,v,SQLiteDatabase.CONFLICT_REPLACE);}
  synchronized void fottoRecover(String galleryId){ContentValues v=new ContentValues();v.put("state","error");v.put("error","Envio interrompido antes da confirmação.");v.put("updated",System.currentTimeMillis());getWritableDatabase().update("fotto_uploads",v,"gallery_id=? AND state='uploading'",new String[]{galleryId});}
  synchronized void fottoRetry(String galleryId){ContentValues v=new ContentValues();v.put("attempts",0);v.put("state","error");getWritableDatabase().update("fotto_uploads",v,"gallery_id=? AND state='error'",new String[]{galleryId});}
- synchronized int fottoDone(String galleryId){try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM fotto_uploads WHERE gallery_id=? AND state='done'",new String[]{galleryId})){c.moveToFirst();return c.getInt(0);}}
+ synchronized int fottoDone(String galleryId){if(galleryId==null||galleryId.isEmpty())return 0;try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM fotto_uploads WHERE gallery_id=? AND state='done'",new String[]{galleryId})){c.moveToFirst();return c.getInt(0);}}
  synchronized String[] editorJob(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,settings,original,edited,state FROM jobs WHERE id=?",new String[]{id})){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getString(4),c.getString(5)};}}
  synchronized String idForEdited(String uri){try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM jobs WHERE edited=? LIMIT 1",new String[]{uri})){return c.moveToFirst()?c.getString(0):"";}}
  synchronized void updateSettings(String id,String settings){ContentValues v=new ContentValues();v.put("settings",settings);getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
  synchronized boolean fottoWasSent(String jobId){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM fotto_uploads WHERE job_id=? AND state='done' LIMIT 1",new String[]{jobId})){return c.moveToFirst();}}
+ synchronized boolean fottoWasSent(String jobId,String galleryId){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM fotto_uploads WHERE job_id=? AND gallery_id=? AND state='done' LIMIT 1",new String[]{jobId,galleryId})){return c.moveToFirst();}}
  synchronized void fottoDiscardUnsent(String jobId){getWritableDatabase().delete("fotto_uploads","job_id=? AND state<>'done'",new String[]{jobId});}
  void overwrite(File source,String rawUri)throws IOException{if(rawUri==null||rawUri.isEmpty())throw new IOException("Destino editado indisponível.");ContentResolver r=context.getContentResolver();try(InputStream input=new FileInputStream(source);OutputStream output=r.openOutputStream(Uri.parse(rawUri),"wt")){if(output==null)throw new IOException("Não foi possível regravar a foto editada.");copy(input,output);}}
 
@@ -57,5 +82,4 @@ final class Jobs extends SQLiteOpenHelper{
   ContentValues v=new ContentValues();v.put(MediaStore.Images.Media.IS_PENDING,0);if(r.update(uri,v,null,null)!=1)throw new IOException("Falha ao concluir gravação.");return uri;
  }
  static void copy(InputStream input,OutputStream output)throws IOException{byte[] bytes=new byte[65536];int n;while((n=input.read(bytes))!=-1)output.write(bytes,0,n);}
-
 }

@@ -7,18 +7,15 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Locale;
 
-/**
- * Curadoria técnica local, sem rede e sem modelo externo.
- * Analisa a cópia editada para detectar indícios de desfoque, baixa nitidez,
- * exposição/contraste problemáticos e enquadramento técnico suspeito.
- */
+/** Curadoria técnica local + score técnico de 1 a 10. */
 final class Curator {
  static final class Result {
   final boolean review;
   final String reason;
   final double sharpness, brightness, contrast, clipping, framing;
-  Result(boolean review,String reason,double sharpness,double brightness,double contrast,double clipping,double framing){
-   this.review=review;this.reason=reason;this.sharpness=sharpness;this.brightness=brightness;this.contrast=contrast;this.clipping=clipping;this.framing=framing;
+  final int score;
+  Result(boolean review,String reason,double sharpness,double brightness,double contrast,double clipping,double framing,int score){
+   this.review=review;this.reason=reason;this.sharpness=sharpness;this.brightness=brightness;this.contrast=contrast;this.clipping=clipping;this.framing=framing;this.score=Math.max(1,Math.min(10,score));
   }
  }
 
@@ -32,7 +29,7 @@ final class Curator {
  }
 
  static Result measure(Bitmap b,int sensitivity){
-  int w=b.getWidth(),h=b.getHeight();if(w<16||h<16)return new Result(true,"Imagem pequena demais para análise técnica.",0,0,0,1,1);
+  int w=b.getWidth(),h=b.getHeight();if(w<16||h<16)return new Result(true,"Imagem pequena demais para análise técnica.",0,0,0,1,1,1);
   int[] px=new int[w*h];b.getPixels(px,0,w,0,0,w,h);
   int step=Math.max(1,Math.max(w,h)/640);
   long count=0;double sum=0,sum2=0,clip=0,colorClip=0;
@@ -49,14 +46,28 @@ final class Curator {
 
   double[] sharpMin={7.0,10.5,14.5},contrastMin={13.0,19.0,25.0},darkMin={20.0,30.0,40.0},brightMax={235.0,225.0,215.0},clipMax={.55,.38,.26},frameEdge={.018,.035,.065};
   ArrayList<String> reasons=new ArrayList<>();
-  if(sharp<sharpMin[sensitivity])reasons.add(String.format(Locale.ROOT,"baixa nitidez/desfoque (%.1f)",sharp));
-  if(mean<darkMin[sensitivity])reasons.add(String.format(Locale.ROOT,"imagem muito escura (%.0f/255)",mean));
-  if(mean>brightMax[sensitivity])reasons.add(String.format(Locale.ROOT,"imagem muito clara (%.0f/255)",mean));
-  if(contrast<contrastMin[sensitivity])reasons.add(String.format(Locale.ROOT,"contraste muito baixo (%.1f)",contrast));
-  if(clipRatio>clipMax[sensitivity])reasons.add(String.format(Locale.ROOT,"clipping/exposição excessiva (%.0f%%)",clipRatio*100));
-  if(sensitivity>0&&edgeDistance<frameEdge[sensitivity])reasons.add("possível enquadramento/corte do assunto junto à borda");
-  String reason;if(reasons.isEmpty())reason=String.format(Locale.ROOT,"Aprovada · nitidez %.1f · luz %.0f · contraste %.1f",sharp,mean,contrast);else{StringBuilder out=new StringBuilder("Sob revisão: ");for(int i=0;i<reasons.size();i++){if(i>0)out.append("; ");out.append(reasons.get(i));}reason=out.toString();}
-  return new Result(!reasons.isEmpty(),reason,sharp,mean,contrast,clipRatio,framing);
+  if(sharp<sharpMin[sensitivity])reasons.add("Nitidez baixa/desfoque");
+  if(mean<darkMin[sensitivity])reasons.add("Subexposta");
+  if(mean>brightMax[sensitivity])reasons.add("Superexposta");
+  if(contrast<contrastMin[sensitivity])reasons.add("Contraste muito baixo");
+  if(clipRatio>clipMax[sensitivity])reasons.add("Clipping de luz/cor");
+  if(sensitivity>0&&edgeDistance<frameEdge[sensitivity])reasons.add("Assunto possivelmente cortado junto à borda");
+
+  int score=score(sharp,mean,contrast,clipRatio,edgeDistance);
+  String reason;
+  if(reasons.isEmpty())reason=String.format(Locale.ROOT,"Aprovada · score %d/10 · nitidez %.1f · luz %.0f · contraste %.1f",score,sharp,mean,contrast);
+  else{StringBuilder out=new StringBuilder();for(int i=0;i<reasons.size();i++){if(i>0)out.append(" · ");out.append(reasons.get(i));}reason=out.toString();}
+  return new Result(!reasons.isEmpty(),reason,sharp,mean,contrast,clipRatio,framing,score);
+ }
+
+ static int score(double sharp,double mean,double contrast,double clipping,double edgeDistance){
+  double s=10.0;
+  if(sharp<18)s-=Math.min(4.2,(18-sharp)/4.0);
+  double lightPenalty=Math.abs(mean-128)/58.0;s-=Math.min(2.0,lightPenalty);
+  if(contrast<30)s-=Math.min(1.6,(30-contrast)/14.0);
+  if(clipping>.08)s-=Math.min(1.6,(clipping-.08)*4.5);
+  if(edgeDistance<.055)s-=Math.min(1.0,(.055-edgeDistance)*18.0);
+  return Math.max(1,Math.min(10,(int)Math.round(s)));
  }
  static double lum(int c){int r=(c>>16)&255,g=(c>>8)&255,b=c&255;return .2126*r+.7152*g+.0722*b;}
  private Curator(){}

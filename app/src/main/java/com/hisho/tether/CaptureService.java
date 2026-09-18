@@ -1,7 +1,7 @@
 package com.hisho.tether;
 import android.app.*;import android.content.*;import android.content.pm.ServiceInfo;import android.hardware.usb.*;import android.os.*;import android.net.Uri;import org.json.*;import java.io.*;import java.security.*;import java.util.*;import java.util.concurrent.*;
 public class CaptureService extends Service{
- public static volatile CaptureService active;public volatile String status="Iniciando",detail="",lastImage="";public volatile int received=0,edited=0,recovered=0,reviewed=0;public volatile boolean capturing=false;
+ public static volatile CaptureService active;public volatile String status="Iniciando",detail="",lastImage="",cameraName="Canon";public volatile int received=0,edited=0,recovered=0,reviewed=0;public volatile boolean capturing=false;
  public final ConnectionStatus link=new ConnectionStatus();private volatile UsbDevice attached;private android.net.Network wifiNetwork;private android.net.ConnectivityManager.NetworkCallback wifiCallback;private final java.util.concurrent.atomic.AtomicBoolean alertArmed=new java.util.concurrent.atomic.AtomicBoolean(false);private volatile Ptp transport;private boolean detachRegistered;
  private final BroadcastReceiver detach=new BroadcastReceiver(){public void onReceive(Context c,Intent intent){UsbDevice d=intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);if(d!=null&&attached!=null&&d.getDeviceId()==attached.getDeviceId()){link.fail("Câmera desconectada. Conecte o cabo e tente novamente.");status=link.error;capturing=false;finish=true;lostAlert(status);log(status);}}};
  void lostAlert(String reason){if(alertArmed.compareAndSet(true,false))DisconnectAlert.show(this,reason);}
@@ -14,7 +14,7 @@ public class CaptureService extends Service{
   if(intent==null){stopSelf();return START_NOT_STICKY;}
   if("stop".equals(intent.getAction())){alertArmed.set(false);capturing=false;finish=true;link.stop();status="Finalizando foto e fila…";return START_NOT_STICKY;}
   if(editThread!=null)return START_NOT_STICKY;
-  UsbDevice device=intent.getParcelableExtra("device");attached=device;String wifiHost=intent.getStringExtra("wifiHost");wifiNetwork=intent.getParcelableExtra("wifiNetwork");boolean hasCamera=device!=null||wifiHost!=null;if(hasCamera)link.connect();
+  UsbDevice device=intent.getParcelableExtra("device");attached=device;String wifiHost=intent.getStringExtra("wifiHost");wifiNetwork=intent.getParcelableExtra("wifiNetwork");boolean hasCamera=device!=null||wifiHost!=null;if(device!=null){String n=device.getProductName();cameraName=n==null||n.trim().isEmpty()?"Canon USB":n.trim();}else if(wifiHost!=null)cameraName="Canon Wi-Fi";if(hasCamera)link.connect();
   int type=hasCamera?ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE:0;
   if(Build.VERSION.SDK_INT>=35)type|=ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING;else type|=ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
   try{if(Build.VERSION.SDK_INT>=29)startForeground(1,notification(),type);else startForeground(1,notification());}catch(Exception e){status="Não foi possível iniciar serviço: "+e.getMessage();link.fail(status);getSharedPreferences("hisho",0).edit().putString("lastStatus",status).apply();stopSelf();return START_NOT_STICKY;}
@@ -87,13 +87,14 @@ public class CaptureService extends Service{
     try{
      jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);
      PhotoEditor.edit(new File(item[1]),output,cfg);
-     boolean curate=cfg.optBoolean("curation",true);Curator.Result quality=null;
-     if(curate){try{quality=Curator.analyze(output,cfg.optInt("curationSensitivity",1));}catch(Exception e){quality=new Curator.Result(true,"Sob revisão: falha na análise técnica · "+e.getMessage(),0,0,0,0,0);}}
-     if(quality!=null&&quality.review){
-      Uri uri=jobs.save(output,"Sob Revisao",item[2].replace(".jpg","_REVISAO.jpg"),item[0],"edited");jobs.set(item[0],"review","error",quality.reason);new File(item[1]).delete();reviewed++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).apply();
+     boolean curate=cfg.optBoolean("curation",true);Curator.Result quality;
+     try{quality=Curator.analyze(output,cfg.optInt("curationSensitivity",1));}catch(Exception e){quality=new Curator.Result(true,"Falha na análise técnica · "+e.getMessage(),0,0,0,0,0,1);}
+     // O score técnico é calculado sempre. A opção Curadoria controla apenas o bloqueio para Review.
+     if(curate&&quality.review){
+      jobs.setQuality(item[0],quality.score,quality.reason);Uri uri=jobs.save(output,"Sob Revisao",item[2].replace(".jpg","_REVISAO.jpg"),item[0],"edited");jobs.set(item[0],"review","error",quality.reason);new File(item[1]).delete();reviewed++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).apply();
       log("CURADORIA · SOB REVISÃO · "+item[2]+" · "+quality.reason+" · upload bloqueado");continue;
      }
-     Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).apply();FottoSync.kick(this);String q=quality==null?"curadoria desligada":quality.reason;log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s · "+q+" · "+jobs.pending()+" pendentes");
+     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: score informativo");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).apply();FottoSync.kick(this);log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s · score "+quality.score+"/10 · "+jobs.pending()+" pendentes");
     }catch(Exception|OutOfMemoryError e){jobs.set(item[0],"error","error",e.toString());log("Falha na edição; original preservado: "+e.getMessage());}
     finally{output.delete();}
    }
