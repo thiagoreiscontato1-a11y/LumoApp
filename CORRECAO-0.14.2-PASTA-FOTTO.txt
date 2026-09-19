@@ -1,0 +1,19 @@
+Lumo 0.14.2 — seletor de pasta do Fotto
+
+Problema:
+O Android WebView não implementa de forma confiável window.showDirectoryPicker(), usado por páginas que fazem monitoramento contínuo de diretório.
+
+Correção:
+- O Lumo injeta uma implementação própria de showDirectoryPicker.
+- Ao Fotto pedir uma pasta, abre ACTION_OPEN_DOCUMENT_TREE do Android.
+- A permissão da pasta é persistida.
+- A pasta é exposta ao JavaScript do Fotto como FileSystemDirectoryHandle compatível com:
+  values(), entries(), keys(), getFileHandle(), queryPermission(), requestPermission().
+- Os arquivos são entregues à página por uma URL interna lumo.local sem copiar o JPEG inteiro para Base64.
+- O conteúdo da pasta é consultado novamente a cada iteração, permitindo que fotos novas apareçam durante o monitoramento.
+- Há também um botão nativo “Pasta” no cabeçalho como alternativa para selecionar/trocar Editadas.
+- O monitor de Carregados / Na fila / Erros / Ignorados continua ativo.
+
+Observação:
+Essa camada reproduz a parte do File System Access API necessária para leitura/monitoramento de arquivos.
+O comportamento final ainda depende de como o JavaScript atual do Fotto consome o DirectoryHandle, então deve ser validado no aparelho.
