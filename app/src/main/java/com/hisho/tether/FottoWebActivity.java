@@ -42,7 +42,9 @@ public class FottoWebActivity extends Activity {
   getWindow().getDecorView().setSystemUiVisibility(dark?0:View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
   int bg=dark?0xff0d1015:0xfff6f8fb, card=dark?0xff151a21:Color.WHITE, text=dark?0xfff1f4f8:0xff111827, muted=dark?0xff97a2b1:0xff6b7280;
 
-  String savedTree=getSharedPreferences("hisho",0).getString("fottoTreeUri","");
+  android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
+  String savedTree=prefs.getString("fottoTreeUri","");
+  if(savedTree.isEmpty())savedTree=prefs.getString("exportTreeUri","");
   if(!savedTree.isEmpty())try{selectedTree=Uri.parse(savedTree);}catch(Exception ignored){}
 
   LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(bg);
@@ -71,7 +73,11 @@ public class FottoWebActivity extends Activity {
   web.loadUrl(last);
  }
 
- String folderLabel(){return selectedTree==null?"Origem do monitoramento: ainda não selecionada":"Origem: "+treeName()+" · espelho nativo: Editadas";}
+ String folderLabel(){
+  if(selectedTree==null)return "Origem do monitoramento: ainda não selecionada";
+  Uri edited=editedDirectoryUri();
+  return edited==null?"Origem: "+treeName()+" · /Editadas não encontrada":"Origem: "+treeName()+"/Editadas · enviada ao Fotto: Editadas";
+ }
 
  void setupWeb(){
   WebSettings s=web.getSettings();
@@ -79,7 +85,7 @@ public class FottoWebActivity extends Activity {
   s.setJavaScriptCanOpenWindowsAutomatically(true);s.setSupportMultipleWindows(false);
   s.setLoadsImagesAutomatically(true);s.setBuiltInZoomControls(true);s.setDisplayZoomControls(false);
   s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setAllowContentAccess(true);s.setAllowFileAccess(true);
-  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.7");
+  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.9");
   CookieManager cm=CookieManager.getInstance();cm.setAcceptCookie(true);cm.setAcceptThirdPartyCookies(web,true);
 
   web.addJavascriptInterface(new Bridge(),"LumoFotto");
@@ -153,14 +159,21 @@ public class FottoWebActivity extends Activity {
     Uri tree=data.getData();
     try{
      int flags=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-     getContentResolver().takePersistableUriPermission(tree,flags&Intent.FLAG_GRANT_READ_URI_PERMISSION);
+     getContentResolver().takePersistableUriPermission(tree,flags);
     }catch(Exception ignored){}
     selectedTree=tree;
     getSharedPreferences("hisho",0).edit().putString("fottoTreeUri",tree.toString()).apply();
+    Uri edited=editedDirectoryUri();
     folderStatus.setText(folderLabel());
-    status.setText("Pasta selecionada · preparando cópia nativa para o Fotto…");
-    injectFolderPolyfill();
-    handler.postDelayed(()->completeFolderPick(true),120);
+    if(edited==null){
+     status.setText("Não encontrei /Editadas dentro da pasta selecionada.");
+     Toast.makeText(this,"Selecione a pasta raiz do Lumo ou a própria pasta Editadas.",Toast.LENGTH_LONG).show();
+     completeFolderPick(false);
+    }else{
+     status.setText("/Editadas encontrada · preparando para o Fotto…");
+     injectFolderPolyfill();
+     handler.postDelayed(()->completeFolderPick(true),120);
+    }
    }else completeFolderPick(false);
    return;
   }
@@ -191,14 +204,59 @@ public class FottoWebActivity extends Activity {
   }catch(Exception e){return "Selecionada";}
  }
 
- JSONArray filesJson(){
-  JSONArray arr=new JSONArray();
-  if(selectedTree==null)return arr;
+ Uri editedDirectoryUri(){
+  if(selectedTree==null)return null;
   Cursor c=null;
   try{
-   String parent=DocumentsContract.getTreeDocumentId(selectedTree);
+   ContentResolver r=getContentResolver();
+   String rootId=DocumentsContract.getTreeDocumentId(selectedTree);
+   Uri rootDoc=DocumentsContract.buildDocumentUriUsingTree(selectedTree,rootId);
+
+   String directName=documentDisplayName(rootDoc);
+   if("Editadas".equalsIgnoreCase(directName)||"Editadas".equalsIgnoreCase(treeName()))return rootDoc;
+
+   Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(selectedTree,rootId);
+   c=r.query(children,new String[]{
+    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+    DocumentsContract.Document.COLUMN_MIME_TYPE
+   },null,null,null);
+   if(c!=null)while(c.moveToNext()){
+    String id=c.getString(0),name=c.getString(1),mime=c.getString(2);
+    if(DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)&&"Editadas".equalsIgnoreCase(name)){
+     return DocumentsContract.buildDocumentUriUsingTree(selectedTree,id);
+    }
+   }
+  }catch(Exception ignored){}finally{if(c!=null)c.close();}
+  return null;
+ }
+
+ String documentDisplayName(Uri doc){
+  Cursor c=null;
+  try{
+   c=getContentResolver().query(doc,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null);
+   if(c!=null&&c.moveToFirst())return c.getString(0);
+  }catch(Exception ignored){}finally{if(c!=null)c.close();}
+  return "";
+ }
+
+ String effectiveFolderName(){return editedDirectoryUri()==null?"":"Editadas";}
+
+ JSONArray filesJson(){
+  JSONArray arr=new JSONArray();
+  Uri edited=editedDirectoryUri();
+  if(selectedTree==null||edited==null)return arr;
+  Cursor c=null;
+  try{
+   String parent=DocumentsContract.getDocumentId(edited);
    Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(selectedTree,parent);
-   String[] projection={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_SIZE,DocumentsContract.Document.COLUMN_LAST_MODIFIED};
+   String[] projection={
+    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+    DocumentsContract.Document.COLUMN_MIME_TYPE,
+    DocumentsContract.Document.COLUMN_SIZE,
+    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+   };
    c=getContentResolver().query(children,projection,null,null,null);
    if(c!=null)while(c.moveToNext()){
     String id=c.getString(0),name=c.getString(1),mime=c.getString(2);
@@ -207,12 +265,17 @@ public class FottoWebActivity extends Activity {
     Uri doc=DocumentsContract.buildDocumentUriUsingTree(selectedTree,id);
     String token=Integer.toHexString(doc.toString().hashCode())+"_"+Long.toHexString(size)+"_"+Long.toHexString(modified);
     fileTokens.put(token,doc);
-    JSONObject o=new JSONObject();o.put("name",name==null?"foto.jpg":name);o.put("size",size);o.put("lastModified",modified);o.put("type",mime==null?"image/jpeg":mime);o.put("url","https://lumo.local/file/"+token);arr.put(o);
+    JSONObject o=new JSONObject();
+    o.put("name",name==null?"foto.jpg":name);
+    o.put("size",size);
+    o.put("lastModified",modified);
+    o.put("type",mime==null?"image/jpeg":mime);
+    o.put("url","https://lumo.local/file/"+token);
+    arr.put(o);
    }
   }catch(Exception ignored){}finally{if(c!=null)c.close();}
   return arr;
  }
-
  void injectFolderPolyfill(){
   if(web==null)return;
   String js=
@@ -242,7 +305,7 @@ public class FottoWebActivity extends Activity {
    " }"+
    " try{for await(var pair of dir.entries()){var n=pair[0];if(!names[n]){try{await dir.removeEntry(n);}catch(e){}}}}catch(e){}"+
    " try{localStorage.setItem('__lumo_opfs_manifest_v144',JSON.stringify(next));}catch(e){}"+
-   " log('Pasta pronta · '+files.length+' foto(s) · '+copied+' atualizada(s)');"+
+   " log('/Editadas pronta · '+files.length+' foto(s) · '+copied+' atualizada(s)');"+
    " return dir;"+
    "}"+
    "async function prepare(){var d=await nativeDir();return await syncToNative(d);}"+
@@ -258,7 +321,7 @@ public class FottoWebActivity extends Activity {
    " return new Promise(async function(resolve,reject){"+
    "  try{"+
    "   if(LumoFolder.hasFolder()){var d=await prepare();log('Usando pasta Editadas pelo armazenamento nativo do WebView');resolve(d);return;}"+
-   "   resolvePick=resolve;rejectPick=reject;log('Escolha a pasta Editadas');LumoFolder.chooseFolder();"+
+   "   resolvePick=resolve;rejectPick=reject;log('Escolha a raiz do Lumo ou a própria pasta Editadas');LumoFolder.chooseFolder();"+
    "  }catch(e){log('Erro preparando seletor: '+e);reject(e);}"+
    " });"+
    "};"+
@@ -302,8 +365,8 @@ public class FottoWebActivity extends Activity {
  class FolderBridge{
   @JavascriptInterface public void chooseFolder(){runOnUiThread(()->chooseTree());}
   @JavascriptInterface public String listFiles(){return filesJson().toString();}
-  @JavascriptInterface public String folderName(){return treeName();}
-  @JavascriptInterface public boolean hasFolder(){return selectedTree!=null;}
+  @JavascriptInterface public String folderName(){return effectiveFolderName();}
+  @JavascriptInterface public boolean hasFolder(){return editedDirectoryUri()!=null;}
   @JavascriptInterface public void debug(String msg){runOnUiThread(()->{if(msg!=null&&!msg.trim().isEmpty()){status.setText(msg);getSharedPreferences("hisho",0).edit().putString("fottoFolderDebug",msg).apply();}});}
  }
 

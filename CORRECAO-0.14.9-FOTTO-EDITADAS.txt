@@ -1,0 +1,20 @@
+Lumo 0.14.9 — Fotto recebe somente /Editadas
+
+Problema identificado:
+FottoWebActivity salvava a pasta raiz escolhida (ex.: LUMO) e filesJson() enumerava diretamente essa raiz.
+Como a raiz contém Originais, Editadas e Sob Revisão, o conteúdo monitorado não correspondia à pasta Editadas.
+
+Correção:
+- A pasta escolhida continua podendo ser a raiz do Lumo.
+- O Lumo resolve automaticamente a subpasta /Editadas.
+- Se o usuário escolher a própria Editadas, ela também é aceita.
+- filesJson() agora enumera exclusivamente os arquivos de /Editadas.
+- FolderBridge informa ao Fotto o nome "Editadas".
+- hasFolder() só retorna verdadeiro se /Editadas realmente puder ser acessada.
+- O cabeçalho mostra explicitamente "Origem: <raiz>/Editadas · enviada ao Fotto: Editadas".
+- Se /Editadas não existir, o Fotto não inicia e o Lumo avisa o usuário.
+- Mantidos OPFS, monitoramento em segundo plano, contadores e opção de limpar Editadas.
+
+Resultado esperado:
+Apenas fotos presentes em /Editadas entram no espelho OPFS e ficam disponíveis para o monitoramento do Fotto.
+Originais e Sob Revisão não são enviados.
