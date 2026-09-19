@@ -1,0 +1,18 @@
+Lumo 0.14.7 — correção de compilação
+
+Erro confirmado no GitHub Actions:
+FottoWebActivity.java: variable ignored is already defined in method onState(String)
+
+Causa:
+Dentro de onState existia:
+- int ignored = contador de arquivos ignorados
+- catch(Exception ignored) = nome da variável de exceção
+
+O Java não permite essa colisão de nome no mesmo escopo/lambda.
+
+Correção:
+- contador renomeado para ignoredCount
+- referências atualizadas no SharedPreferences e na interface
+- integração Fotto em segundo plano mantida
+- OPFS e monitoramento da pasta mantidos
+- workflow atualizado para Compilar Lumo 0.14.7

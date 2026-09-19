@@ -79,7 +79,7 @@ public class FottoWebActivity extends Activity {
   s.setJavaScriptCanOpenWindowsAutomatically(true);s.setSupportMultipleWindows(false);
   s.setLoadsImagesAutomatically(true);s.setBuiltInZoomControls(true);s.setDisplayZoomControls(false);
   s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setAllowContentAccess(true);s.setAllowFileAccess(true);
-  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.6");
+  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.7");
   CookieManager cm=CookieManager.getInstance();cm.setAcceptCookie(true);cm.setAcceptThirdPartyCookies(web,true);
 
   web.addJavascriptInterface(new Bridge(),"LumoFotto");
@@ -313,12 +313,12 @@ public class FottoWebActivity extends Activity {
     try{
      JSONObject o=new JSONObject(raw);
      boolean active=o.optBoolean("active",false),paused=o.optBoolean("paused",false);
-     int loaded=o.optInt("loaded",-1),queue=o.optInt("queue",-1),errors=o.optInt("errors",-1),ignored=o.optInt("ignored",-1);
+     int loaded=o.optInt("loaded",-1),queue=o.optInt("queue",-1),errors=o.optInt("errors",-1),ignoredCount=o.optInt("ignored",-1);
      String folder=o.optString("folder",""),eventId=o.optString("eventId",""),activeFor=o.optString("activeFor",""),activity=o.optString("activity",""),url=o.optString("url",""),pageTitle=o.optString("title","");
      long now=System.currentTimeMillis();
      android.content.SharedPreferences p=getSharedPreferences("hisho",0);
      p.edit().putBoolean("fottoWebActive",active).putBoolean("fottoWebPaused",paused)
-      .putInt("fottoWebLoaded",loaded).putInt("fottoWebQueue",queue).putInt("fottoWebErrors",errors).putInt("fottoWebIgnored",ignored)
+      .putInt("fottoWebLoaded",loaded).putInt("fottoWebQueue",queue).putInt("fottoWebErrors",errors).putInt("fottoWebIgnored",ignoredCount)
       .putString("fottoWebFolder",folder).putString("fottoWebEventId",eventId).putString("fottoWebUrl",url)
       .putString("fottoWebTitle",pageTitle).putString("fottoWebActiveFor",activeFor).putString("fottoWebLastActivity",activity).putLong("fottoWebUpdatedAt",now).apply();
      if(active){
@@ -330,7 +330,7 @@ public class FottoWebActivity extends Activity {
       }
      }else if(paused)status.setText("Monitoramento pausado");
      else status.setText(selectedTree==null?"Selecione a pasta Editadas no botão Pasta":"Pasta pronta · inicie o monitoramento no Fotto");
-     counters.setText("Carregados "+v(loaded)+"   ·   Na fila "+v(queue)+"   ·   Erros "+v(errors)+(ignored>=0?"   ·   Ignorados "+ignored:""));
+     counters.setText("Carregados "+v(loaded)+"   ·   Na fila "+v(queue)+"   ·   Erros "+v(errors)+(ignoredCount>=0?"   ·   Ignorados "+ignoredCount:""));
      if(errors>0&&errors!=lastErrors)EventAlert.signal(FottoWebActivity.this,"fotto_web","O Fotto registrou "+errors+" arquivo(s) com erro.");
      lastErrors=errors;lastActiveState=active;
     }catch(Exception stateError){}
