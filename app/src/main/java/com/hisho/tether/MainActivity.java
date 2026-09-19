@@ -22,7 +22,7 @@ public class MainActivity extends Activity {
  int BG,CARD,CARD2,LINE,TEXT,MUTED,GREEN,CYAN,SUCCESS,WARN,DANGER,DARK;
  boolean darkMode;
 
- private TextView flowStatus,badge,status,timing,previewTitle,previewSub,galleryInfo,gallerySelectionLabel,reviewHeading;
+ private TextView flowStatus,badge,status,timing,previewTitle,previewSub,galleryInfo,gallerySelectionLabel,reviewHeading,fottoLiveStatus;
  private TextView folderLabel,fottoStatus,fottoEventLabel,fottoUploadStatus,fottoProblems;
  private Button connect,resume,settingsButton,themeButton,folderButton,fottoMenu,fottoSend,healthButton,eventModeButton,presetQuick;
  private boolean openEventChooserAfterLoad=false;
@@ -173,6 +173,7 @@ public class MainActivity extends Activity {
 
   gap(p,8);filmScroll=new HorizontalScrollView(MainActivity.this);filmScroll.setHorizontalScrollBarEnabled(false);filmStrip=row();filmScroll.addView(filmStrip);p.addView(filmScroll,new LinearLayout.LayoutParams(-1,dp(76)));
   LinearLayout filmNav=row();previousPhoto=miniNav("‹",v->movePhoto(-1));filmNav.addView(previousPhoto,new LinearLayout.LayoutParams(dp(38),dp(34)));livePhoto=miniNav("● Novas",v->{gallery.followLatest();showSelection(true);});LinearLayout.LayoutParams liveLp=new LinearLayout.LayoutParams(0,dp(34),1);liveLp.setMargins(dp(5),0,dp(5),0);filmNav.addView(livePhoto,liveLp);nextPhoto=miniNav("›",v->movePhoto(1));filmNav.addView(nextPhoto,new LinearLayout.LayoutParams(dp(38),dp(34)));p.addView(filmNav);galleryInfo=label(p,"As fotos recentes aparecem aqui.",11);
+  gap(p,7);fottoLiveStatus=text("Fotto • monitoramento ainda não iniciado",11,MUTED,true);fottoLiveStatus.setPadding(dp(10),dp(8),dp(10),dp(8));fottoLiveStatus.setBackground(border(CARD2,12));fottoLiveStatus.setMaxLines(3);p.addView(fottoLiveStatus);
 
   gap(p,8);status=text("Pronto para conectar.",12,TEXT,true);p.addView(status);timing=label(p,"Original preservado · edição e curadoria em segundo plano",11);
   resume=compactButton("Retomar edições pendentes",v->start(null));resume.setVisibility(View.GONE);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(42));rp.topMargin=dp(7);p.addView(resume,rp);
@@ -197,23 +198,38 @@ public class MainActivity extends Activity {
   LinearLayout head=row();fottoStatus=text("Fotto Web • Aguardando",18,TEXT,true);head.addView(fottoStatus,new LinearLayout.LayoutParams(0,-2,1));
   fottoMenu=compactButton("Abrir",v->openFottoWeb());primary(fottoMenu);head.addView(fottoMenu,new LinearLayout.LayoutParams(dp(94),dp(40)));sync.addView(head);
   gap(sync,6);fottoEventLabel=label(sync,"Evento: abra o painel Fotto",13);gap(sync,4);fottoUploadStatus=label(sync,"Carregados — · Na fila — · Erros — · Ignorados —",13);gap(sync,8);
-  label(sync,"No Fotto: abra o evento → Monitoramento de pasta → selecione Editadas → Iniciar. Depois o Lumo passa a refletir os números mostrados pelo próprio Fotto.",11);
-  gap(sync,10);Button web=compactButton("Abrir painel do Fotto",v->openFottoWeb());primary(web);sync.addView(web,new LinearLayout.LayoutParams(-1,dp(44)));
+  label(sync,"No Fotto: abra o evento → Monitoramento de pasta → selecione Editadas → Iniciar. Quando ficar Ativo, o Lumo volta automaticamente e continua acompanhando o evento.",11);
+  gap(sync,10);Button web=compactButton("Abrir / acompanhar Fotto",v->openFottoWeb());primary(web);sync.addView(web,new LinearLayout.LayoutParams(-1,dp(44)));
   gap(p,10);fottoProblems=text("",12,DANGER,false);fottoProblems.setPadding(dp(12),dp(10),dp(12),dp(10));fottoProblems.setBackground(border(darkMode?0xff2a1717:0xfffff6f6,12));fottoProblems.setVisibility(View.GONE);p.addView(fottoProblems);
   gap(p,10);LinearLayout storage=panel(p);LinearLayout sr=row();LinearLayout st=vertical();st.addView(text("Pasta produzida pelo Lumo",14,TEXT,true));folderLabel=text("",12,MUTED,false);st.addView(folderLabel);sr.addView(st,new LinearLayout.LayoutParams(0,-2,1));folderButton=compactButton("Alterar",v->chooseExportFolder());sr.addView(folderButton,new LinearLayout.LayoutParams(dp(92),dp(38)));storage.addView(sr);updateExportFolder();
   updateFottoStatus();
  }
 
- void openFottoWeb(){startActivity(new Intent(MainActivity.this,FottoWebActivity.class));}
+ void openFottoWeb(){Intent i=new Intent(MainActivity.this,FottoWebActivity.class).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP);startActivity(i);}
 
  void updateGlobalStatus(){
   if(flowStatus==null)return;CaptureService c=CaptureService.active;android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
   String cam=c==null?"Canon":c.cameraName,conn=c==null?"Sem câmera":c.connectionLabel();int battery=-1;try{battery=((BatteryManager)getSystemService(BATTERY_SERVICE)).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);}catch(Exception ignored){}
   long freeBytes=Math.max(0,getFilesDir().getUsableSpace()),gb=freeBytes/(1024L*1024L*1024L);int transfer=c==null?prefs.getInt("lastReceived",0):c.received,editing=database.processingCount();
-  int sent=prefs.getInt("fottoWebLoaded",-1),webErrors=prefs.getInt("fottoWebErrors",-1);boolean webActive=prefs.getBoolean("fottoWebActive",false);long webAge=System.currentTimeMillis()-prefs.getLong("fottoWebUpdatedAt",0);
-  String b=battery<0?"—":battery+"%";boolean lowBattery=battery>=0&&battery<=20,lowSpace=freeBytes>0&&freeBytes<1024L*1024L*1024L,webStale=webActive&&webAge>15000;
+  int sent=prefs.getInt("fottoWebLoaded",-1),webQueue=prefs.getInt("fottoWebQueue",-1),webErrors=prefs.getInt("fottoWebErrors",-1),ignored=prefs.getInt("fottoWebIgnored",-1);
+  boolean webActive=prefs.getBoolean("fottoWebActive",false),webPaused=prefs.getBoolean("fottoWebPaused",false),webBackground=prefs.getBoolean("fottoWebBackground",false),hostAlive=prefs.getBoolean("fottoWebHostAlive",false);
+  long updated=prefs.getLong("fottoWebUpdatedAt",0),webAge=updated<=0?Long.MAX_VALUE:System.currentTimeMillis()-updated;
+  String eventId=prefs.getString("fottoWebEventId",""),activeFor=prefs.getString("fottoWebActiveFor",""),lastActivity=prefs.getString("fottoWebLastActivity","");
+  String b=battery<0?"—":battery+"%";boolean lowBattery=battery>=0&&battery<=20,lowSpace=freeBytes>0&&freeBytes<1024L*1024L*1024L,webStale=webActive&&webAge>20000;
   flowStatus.setText(cam+" • "+conn+"   |   bateria "+b+" · "+gb+" GB   |   ↓ "+transfer+"   ✦ "+editing+"   ✓ "+(sent<0?"—":sent));
   flowStatus.setTextColor(lowBattery||lowSpace||webErrors>0||webStale?WARN:MUTED);
+
+  if(fottoLiveStatus!=null){
+   String state=webActive?"ATIVO":webPaused?"PAUSADO":updated>0?"PARADO":"NÃO INICIADO";
+   if(webStale)state="SEM ATUALIZAÇÃO";
+   String where=webBackground&&hostAlive?" · em segundo plano":hostAlive?" · painel aberto":"";
+   String line1="Fotto • "+state+(eventId.isEmpty()?"":" · evento "+eventId)+(activeFor.isEmpty()?"":" · "+activeFor)+where;
+   String line2="Carregadas "+num(sent)+" · na fila "+num(webQueue)+" · erros "+num(webErrors)+" · ignoradas "+num(ignored)+" · atualização "+age(updated);
+   if(!lastActivity.isEmpty()&&lastActivity.length()<150)line2+="\nÚltima atividade: "+lastActivity;
+   fottoLiveStatus.setText(line1+"\n"+line2);
+   fottoLiveStatus.setTextColor(webErrors>0||webStale?WARN:(webActive?SUCCESS:MUTED));
+  }
+
   if(prefs.getBoolean("eventMode",false)){if(lowBattery)EventAlert.signal(MainActivity.this,"bateria","Bateria em "+battery+"%. Conecte o carregador.");if(lowSpace)EventAlert.signal(MainActivity.this,"espaco","Menos de 1 GB livre. Libere armazenamento.");if(webErrors>0)EventAlert.signal(MainActivity.this,"fotto","O Fotto mostra "+webErrors+" arquivo(s) com erro.");}
   int reviews=database.reviewCount();if(tabs[2]!=null)tabs[2].setText(reviews>0?"Revisão ("+reviews+")":"Revisão");
  }
@@ -300,15 +316,19 @@ public class MainActivity extends Activity {
 
  void updateFottoStatus(){
   if(fottoStatus==null)return;android.content.SharedPreferences p=getSharedPreferences("hisho",0);
-  boolean active=p.getBoolean("fottoWebActive",false),paused=p.getBoolean("fottoWebPaused",false);int loaded=p.getInt("fottoWebLoaded",-1),queue=p.getInt("fottoWebQueue",-1),errors=p.getInt("fottoWebErrors",-1),ignored=p.getInt("fottoWebIgnored",-1);
-  long updated=p.getLong("fottoWebUpdatedAt",0),age=updated==0?Long.MAX_VALUE:System.currentTimeMillis()-updated;String folder=p.getString("fottoWebFolder",""),eventId=p.getString("fottoWebEventId","");
+  boolean active=p.getBoolean("fottoWebActive",false),paused=p.getBoolean("fottoWebPaused",false),background=p.getBoolean("fottoWebBackground",false),hostAlive=p.getBoolean("fottoWebHostAlive",false);
+  int loaded=p.getInt("fottoWebLoaded",-1),queue=p.getInt("fottoWebQueue",-1),errors=p.getInt("fottoWebErrors",-1),ignored=p.getInt("fottoWebIgnored",-1);
+  long updated=p.getLong("fottoWebUpdatedAt",0),ageMs=updated==0?Long.MAX_VALUE:System.currentTimeMillis()-updated;String folder=p.getString("fottoWebFolder",""),eventId=p.getString("fottoWebEventId",""),activeFor=p.getString("fottoWebActiveFor",""),lastActivity=p.getString("fottoWebLastActivity","");
   String state=active?"Ativo":paused?"Pausado":updated>0?"Sem monitoramento":"Aguardando abertura";
-  if(age>15000&&active)state="Sem atualização";
-  fottoStatus.setText("Fotto Web • "+state);fottoStatus.setTextColor(active&&age<=15000?SUCCESS:(errors>0?DANGER:MUTED));
-  fottoEventLabel.setText("Evento: "+(eventId.isEmpty()?"—":eventId)+(folder.isEmpty()?"":" · pasta "+folder));
-  fottoUploadStatus.setText("Carregados "+num(loaded)+" · Na fila "+num(queue)+" · Erros "+num(errors)+" · Ignorados "+num(ignored));
-  boolean failure=errors>0||age>30000&&active;fottoProblems.setVisibility(failure?View.VISIBLE:View.GONE);
-  if(failure)fottoProblems.setText(errors>0?"Problemas\nO próprio Fotto informa "+errors+" arquivo(s) com erro. Abra o painel para ver a atividade.":"Problemas\nO painel do Fotto parou de atualizar. Abra novamente para conferir o monitoramento.");
+  if(ageMs>20000&&active)state="Sem atualização";
+  String host=background&&hostAlive?" · segundo plano":hostAlive?" · painel aberto":"";
+  fottoStatus.setText("Fotto • "+state+host);fottoStatus.setTextColor(active&&ageMs<=20000?SUCCESS:(errors>0||ageMs>20000&&active?WARN:MUTED));
+  fottoEventLabel.setText("Evento: "+(eventId.isEmpty()?"—":eventId)+(folder.isEmpty()?"":" · pasta "+folder)+(activeFor.isEmpty()?"":" · ativo "+activeFor));
+  String detail="Carregadas "+num(loaded)+" · Na fila "+num(queue)+" · Erros "+num(errors)+" · Ignoradas "+num(ignored)+" · atualização "+age(updated);
+  if(!lastActivity.isEmpty()&&lastActivity.length()<180)detail+="\nÚltima atividade do Fotto: "+lastActivity;
+  fottoUploadStatus.setText(detail);
+  boolean failure=errors>0||ageMs>30000&&active;fottoProblems.setVisibility(failure?View.VISIBLE:View.GONE);
+  if(failure)fottoProblems.setText(errors>0?"Problemas\nO próprio Fotto informa "+errors+" arquivo(s) com erro. Abra o painel para ver a atividade.":"Problemas\nO monitor do Fotto parou de atualizar. Toque em Abrir / acompanhar Fotto para reativar o painel.");
  }
  String num(int n){return n<0?"—":String.valueOf(n);}
 

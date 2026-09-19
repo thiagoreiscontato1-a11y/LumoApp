@@ -19,6 +19,7 @@
   <activity android:name=".ManualEditorActivity" android:exported="false"/>
   <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
   <service android:name=".CaptureService" android:exported="false" android:foregroundServiceType="connectedDevice|mediaProcessing|dataSync"/>
+  <service android:name=".FottoKeepAliveService" android:exported="false" android:foregroundServiceType="dataSync"/>
   <service android:name=".SyncJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false"/>
   <receiver android:name=".RecoveryReceiver" android:exported="false">
    <intent-filter>

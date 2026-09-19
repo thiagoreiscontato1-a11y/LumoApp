@@ -1,0 +1,18 @@
+Lumo 0.14.5 — monitoramento Fotto em segundo plano
+
+- Quando o Fotto passa para "Monitoramento ativo", o Lumo aguarda ~1,2 s e volta automaticamente à tela principal.
+- A FottoWebActivity NÃO é finalizada. Ela permanece no back stack com o mesmo WebView e a mesma sessão.
+- O botão "← Lumo" também retorna sem destruir o WebView.
+- Ao abrir o Fotto novamente, FLAG_ACTIVITY_REORDER_TO_FRONT traz a mesma instância de volta.
+- Enquanto o monitor está ativo, FottoKeepAliveService mantém o processo/CPU vivo e exibe uma notificação persistente.
+- O WebView não recebe pauseTimers; onPause/onStop chamam resumeTimers para preservar o JavaScript.
+- A tela Captura ganhou um painel Fotto com:
+  estado, evento, tempo ativo, carregadas, fila, erros, ignoradas, última atualização e última atividade.
+- A aba Entrega mostra o mesmo acompanhamento e indica se o painel está aberto ou rodando em segundo plano.
+- Se ficar mais de 20 s sem atualização, o Lumo troca o estado para "SEM ATUALIZAÇÃO".
+- O serviço de keep-alive se encerra sozinho após período prolongado sem atividade.
+
+Limitação técnica:
+Android/WebView pode impor throttling quando a Activity fica fora da tela. O Lumo mantém o mesmo WebView vivo,
+o processo em foreground service e detecta quando as leituras ficam obsoletas. Se o sistema ainda suspender
+o JavaScript, o painel mostra "SEM ATUALIZAÇÃO" em vez de fingir que o monitor continua funcionando.

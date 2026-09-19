@@ -26,6 +26,7 @@ public class FottoWebActivity extends Activity {
  boolean destroyed=false;
  ValueCallback<Uri[]> fileCallback;
  int lastErrors=-1;
+ boolean lastActiveState=false,autoReturned=false,returningToLumo=false,keepAliveStarted=false;
  Uri selectedTree;
  final Map<String,Uri> fileTokens=new ConcurrentHashMap<>();
 
@@ -48,7 +49,7 @@ public class FottoWebActivity extends Activity {
 
   LinearLayout header=new LinearLayout(this);header.setOrientation(LinearLayout.VERTICAL);header.setPadding(dp(14),dp(8),dp(14),dp(8));header.setBackgroundColor(card);
   LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
-  Button close=btn("← Lumo");close.setTextColor(0xff0b7cff);close.setBackgroundColor(Color.TRANSPARENT);close.setOnClickListener(v->finish());
+  Button close=btn("← Lumo");close.setTextColor(0xff0b7cff);close.setBackgroundColor(Color.TRANSPARENT);close.setOnClickListener(v->returnToLumo());
   top.addView(close,new LinearLayout.LayoutParams(dp(82),dp(40)));
   LinearLayout names=new LinearLayout(this);names.setOrientation(LinearLayout.VERTICAL);
   title=tv("Fotto",17,text,true);status=tv("Abrindo painel…",11,muted,false);names.addView(title);names.addView(status);top.addView(names,new LinearLayout.LayoutParams(0,-2,1));
@@ -78,7 +79,7 @@ public class FottoWebActivity extends Activity {
   s.setJavaScriptCanOpenWindowsAutomatically(true);s.setSupportMultipleWindows(false);
   s.setLoadsImagesAutomatically(true);s.setBuiltInZoomControls(true);s.setDisplayZoomControls(false);
   s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setAllowContentAccess(true);s.setAllowFileAccess(true);
-  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.4");
+  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.5");
   CookieManager cm=CookieManager.getInstance();cm.setAcceptCookie(true);cm.setAcceptThirdPartyCookies(web,true);
 
   web.addJavascriptInterface(new Bridge(),"LumoFotto");
@@ -284,9 +285,11 @@ public class FottoWebActivity extends Activity {
    "var loaded=pick(txt,'CARREGADOS');var queue=pick(txt,'NA FILA');var errors=pick(txt,'COM ERRO');var ignored=pick(txt,'IGNORADOS');"+
    "var active=/Monitoramento de pasta/i.test(txt)&&(/Ativo há/i.test(txt)||/Pausar/i.test(txt)||/Parar/i.test(txt));"+
    "var paused=/Monitoramento de pasta/i.test(txt)&&/Retomar/i.test(txt);"+
+   "var activeFor='';var am=raw.match(/Ativo há\\s*([^\\n]+)/i);if(am)activeFor=n(am[1]);"+
    "var folder='';var fm=raw.match(/Ativo há[^\\n]*\\n\\s*([^\\n]+?)\\s*(?:\\n|Trocar)/i);if(fm)folder=n(fm[1]);"+
    "var em=location.pathname.match(/\\/events\\/([^\\/]+)\\/medias/i);var eventId=em?em[1]:'';"+
-   "var o={active:active,paused:paused,loaded:loaded,queue:queue,errors:errors,ignored:ignored,folder:folder,eventId:eventId,url:location.href,title:document.title};"+
+   "var activity='';var trs=document.querySelectorAll('tr');for(var ti=trs.length-1;ti>=0;ti--){var tt=n(trs[ti].innerText);if(tt&&tt.length<220&&!/ARQUIVO\\s+STATUS/i.test(tt)){activity=tt;break;}}"+
+   "var o={active:active,paused:paused,loaded:loaded,queue:queue,errors:errors,ignored:ignored,folder:folder,eventId:eventId,activeFor:activeFor,activity:activity,url:location.href,title:document.title};"+
    "LumoFotto.onState(JSON.stringify(o));"+
    "}catch(e){LumoFotto.onState(JSON.stringify({error:String(e),url:location.href}));}}"+
    "scan();window.__lumoObserver=new MutationObserver(function(){clearTimeout(window.__lumoTimer);window.__lumoTimer=setTimeout(scan,250);});"+
@@ -311,25 +314,65 @@ public class FottoWebActivity extends Activity {
      JSONObject o=new JSONObject(raw);
      boolean active=o.optBoolean("active",false),paused=o.optBoolean("paused",false);
      int loaded=o.optInt("loaded",-1),queue=o.optInt("queue",-1),errors=o.optInt("errors",-1),ignored=o.optInt("ignored",-1);
-     String folder=o.optString("folder",""),eventId=o.optString("eventId",""),url=o.optString("url",""),pageTitle=o.optString("title","");
+     String folder=o.optString("folder",""),eventId=o.optString("eventId",""),activeFor=o.optString("activeFor",""),activity=o.optString("activity",""),url=o.optString("url",""),pageTitle=o.optString("title","");
      long now=System.currentTimeMillis();
      android.content.SharedPreferences p=getSharedPreferences("hisho",0);
      p.edit().putBoolean("fottoWebActive",active).putBoolean("fottoWebPaused",paused)
       .putInt("fottoWebLoaded",loaded).putInt("fottoWebQueue",queue).putInt("fottoWebErrors",errors).putInt("fottoWebIgnored",ignored)
       .putString("fottoWebFolder",folder).putString("fottoWebEventId",eventId).putString("fottoWebUrl",url)
-      .putString("fottoWebTitle",pageTitle).putLong("fottoWebUpdatedAt",now).apply();
-     if(active)status.setText("Monitoramento ativo"+(folder.isEmpty()?"":" · "+folder));
-     else if(paused)status.setText("Monitoramento pausado");
+      .putString("fottoWebTitle",pageTitle).putString("fottoWebActiveFor",activeFor).putString("fottoWebLastActivity",activity).putLong("fottoWebUpdatedAt",now).apply();
+     if(active){
+      status.setText("Monitoramento ativo"+(activeFor.isEmpty()?"":" · "+activeFor)+" · pode voltar ao Lumo");
+      if(!keepAliveStarted){keepAliveStarted=true;try{startForegroundService(new Intent(FottoWebActivity.this,FottoKeepAliveService.class));}catch(Exception ignored){}}
+      if(!lastActiveState&&!autoReturned){
+       autoReturned=true;
+       handler.postDelayed(()->{if(!destroyed&&!isFinishing()){Toast.makeText(FottoWebActivity.this,"Monitoramento ativo. Voltando ao Lumo.",Toast.LENGTH_SHORT).show();returnToLumo();}},1200);
+      }
+     }else if(paused)status.setText("Monitoramento pausado");
      else status.setText(selectedTree==null?"Selecione a pasta Editadas no botão Pasta":"Pasta pronta · inicie o monitoramento no Fotto");
      counters.setText("Carregados "+v(loaded)+"   ·   Na fila "+v(queue)+"   ·   Erros "+v(errors)+(ignored>=0?"   ·   Ignorados "+ignored:""));
      if(errors>0&&errors!=lastErrors)EventAlert.signal(FottoWebActivity.this,"fotto_web","O Fotto registrou "+errors+" arquivo(s) com erro.");
-     lastErrors=errors;
+     lastErrors=errors;lastActiveState=active;
     }catch(Exception ignored){}
    });
   }
  }
 
  String v(int x){return x<0?"—":String.valueOf(x);}
- @Override public void onBackPressed(){if(web!=null&&web.canGoBack())web.goBack();else super.onBackPressed();}
- @Override protected void onDestroy(){destroyed=true;CookieManager.getInstance().flush();if(web!=null){web.stopLoading();web.removeJavascriptInterface("LumoFotto");web.removeJavascriptInterface("LumoFolder");web.destroy();web=null;}super.onDestroy();}
+
+ void returnToLumo(){
+  returningToLumo=true;
+  getSharedPreferences("hisho",0).edit().putBoolean("fottoWebBackground",true).putBoolean("fottoWebHostAlive",true).apply();
+  try{if(web!=null){web.resumeTimers();web.setNetworkAvailable(true);}}catch(Exception ignored){}
+  Intent i=new Intent(FottoWebActivity.this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+  startActivity(i);
+ }
+
+ @Override protected void onResume(){
+  super.onResume();
+  returningToLumo=false;
+  getSharedPreferences("hisho",0).edit().putBoolean("fottoWebBackground",false).putBoolean("fottoWebHostAlive",true).apply();
+  try{if(web!=null){web.resumeTimers();web.setNetworkAvailable(true);}}catch(Exception ignored){}
+ }
+
+ @Override protected void onPause(){
+  if(web!=null)try{web.resumeTimers();web.setNetworkAvailable(true);}catch(Exception ignored){}
+  if(!isFinishing())getSharedPreferences("hisho",0).edit().putBoolean("fottoWebBackground",true).putBoolean("fottoWebHostAlive",true).apply();
+  super.onPause();
+ }
+
+ @Override protected void onStop(){
+  if(web!=null)try{web.resumeTimers();}catch(Exception ignored){}
+  super.onStop();
+ }
+
+ @Override public void onBackPressed(){if(web!=null&&web.canGoBack()&&!getSharedPreferences("hisho",0).getBoolean("fottoWebActive",false))web.goBack();else returnToLumo();}
+
+ @Override protected void onDestroy(){
+  destroyed=true;
+  getSharedPreferences("hisho",0).edit().putBoolean("fottoWebHostAlive",false).apply();
+  CookieManager.getInstance().flush();
+  if(web!=null){web.stopLoading();web.removeJavascriptInterface("LumoFotto");web.removeJavascriptInterface("LumoFolder");web.destroy();web=null;}
+  super.onDestroy();
+ }
 }
