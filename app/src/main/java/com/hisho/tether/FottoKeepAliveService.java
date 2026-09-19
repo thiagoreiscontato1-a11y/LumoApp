@@ -53,7 +53,7 @@ public class FottoKeepAliveService extends Service {
   Intent open=new Intent(this,FottoWebActivity.class).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP);
   PendingIntent pi=PendingIntent.getActivity(this,44,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
   Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-  return b.setSmallIcon(R.drawable.ic_lumo).setContentTitle(title).setContentText(text).setContentIntent(pi).setOngoing(active).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_SERVICE).build();
+  return b.setSmallIcon(android.R.drawable.stat_sys_upload_done).setContentTitle(title).setContentText(text).setContentIntent(pi).setOngoing(active).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_SERVICE).build();
  }
 
  String n(int v){return v<0?"—":String.valueOf(v);}

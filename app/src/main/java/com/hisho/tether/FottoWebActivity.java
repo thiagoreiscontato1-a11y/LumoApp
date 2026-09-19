@@ -79,7 +79,7 @@ public class FottoWebActivity extends Activity {
   s.setJavaScriptCanOpenWindowsAutomatically(true);s.setSupportMultipleWindows(false);
   s.setLoadsImagesAutomatically(true);s.setBuiltInZoomControls(true);s.setDisplayZoomControls(false);
   s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setAllowContentAccess(true);s.setAllowFileAccess(true);
-  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.5");
+  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.6");
   CookieManager cm=CookieManager.getInstance();cm.setAcceptCookie(true);cm.setAcceptThirdPartyCookies(web,true);
 
   web.addJavascriptInterface(new Bridge(),"LumoFotto");
@@ -333,7 +333,7 @@ public class FottoWebActivity extends Activity {
      counters.setText("Carregados "+v(loaded)+"   ·   Na fila "+v(queue)+"   ·   Erros "+v(errors)+(ignored>=0?"   ·   Ignorados "+ignored:""));
      if(errors>0&&errors!=lastErrors)EventAlert.signal(FottoWebActivity.this,"fotto_web","O Fotto registrou "+errors+" arquivo(s) com erro.");
      lastErrors=errors;lastActiveState=active;
-    }catch(Exception ignored){}
+    }catch(Exception stateError){}
    });
   }
  }

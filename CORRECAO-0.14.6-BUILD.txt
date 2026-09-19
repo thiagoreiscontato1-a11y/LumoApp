@@ -1,0 +1,7 @@
+Lumo 0.14.6 — correção de compilação
+
+Erros corrigidos:
+1. FottoWebActivity: a variável inteira `ignored` usada para o contador de ignorados entrava em conflito com variáveis de catch chamadas `ignored` no mesmo método. Os catches agora usam nomes diferentes.
+2. FottoKeepAliveService: o build customizado compila Java antes de gerar a classe R do aplicativo, então `R.drawable.ic_lumo` não existe durante javac. A notificação agora usa `android.R.drawable.stat_sys_upload_done`, disponível no android.jar.
+
+Mantém as funções da 0.14.5: Fotto em segundo plano, retorno automático ao Lumo, painel de acompanhamento e keep-alive.
