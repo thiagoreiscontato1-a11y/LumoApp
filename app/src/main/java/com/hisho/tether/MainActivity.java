@@ -201,7 +201,9 @@ public class MainActivity extends Activity {
   label(sync,"No Fotto: abra o evento → Monitoramento de pasta → selecione Editadas → Iniciar. Quando ficar Ativo, o Lumo volta automaticamente e continua acompanhando o evento.",11);
   gap(sync,10);Button web=compactButton("Abrir / acompanhar Fotto",v->openFottoWeb());primary(web);sync.addView(web,new LinearLayout.LayoutParams(-1,dp(44)));
   gap(p,10);fottoProblems=text("",12,DANGER,false);fottoProblems.setPadding(dp(12),dp(10),dp(12),dp(10));fottoProblems.setBackground(border(darkMode?0xff2a1717:0xfffff6f6,12));fottoProblems.setVisibility(View.GONE);p.addView(fottoProblems);
-  gap(p,10);LinearLayout storage=panel(p);LinearLayout sr=row();LinearLayout st=vertical();st.addView(text("Pasta produzida pelo Lumo",14,TEXT,true));folderLabel=text("",12,MUTED,false);st.addView(folderLabel);sr.addView(st,new LinearLayout.LayoutParams(0,-2,1));folderButton=compactButton("Alterar",v->chooseExportFolder());sr.addView(folderButton,new LinearLayout.LayoutParams(dp(92),dp(38)));storage.addView(sr);updateExportFolder();
+  gap(p,10);LinearLayout storage=panel(p);LinearLayout sr=row();LinearLayout st=vertical();st.addView(text("Pasta produzida pelo Lumo",14,TEXT,true));folderLabel=text("",12,MUTED,false);st.addView(folderLabel);sr.addView(st,new LinearLayout.LayoutParams(0,-2,1));folderButton=compactButton("Alterar",v->chooseExportFolder());sr.addView(folderButton,new LinearLayout.LayoutParams(dp(92),dp(38)));storage.addView(sr);
+  gap(storage,8);LinearLayout cleanRow=row();Button cleanEdited=compactButton("Limpar pasta Editadas",v->confirmClearEdited());cleanEdited.setTextColor(DANGER);cleanRow.addView(cleanEdited,new LinearLayout.LayoutParams(-1,dp(42)));storage.addView(cleanRow);
+  gap(storage,4);label(storage,"Remove somente as cópias editadas. Originais, notas, histórico e fotos em Revisão são preservados.",11);updateExportFolder();
   updateFottoStatus();
  }
 
@@ -306,6 +308,34 @@ public class MainActivity extends Activity {
  void fullscreen(){if(!shownUri.isEmpty())openImage(shownUri);}
 
  String exportRootLabel(){String raw=getSharedPreferences("hisho",0).getString("exportTreeUri","");if(raw.isEmpty())return "Pictures / LUMO";Uri uri=Uri.parse(raw);String name=uri.getLastPathSegment();if(name==null||name.isEmpty())name=raw;try{name=java.net.URLDecoder.decode(name,"UTF-8");}catch(Exception ignored){}int colon=name.lastIndexOf(':');if(colon>=0&&colon+1<name.length())name=name.substring(colon+1);return name;}
+ void confirmClearEdited(){
+  new AlertDialog.Builder(MainActivity.this)
+   .setTitle("Limpar pasta Editadas?")
+   .setMessage("Isso apaga todas as fotos da pasta Editadas usada pelo Fotto.\n\nOs arquivos Originais, as fotos em Revisão, as notas e o histórico do Lumo serão preservados.\n\nUse isto ao iniciar um novo evento ou quando quiser zerar a pasta monitorada.")
+   .setPositiveButton("Limpar agora",(d,n)->clearEditedFolder())
+   .setNegativeButton("Cancelar",null)
+   .show();
+ }
+
+ void clearEditedFolder(){
+  message("Limpando pasta Editadas…");
+  images.execute(()->{
+   try{
+    int count=database.clearEditedFolder();
+    getSharedPreferences("hisho",0).edit()
+     .remove("fottoWebLastActivity")
+     .apply();
+    handler.post(()->{
+     gallerySignature="";filesSignature="";reviewSignature="";
+     refreshGallery();refreshFiles(true);refreshReview(true);updateGlobalStatus();
+     message(count==0?"A pasta Editadas já estava vazia.":count+" foto(s) removida(s) da pasta Editadas.");
+    });
+   }catch(Exception e){
+    handler.post(()->message("Não foi possível limpar a pasta Editadas: "+e.getMessage()));
+   }
+  });
+ }
+
  void chooseExportFolder(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);startActivityForResult(i,20);}
  void updateExportFolder(){if(folderLabel==null)return;String raw=getSharedPreferences("hisho",0).getString("exportTreeUri","");folderLabel.setText(raw.isEmpty()?"Pictures / LUMO":exportRootLabel());}
  boolean checkFottoReady(){openFottoWeb();return false;}

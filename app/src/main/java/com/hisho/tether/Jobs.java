@@ -160,5 +160,70 @@ final class Jobs extends SQLiteOpenHelper{
   try(InputStream input=new FileInputStream(source);OutputStream output=r.openOutputStream(uri,"wt")){if(output==null)throw new IOException("Pasta indisponível.");copy(input,output);}
   ContentValues v=new ContentValues();v.put(MediaStore.Images.Media.IS_PENDING,0);if(r.update(uri,v,null,null)!=1)throw new IOException("Falha ao concluir gravação.");return uri;
  }
+
+ int clearEditedFolder()throws IOException{
+  int deleted=0;
+  String tree=context.getSharedPreferences("hisho",0).getString("exportTreeUri","");
+  if(!tree.isEmpty())deleted=clearTreeFolder(Uri.parse(tree),"Editadas");
+  else deleted=clearMediaStoreFolder("Editadas");
+
+  // As cópias editadas foram removidas. Preservamos originais, histórico e notas.
+  // A Galeria volta a exibir o original para fotos cuja saída editada foi limpa.
+  ContentValues v=new ContentValues();v.putNull("edited");
+  getWritableDatabase().update("jobs",v,"state<>'review'",null);
+  return deleted;
+ }
+
+ int clearTreeFolder(Uri tree,String folder)throws IOException{
+  ContentResolver r=context.getContentResolver();
+  Uri root;
+  try{
+   String rootId=DocumentsContract.getTreeDocumentId(tree);
+   root=DocumentsContract.buildDocumentUriUsingTree(tree,rootId);
+  }catch(Exception e){throw new IOException("Pasta de exportação inválida. Escolha a pasta novamente.",e);}
+
+  Uri dir=findChild(r,root,folder,false);
+  if(dir==null)return 0;
+
+  int deleted=0;
+  Cursor c=null;
+  try{
+   String dirId=DocumentsContract.getDocumentId(dir);
+   Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(dir,dirId);
+   c=r.query(children,new String[]{
+    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+    DocumentsContract.Document.COLUMN_MIME_TYPE
+   },null,null,null);
+   if(c!=null){
+    ArrayList<Uri> targets=new ArrayList<>();
+    while(c.moveToNext()){
+     String id=c.getString(0),mime=c.getString(1);
+     if(DocumentsContract.Document.MIME_TYPE_DIR.equals(mime))continue;
+     targets.add(DocumentsContract.buildDocumentUriUsingTree(dir,id));
+    }
+    c.close();c=null;
+    for(Uri u:targets){
+     try{if(DocumentsContract.deleteDocument(r,u))deleted++;}catch(Exception ignored){}
+    }
+   }
+  }catch(Exception e){throw new IOException("Não foi possível limpar a pasta Editadas.",e);}
+  finally{if(c!=null)c.close();}
+  return deleted;
+ }
+
+ int clearMediaStoreFolder(String folder)throws IOException{
+  ContentResolver r=context.getContentResolver();
+  String relative="Pictures/LUMO/"+folder+"/";
+  try{
+   return r.delete(
+    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+    MediaStore.Images.Media.RELATIVE_PATH+"=?",
+    new String[]{relative}
+   );
+  }catch(Exception e){
+   throw new IOException("Não foi possível limpar Pictures/LUMO/"+folder+".",e);
+  }
+ }
+
  static void copy(InputStream input,OutputStream output)throws IOException{byte[] bytes=new byte[65536];int n;while((n=input.read(bytes))!=-1)output.write(bytes,0,n);}
 }

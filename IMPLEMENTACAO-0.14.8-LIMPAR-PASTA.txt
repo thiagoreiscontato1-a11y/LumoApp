@@ -1,0 +1,14 @@
+Lumo 0.14.8 — Limpar pasta Editadas
+
+Nova opção em Entrega > Pasta produzida pelo Lumo:
+- Botão "Limpar pasta Editadas".
+- Confirmação antes da exclusão.
+- Apaga somente os arquivos da pasta Editadas.
+- Preserva Originais.
+- Preserva Sob Revisão.
+- Preserva notas, score e histórico no banco do Lumo.
+- Remove as referências às cópias editadas para a Galeria voltar a usar o original.
+- Funciona tanto com pasta escolhida pelo Android (SAF) quanto com o padrão Pictures/LUMO/Editadas.
+
+Quando o Fotto/WebView estiver ativo, o espelho OPFS será atualizado na próxima sincronização e os arquivos removidos
+também deixam o espelho monitorado.
