@@ -70,7 +70,7 @@ public class FottoWebActivity extends Activity {
   web.loadUrl(last);
  }
 
- String folderLabel(){return selectedTree==null?"Pasta do Fotto: ainda não selecionada":"Pasta do Fotto: "+treeName();}
+ String folderLabel(){return selectedTree==null?"Origem do monitoramento: ainda não selecionada":"Origem: "+treeName()+" · espelho nativo: Editadas";}
 
  void setupWeb(){
   WebSettings s=web.getSettings();
@@ -78,7 +78,7 @@ public class FottoWebActivity extends Activity {
   s.setJavaScriptCanOpenWindowsAutomatically(true);s.setSupportMultipleWindows(false);
   s.setLoadsImagesAutomatically(true);s.setBuiltInZoomControls(true);s.setDisplayZoomControls(false);
   s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setAllowContentAccess(true);s.setAllowFileAccess(true);
-  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.3");
+  s.setUserAgentString(s.getUserAgentString()+" LUMO/0.14.4");
   CookieManager cm=CookieManager.getInstance();cm.setAcceptCookie(true);cm.setAcceptThirdPartyCookies(web,true);
 
   web.addJavascriptInterface(new Bridge(),"LumoFotto");
@@ -157,7 +157,7 @@ public class FottoWebActivity extends Activity {
     selectedTree=tree;
     getSharedPreferences("hisho",0).edit().putString("fottoTreeUri",tree.toString()).apply();
     folderStatus.setText(folderLabel());
-    status.setText("Pasta aceita pelo Lumo · entregando ao Fotto…");
+    status.setText("Pasta selecionada · preparando cópia nativa para o Fotto…");
     injectFolderPolyfill();
     handler.postDelayed(()->completeFolderPick(true),120);
    }else completeFolderPick(false);
@@ -217,44 +217,58 @@ public class FottoWebActivity extends Activity {
   String js=
    "(function(){"+
    "try{"+
-   "var MARK='__lumo_fotto_directory_v143__';"+
    "function log(m){try{LumoFolder.debug(String(m));}catch(e){}}"+
-   "function list(){try{return JSON.parse(LumoFolder.listFiles()||'[]');}catch(e){log('Falha lendo a pasta: '+e);return [];}}"+
-   "function FH(m){this.kind='file';this.name=m.name;this.__lumoMeta=m;}"+
-   "FH.prototype.queryPermission=async function(){return 'granted';};"+
-   "FH.prototype.requestPermission=async function(){return 'granted';};"+
-   "FH.prototype.isSameEntry=async function(o){return !!o&&o.kind==='file'&&o.name===this.name;};"+
-   "FH.prototype.getFile=async function(){var m=this.__lumoMeta||{};var r=await fetch(m.url,{cache:'no-store'});if(!r.ok)throw new Error('Lumo HTTP '+r.status);var b=await r.blob();var f=new File([b],m.name||this.name,{type:m.type||b.type||'image/jpeg',lastModified:m.lastModified||Date.now()});try{Object.defineProperty(f,'webkitRelativePath',{value:(LumoFolder.folderName()||'Editadas')+'/'+f.name});}catch(e){}return f;};"+
-   "function DH(){this.kind='directory';this.name=LumoFolder.folderName()||'Editadas';Object.defineProperty(this,MARK,{value:true,enumerable:true});}"+
-   "DH.prototype.queryPermission=async function(){return 'granted';};"+
-   "DH.prototype.requestPermission=async function(){return 'granted';};"+
-   "DH.prototype.isSameEntry=async function(o){return !!o&&o.kind==='directory'&&o.name===this.name;};"+
-   "DH.prototype.values=function(){var a=list(),i=0;return {[Symbol.asyncIterator](){return this;},async next(){return i<a.length?{value:new FH(a[i++]),done:false}:{done:true};}};};"+
-   "DH.prototype.entries=function(){var a=list(),i=0;return {[Symbol.asyncIterator](){return this;},async next(){if(i>=a.length)return {done:true};var m=a[i++];return {value:[m.name,new FH(m)],done:false};}};};"+
-   "DH.prototype.keys=function(){var a=list(),i=0;return {[Symbol.asyncIterator](){return this;},async next(){return i<a.length?{value:a[i++].name,done:false}:{done:true};}};};"+
-   "DH.prototype.getFileHandle=async function(name){var a=list();for(var i=0;i<a.length;i++)if(a[i].name===name)return new FH(a[i]);throw new DOMException('Arquivo não encontrado','NotFoundError');};"+
-   "DH.prototype.getDirectoryHandle=async function(name){if(!name||name==='.'||name===this.name)return this;throw new DOMException('Subpastas não suportadas','NotFoundError');};"+
-   "DH.prototype.resolve=async function(h){return h&&h.name?[h.name]:null;};"+
-   "DH.prototype[Symbol.asyncIterator]=function(){return this.entries();};"+
-   "function dir(){return new DH();}"+
-   "function marker(){return {kind:'directory',name:LumoFolder.folderName()||'Editadas'};}"+
-   "function sanitize(v,seen){if(!v||typeof v!=='object')return v;seen=seen||new WeakSet();if(seen.has(v))return v;seen.add(v);try{if(v[MARK]||v instanceof DH)return {__lumoDirMarker:true,name:v.name||LumoFolder.folderName()||'Editadas'};}catch(e){}if(Array.isArray(v))return v.map(function(x){return sanitize(x,seen);});var out={};var changed=false;try{Object.keys(v).forEach(function(k){var nv=sanitize(v[k],seen);out[k]=nv;if(nv!==v[k])changed=true;});}catch(e){return v;}return changed?out:v;}"+
-   "function revive(v,seen){if(!v||typeof v!=='object')return v;if(v.__lumoDirMarker)return dir();seen=seen||new WeakSet();if(seen.has(v))return v;seen.add(v);if(Array.isArray(v)){for(var i=0;i<v.length;i++)v[i]=revive(v[i],seen);return v;}try{Object.keys(v).forEach(function(k){v[k]=revive(v[k],seen);});}catch(e){}return v;}"+
-   "if(!window.__lumoIdbPatch){window.__lumoIdbPatch=true;try{"+
-   "var pp=IDBObjectStore.prototype.put,aa=IDBObjectStore.prototype.add;"+
-   "IDBObjectStore.prototype.put=function(v,k){var sv=sanitize(v);return arguments.length>1?pp.call(this,sv,k):pp.call(this,sv);};"+
-   "IDBObjectStore.prototype.add=function(v,k){var sv=sanitize(v);return arguments.length>1?aa.call(this,sv,k):aa.call(this,sv);};"+
-   "var desc=Object.getOwnPropertyDescriptor(IDBRequest.prototype,'result');"+
-   "if(desc&&desc.get&&desc.configurable){Object.defineProperty(IDBRequest.prototype,'result',{configurable:true,enumerable:desc.enumerable,get:function(){return revive(desc.get.call(this));}});}"+
-   "var ga=IDBObjectStore.prototype.getAll;if(ga){IDBObjectStore.prototype.getAll=function(){var req=ga.apply(this,arguments);return req;};}"+
-   "log('Compatibilidade de pasta Fotto ativa');"+
-   "}catch(e){log('Aviso de persistência da pasta: '+e);}}"+
+   "function srcList(){try{return JSON.parse(LumoFolder.listFiles()||'[]');}catch(e){log('Falha lendo Editadas: '+e);return [];}}"+
+   "async function nativeDir(){"+
+   " if(!navigator.storage||!navigator.storage.getDirectory)throw new Error('Este WebView não oferece OPFS/File System Access nativo');"+
+   " var root=await navigator.storage.getDirectory();"+
+   " return await root.getDirectoryHandle('Editadas',{create:true});"+
+   "}"+
+   "async function syncToNative(dir){"+
+   " var files=srcList();var names={};var manifest={};"+
+   " try{manifest=JSON.parse(localStorage.getItem('__lumo_opfs_manifest_v144')||'{}');}catch(e){manifest={};}"+
+   " var next={};var copied=0;"+
+   " for(var i=0;i<files.length;i++){"+
+   "  var m=files[i];if(!m||!m.name)continue;names[m.name]=true;"+
+   "  var sig=String(m.size||0)+':'+String(m.lastModified||0);next[m.name]=sig;"+
+   "  if(manifest[m.name]===sig)continue;"+
+   "  try{"+
+   "   var r=await fetch(m.url,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);"+
+   "   var b=await r.blob();"+
+   "   var fh=await dir.getFileHandle(m.name,{create:true});"+
+   "   var w=await fh.createWritable();await w.write(b);await w.close();copied++;"+
+   "  }catch(e){log('Falha sincronizando '+m.name+': '+e);throw e;}"+
+   " }"+
+   " try{for await(var pair of dir.entries()){var n=pair[0];if(!names[n]){try{await dir.removeEntry(n);}catch(e){}}}}catch(e){}"+
+   " try{localStorage.setItem('__lumo_opfs_manifest_v144',JSON.stringify(next));}catch(e){}"+
+   " log('Pasta pronta · '+files.length+' foto(s) · '+copied+' atualizada(s)');"+
+   " return dir;"+
+   "}"+
+   "async function prepare(){var d=await nativeDir();return await syncToNative(d);}"+
+   "window.__lumoSyncFottoFolder=async function(){try{return await prepare();}catch(e){log('Não foi possível preparar a pasta: '+e);throw e;}};"+
    "var resolvePick=null,rejectPick=null;"+
-   "window.__lumoCompleteFolderPick=function(ok){try{if(ok&&resolvePick){var r=resolvePick;resolvePick=rejectPick=null;log('Pasta entregue ao Fotto: '+(LumoFolder.folderName()||'Editadas'));r(dir());}else if(!ok&&rejectPick){var q=rejectPick;resolvePick=rejectPick=null;q(new DOMException('Seleção cancelada','AbortError'));}}catch(e){log('Erro entregando pasta ao Fotto: '+e);}};"+
-   "window.showDirectoryPicker=function(){return new Promise(function(resolve,reject){try{if(LumoFolder.hasFolder()){log('Reutilizando pasta '+(LumoFolder.folderName()||'Editadas'));resolve(dir());return;}resolvePick=resolve;rejectPick=reject;log('Escolha a pasta Editadas');LumoFolder.chooseFolder();}catch(e){reject(e);}});};"+
-   "window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason?e.reason:e;log('Fotto recusou a pasta: '+String(r));});"+
-   "window.addEventListener('error',function(e){if(e&&e.message)log('Erro no Fotto: '+e.message);});"+
+   "window.__lumoCompleteFolderPick=async function(ok){"+
+   " try{"+
+   "  if(ok&&resolvePick){var r=resolvePick;resolvePick=rejectPick=null;var d=await prepare();log('Pasta nativa entregue ao Fotto');r(d);}"+
+   "  else if(!ok&&rejectPick){var q=rejectPick;resolvePick=rejectPick=null;q(new DOMException('Seleção cancelada','AbortError'));}"+
+   " }catch(e){if(rejectPick){var q2=rejectPick;resolvePick=rejectPick=null;q2(e);}log('Fotto recusou a pasta: '+e);}"+
+   "};"+
+   "window.showDirectoryPicker=function(){"+
+   " return new Promise(async function(resolve,reject){"+
+   "  try{"+
+   "   if(LumoFolder.hasFolder()){var d=await prepare();log('Usando pasta Editadas pelo armazenamento nativo do WebView');resolve(d);return;}"+
+   "   resolvePick=resolve;rejectPick=reject;log('Escolha a pasta Editadas');LumoFolder.chooseFolder();"+
+   "  }catch(e){log('Erro preparando seletor: '+e);reject(e);}"+
+   " });"+
+   "};"+
+   "clearInterval(window.__lumoFolderSyncInterval);"+
+   "window.__lumoFolderSyncInterval=setInterval(function(){"+
+   " if(!LumoFolder.hasFolder())return;"+
+   " prepare().catch(function(e){log('Sincronização da pasta interrompida: '+e);});"+
+   "},1800);"+
+   "window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason?e.reason:e;log('Fotto/arquivo: '+String(r));});"+
    "window.__lumoFolderPolyfill=true;"+
+   "log('Ponte de pasta nativa pronta');"+
    "}catch(e){try{LumoFolder.debug('Falha preparando pasta: '+String(e));}catch(x){}}"+
    "})();";
   web.evaluateJavascript(js,null);

@@ -1,0 +1,25 @@
+Lumo 0.14.4 — Fotto usando diretório nativo do Chromium (OPFS)
+
+Motivo da mudança:
+O Fotto recusou a pasta da 0.14.3 com "Não foi possível acessar a pasta selecionada".
+Isso indica que o site exige um FileSystemDirectoryHandle nativo do navegador.
+Objetos JavaScript que apenas imitam esse handle podem ser rejeitados pelo código do site,
+pela verificação de tipo nativo ou pela persistência via IndexedDB.
+
+Nova estratégia:
+1. O usuário continua escolhendo a pasta real Editadas pelo seletor Android (SAF).
+2. O Lumo lê essa pasta com a permissão concedida.
+3. Dentro da origem do próprio Fotto no WebView, o Lumo cria um diretório OPFS real chamado Editadas
+   usando navigator.storage.getDirectory().
+4. O conteúdo da pasta Android é espelhado para esse diretório OPFS.
+5. showDirectoryPicker() entrega ao Fotto o FileSystemDirectoryHandle REAL desse diretório nativo.
+6. A cada ~1,8 s, novas fotos/alterações da pasta Android são sincronizadas para o diretório nativo.
+7. Arquivos removidos da origem também são removidos do espelho.
+
+Vantagem:
+O Fotto recebe um handle real criado pelo Chromium, portanto pode validar, enumerar e persistir
+o diretório como faria com uma pasta escolhida em um navegador compatível.
+
+Custo:
+O espelho OPFS usa armazenamento adicional enquanto o monitoramento estiver ativo.
+As imagens não são recomprimidas; os bytes do arquivo editado são copiados.
