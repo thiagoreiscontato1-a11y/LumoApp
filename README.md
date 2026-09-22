@@ -1,4 +1,4 @@
-# LUMO 0.15.0 — Fotto Direto
+# LUMO 0.15.1 — R8 + Encerrar envio
 
 Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
 
@@ -40,9 +40,18 @@ python3 build.py
 
 Saída: **Lumo.apk**
 
-- `versionCode`: 36
-- `versionName`: `0.15.0-fotto-direto`
+- `versionCode`: 37
+- `versionName`: `0.15.1-r8-stop-envio`
 - minSdk: 29
 - targetSdk: 35
 
 Veja `IMPLEMENTACAO-0.15.0-FOTTO-DIRETO.txt` para o fluxo e o roteiro do primeiro teste.
+
+
+## 0.15.1
+
+- botão **Encerrar envio** na aba Entrega;
+- encerramento seguro: termina somente a foto que já estiver em upload e não inicia a próxima;
+- conexão Canon alterada para ativar a captura antes da recuperação retroativa;
+- retroativo passa a ser recuperado gradualmente, uma foto por ciclo, sem bloquear fotos novas;
+- tolerância ampliada a respostas Canon `DeviceBusy` durante a ativação/event polling, visando a EOS R8.
