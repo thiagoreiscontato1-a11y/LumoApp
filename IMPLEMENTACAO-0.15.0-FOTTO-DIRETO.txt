@@ -1,0 +1,38 @@
+LUMO 0.15.0 — FOTTO DIRETO
+
+Objetivo
+Substituir o monitoramento de pasta como caminho principal de entrega por upload direto, preservando o Fotto Web como fallback.
+
+Fluxo implementado
+1. A foto é capturada e editada normalmente pelo Lumo.
+2. A cópia aprovada é salva em Editadas.
+3. FottoSync detecta a foto pendente.
+4. POST /api/me/galleries/{galleryId}/medias com uma lista contendo originalFileName e mediaSize.
+5. A resposta fornece id da mídia e signedUrl.
+6. O Lumo faz PUT do arquivo diretamente para a signedUrl do Amazon S3.
+7. O Lumo consulta /medias até localizar a mídia com processed=true.
+8. Só então a foto é marcada como confirmada.
+
+Correções importantes
+- O payload foi alinhado ao HAR real capturado em 22/09/2026: originalFileName + mediaSize.
+- A autenticação agora respeita o modo validado no login: API key direta ou access token com Bearer.
+- O Content-Type do PUT usa o MIME real do arquivo quando disponível.
+- A fila volta a disparar automaticamente após edição, aprovação manual e recuperação do app.
+- O painel Entrega voltou a oferecer conexão da conta, seleção de evento, envio automático e envio de pendentes.
+- O Fotto Web permanece disponível como fallback/conferência.
+
+Versão
+versionCode: 36
+versionName: 0.15.0-fotto-direto
+
+Teste recomendado
+1. Instalar o APK.
+2. Entrega > menu (...) > Conectar conta Fotto.
+3. Fazer login e aguardar o Lumo validar a sessão.
+4. Escolher o evento.
+5. Manter Envio direto automático ligado.
+6. Fotografar uma única imagem.
+7. Verificar os estados na aba Entrega: envio/processamento/confirmação.
+8. Confirmar a foto dentro do evento no Fotto.
+
+Se houver falha, registrar exatamente o texto exibido em Problemas. Os erros CREATE_MEDIA_ARRAY, UPLOAD_BINÁRIO e confirmação identificam em qual etapa o fluxo parou.

@@ -25,8 +25,14 @@ class Ptp implements AutoCloseable {
  }
  static ByteBuffer le(byte[] a){return ByteBuffer.wrap(a).order(ByteOrder.LITTLE_ENDIAN);}
  void readFully(byte[] dest,int off,int len)throws IOException{
-  int empty=0;while(len>0){
-   if(pos==pending.length){byte[] chunk=new byte[16384];int n=connection.bulkTransfer(in,chunk,chunk.length,timeout);if(n<0){broken=true;throw new IOException("Falha USB ao receber. Reconecte a câmera.");}if(n==0){if(++empty>8){broken=true;throw new IOException("Pacotes USB vazios em excesso.");}continue;}empty=0;lastActivity=android.os.SystemClock.elapsedRealtime();pending=Arrays.copyOf(chunk,n);pos=0;}
+  int empty=0,timeouts=0;while(len>0){
+   if(pos==pending.length){
+    byte[] chunk=new byte[16384];int n=connection.bulkTransfer(in,chunk,chunk.length,timeout);
+    // Android retorna valor negativo também em timeout. A R8 pode demorar mais
+    // na transição para PTP/remote, então não derrubamos a sessão no primeiro atraso.
+    if(n<0){if(++timeouts<=3){try{Thread.sleep(120L*timeouts);}catch(InterruptedException x){Thread.currentThread().interrupt();throw new IOException("Conexão USB interrompida.");}continue;}broken=true;throw new IOException("A câmera não respondeu ao USB/PTP. Desconecte e reconecte o cabo.");}
+    timeouts=0;if(n==0){if(++empty>8){broken=true;throw new IOException("Pacotes USB vazios em excesso.");}continue;}empty=0;lastActivity=android.os.SystemClock.elapsedRealtime();pending=Arrays.copyOf(chunk,n);pos=0;
+   }
    int n=Math.min(len,pending.length-pos);System.arraycopy(pending,pos,dest,off,n);pos+=n;off+=n;len-=n;
   }
  }
@@ -51,8 +57,23 @@ class Ptp implements AutoCloseable {
   }catch(Failure e){throw e;}catch(IOException e){broken=true;throw e;}
  }
  void open()throws IOException{execute(0x1001);execute(0x1002,1);session=true;}
- void captureMode()throws IOException{execute(0x9114,1);remote=true;execute(0x9115,1);events=true;execute(0x9116);}
- void drain()throws IOException{if(events)execute(0x9116);}
+ void canonCommandBusyRetry(int code,int...params)throws IOException{
+  Failure last=null;for(int attempt=1;attempt<=8;attempt++){
+   try{execute(code,params);return;}catch(Failure e){
+    last=e;if(e.code!=0x2019)throw e;
+    try{Thread.sleep(Math.min(900,120L*attempt));}catch(InterruptedException x){Thread.currentThread().interrupt();throw new IOException("Inicialização Canon interrompida.");}
+   }
+  }
+  if(last!=null)throw last;
+ }
+ void captureMode()throws IOException{
+  // SetRemoteMode / SetEventMode / GetEvent. A EOS R8 costuma devolver
+  // DeviceBusy (0x2019) por alguns instantes ao entrar no modo USB.
+  if(!remote){canonCommandBusyRetry(0x9114,1);remote=true;}
+  if(!events){canonCommandBusyRetry(0x9115,1);events=true;}
+  try{canonCommandBusyRetry(0x9116);}catch(Failure e){if(e.code!=0x2019&&e.code!=0x2009)throw e;}
+ }
+ void drain()throws IOException{if(events)try{execute(0x9116);}catch(Failure e){if(e.code!=0x2019&&e.code!=0x2009)throw e;}}
  static int[] array(byte[] bytes)throws IOException{if(bytes.length<4)throw new IOException("Lista PTP incompleta.");ByteBuffer b=le(bytes);int n=b.getInt();if(n<0||n>(bytes.length-4)/4)throw new IOException("Lista PTP inválida.");int[] a=new int[n];for(int i=0;i<n;i++)a[i]=b.getInt();return a;}
  List<int[]> objects()throws IOException{List<int[]> all=new ArrayList<>();for(int storage:array(execute(0x1004)))for(int handle:array(execute(0x1007,storage,0x3801,0)))all.add(new int[]{storage,handle});return all;}
  static String string(ByteBuffer b)throws IOException{if(!b.hasRemaining())return "";int n=b.get()&255;if(b.remaining()<n*2)throw new IOException("Texto PTP incompleto.");StringBuilder s=new StringBuilder();for(int i=0;i<n;i++){char c=b.getChar();if(c!=0)s.append(c);}return s.toString();}

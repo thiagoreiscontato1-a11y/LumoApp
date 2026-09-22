@@ -34,7 +34,7 @@ public class CaptureService extends Service{
  void capture(UsbDevice device,String settings,String wifiHost){
   Ptp ptp=null;try{
    JSONObject session=new JSONObject(settings);boolean backfill=session.optBoolean("backfill",true);
-   Set<String> seen=new HashSet<>();UsbManager manager=(UsbManager)getSystemService(USB_SERVICE);
+   Set<String> seen=new HashSet<>();ArrayDeque<int[]> backlog=new ArrayDeque<>();UsbManager manager=(UsbManager)getSystemService(USB_SERVICE);
    String serial;try{serial=device==null?"wifi:"+wifiHost:device.getSerialNumber();}catch(Exception e){serial=null;}if(serial==null)serial=device==null?"wifi:"+wifiHost:String.valueOf(device.getProductId());
    File spool=new File(getFilesDir(),"queue");spool.mkdirs();
    for(int attempt=1;attempt<=3;attempt++){
@@ -45,24 +45,38 @@ public class CaptureService extends Service{
       if(wifiNetwork==null)throw new IOException("Conecte o celular ao Wi-Fi da câmera.");
       String identity=getSharedPreferences("hisho",0).getString("wifiGuid",null);if(identity==null){identity=UUID.randomUUID().toString();getSharedPreferences("hisho",0).edit().putString("wifiGuid",identity).apply();}
       ptp=new WifiPtp(wifiNetwork,wifiHost,identity);status="Wi-Fi: autorize LUMO na câmera, se solicitado.";log(status);
-     }transport=ptp;ptp.open();if(!capturing)return;
-     List<int[]> initial=ptp.objects();seen.clear();
-     if(backfill){
-      status="Verificando fotos retroativas na câmera…";log(status);int n=0;
-      for(int[] o:initial){if(!capturing)return;n++;status="Retroativo · verificando "+n+" / "+initial.size();downloadObject(ptp,o,serial,settings,spool,seen,true);}
-      log("Retroativo concluído · "+recovered+" foto(s) nova(s) recuperada(s).");
-     }else for(int[] o:initial)seen.add(o[0]+":"+o[1]);
-     if(!capturing)return;ptp.captureMode();ptp.drain();if(!capturing)return;
-     link.ready();alertArmed.set(true);status=recovered>0?"Conexão confirmada · "+recovered+" retroativa(s) recuperada(s).":"Conexão confirmada. Fotografe na câmera.";log(status);break;
-    }catch(IOException e){log("Abertura falhou: "+e.getMessage());if(ptp!=null){ptp.close();ptp=null;transport=null;}if(!capturing)return;if(attempt==3)throw e;status="Câmera ainda não respondeu. Tentando novamente…";Thread.sleep(900L*attempt);}
+     }
+     transport=ptp;
+     status="Abrindo sessão PTP…";log(status);ptp.open();if(!capturing)return;
+     // Confirma a camada USB/PTP imediatamente. Antes, a UI permanecia em
+     // CONECTANDO durante toda a listagem do cartão, especialmente perceptível na R8.
+     link.ready();alertArmed.set(true);
+     int vid=device==null?0:device.getVendorId(),pid=device==null?0:device.getProductId();
+     boolean r8=device!=null&&vid==0x04A9&&(pid==0x330C||pid==0x3113);
+     status=(r8?"Canon R8 detectada · ":"")+"PTP conectado · ativando captura Canon…";log(status+" USB "+String.format(Locale.ROOT,"%04X:%04X",vid,pid));
+     ptp.captureMode();if(!capturing)return;
+     try{ptp.drain();}catch(Ptp.Failure e){if(e.code!=0x2019)throw e;}
+     status=(r8?"R8 conectada · ":"Conectada · ")+"lendo índice do cartão…";log(status);
+     List<int[]> initial=ptp.objects();seen.clear();backlog.clear();
+     for(int[] o:initial)seen.add(o[0]+":"+o[1]);
+     if(backfill)for(int i=initial.size()-1;i>=0;i--)backlog.addLast(initial.get(i));
+     if(!capturing)return;
+     status=backlog.isEmpty()?"Conexão confirmada. Fotografe na câmera.":"Conexão confirmada · retroativo em segundo plano ("+backlog.size()+")";log(status);break;
+    }catch(IOException e){log("Abertura falhou: "+e.getMessage());if(ptp!=null){try{ptp.close();}catch(Exception ignored){}ptp=null;transport=null;}backlog.clear();if(!capturing)return;if(attempt==3)throw e;link.connect();status="Câmera ainda não respondeu. Tentando novamente…";log(status);Thread.sleep(900L*attempt);}
    }
+   if(ptp==null||!capturing)return;
    int transientErrors=0;
    while(capturing){long start=SystemClock.elapsedRealtime();
     try{
-     ptp.drain();List<int[]> objects=ptp.objects();
-     for(int[] o:objects){if(!capturing)break;String key=o[0]+":"+o[1];if(seen.contains(key))continue;downloadObject(ptp,o,serial,settings,spool,seen,false);}
-     transientErrors=0;if(capturing){link.ready();status="Conexão confirmada · aguardando fotos";}
-    }catch(Ptp.Failure e){if((e.code==0x2019||e.code==0x2009)&&++transientErrors<=5){link.busy();status="Câmera ocupada · aguardando resposta";log(status);}else throw e;}
+     ptp.drain();List<int[]> objects=ptp.objects();boolean liveReceived=false;
+     for(int[] o:objects){if(!capturing)break;String key=o[0]+":"+o[1];if(seen.contains(key))continue;if(downloadObject(ptp,o,serial,settings,spool,seen,false))liveReceived=true;}
+     if(capturing&&!liveReceived&&!backlog.isEmpty()){
+      int[] old=backlog.peekFirst();status="Conectada · recuperando retroativo ("+backlog.size()+" restante(s))";
+      try{downloadObject(ptp,old,serial,settings,spool,seen,true);backlog.removeFirst();}
+      catch(Ptp.Failure e){if(e.code==0x2009){backlog.removeFirst();log("Retroativo ignorado · objeto já não existe no cartão.");}else throw e;}
+     }
+     transientErrors=0;if(capturing){link.ready();status=backlog.isEmpty()?"Conexão confirmada · aguardando fotos":"Conexão confirmada · retroativo em segundo plano ("+backlog.size()+")";}
+    }catch(Ptp.Failure e){if((e.code==0x2019||e.code==0x2009)&&++transientErrors<=8){link.busy();status="Câmera ocupada · aguardando resposta";log(status);}else throw e;}
     long wait=Math.max(1,800-(SystemClock.elapsedRealtime()-start));Thread.sleep(wait);
    }
   }catch(Exception e){if(link.error.isEmpty()&&capturing)link.fail("Captura pausada: "+e.getMessage());status=link.error.isEmpty()?"Captura encerrada.":link.error;if(!link.error.isEmpty())lostAlert(status);log(status);}finally{capturing=false;link.stop();try{if(ptp!=null)ptp.close();}catch(Exception e){log("Falha ao liberar USB: "+e.getMessage());}finally{transport=null;usbFinished=true;finish=true;}log("Conexão encerrada; concluindo edições pendentes.");}
@@ -104,7 +118,7 @@ public class CaptureService extends Service{
       jobs.setQuality(item[0],quality.score,quality.reason);Uri uri=jobs.save(output,"Sob Revisao",item[2].replace(".jpg","_REVISAO.jpg"),item[0],"edited");jobs.set(item[0],"review","error",quality.reason);jobs.history(item[0],System.currentTimeMillis(),"Revisão","Bloqueada para envio · "+quality.reason);new File(item[1]).delete();reviewed++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastCurationAt",System.currentTimeMillis()).apply();
       log("CURADORIA · SOB REVISÃO · "+item[2]+" · "+quality.reason+" · envio bloqueado");continue;
      }
-     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: nota informativa");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);jobs.history(item[0],System.currentTimeMillis(),"Aprovada","Liberada para entrega");new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastEditAt",System.currentTimeMillis()).putLong("lastCurationAt",System.currentTimeMillis()).apply();log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s · nota "+quality.score+"/10 · "+jobs.pending()+" pendentes");
+     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: nota informativa");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);jobs.history(item[0],System.currentTimeMillis(),"Aprovada","Liberada para entrega");new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastEditAt",System.currentTimeMillis()).putLong("lastCurationAt",System.currentTimeMillis()).apply();FottoSync.kick(this);log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s · nota "+quality.score+"/10 · "+jobs.pending()+" pendentes");
     }catch(Exception|OutOfMemoryError e){jobs.set(item[0],"error","error",e.toString());log("Falha na edição; original preservado: "+e.getMessage());}
     finally{output.delete();}
    }
