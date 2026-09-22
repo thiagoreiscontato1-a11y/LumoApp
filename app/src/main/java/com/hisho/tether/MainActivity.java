@@ -25,7 +25,9 @@ public class MainActivity extends Activity {
  private TextView flowStatus,badge,status,timing,previewTitle,previewSub,galleryInfo,gallerySelectionLabel,reviewHeading,fottoLiveStatus;
  private TextView folderLabel,fottoStatus,fottoEventLabel,fottoUploadStatus,fottoProblems;
  private Button connect,resume,settingsButton,themeButton,folderButton,fottoMenu,fottoSend,healthButton,eventModeButton,presetQuick;
+ private CompoundButton fottoAuto;
  private boolean openEventChooserAfterLoad=false;
+ private final ArrayList<FottoApi.Gallery> fottoGalleries=new ArrayList<>();
  private final ExecutorService fottoNetwork=Executors.newSingleThreadExecutor();
 
  private final LinearLayout[] pages=new LinearLayout[4];
@@ -125,9 +127,9 @@ public class MainActivity extends Activity {
  void refreshQuickControls(){if(presetQuick!=null){boolean enabled=getSharedPreferences("hisho",0).getBoolean("presetEnabled",true);presetQuick.setText(enabled?"Predefinição: "+presetName:"Predefinição: desligada");}if(eventModeButton!=null){boolean on=getSharedPreferences("hisho",0).getBoolean("eventMode",false);eventModeButton.setText(on?"Evento ativo":"Modo evento");eventModeButton.setTextColor(on?SUCCESS:TEXT);if(settingsButton!=null)settingsButton.setVisibility(on?View.GONE:View.VISIBLE);}}
  void toggleEventMode(){
   android.content.SharedPreferences p=getSharedPreferences("hisho",0);boolean on=!p.getBoolean("eventMode",false);android.content.SharedPreferences.Editor e=p.edit().putBoolean("eventMode",on);
-  if(on){e.putBoolean("backfillEnabled",true).putBoolean("curationEnabled",true).putBoolean("disconnectSound",true);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
+  if(on){e.putBoolean("backfillEnabled",true).putBoolean("curationEnabled",true).putBoolean("disconnectSound",true);if(!FottoApi.token(MainActivity.this).isEmpty()&&!p.getString("fottoGalleryId","").isEmpty())e.putBoolean("fottoAuto",true);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
   else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-  e.apply();publishLiveSettings();refreshQuickControls();if(on){QueueRecovery.resume(MainActivity.this);message("Modo evento ativado.");}else message("Modo evento desativado.");
+  e.apply();publishLiveSettings();refreshQuickControls();if(on){QueueRecovery.resume(MainActivity.this);FottoSync.kick(MainActivity.this);message("Modo evento ativado.");}else message("Modo evento desativado.");
  }
  void showPresetChooser(){
   ArrayList<String> names=PresetLibrary.names(MainActivity.this);ArrayList<String> items=new ArrayList<>();items.add("Sem predefinição");items.addAll(names);items.add("Importar nova predefinição XMP…");
@@ -139,16 +141,14 @@ public class MainActivity extends Activity {
  }
  String age(long at){if(at<=0)return "—";long s=Math.max(0,(System.currentTimeMillis()-at)/1000);if(s<60)return "há "+s+"s";if(s<3600)return "há "+(s/60)+"min";return "há "+(s/3600)+"h";}
  void showHealthPanel(){
-  CaptureService cs=CaptureService.active;android.content.SharedPreferences p=getSharedPreferences("hisho",0);int errors=0;
-  try(Cursor c=database.getReadableDatabase().rawQuery("SELECT COUNT(*) FROM jobs WHERE state IN ('error','originalError')",null)){if(c.moveToFirst())errors=c.getInt(0);}
-  int q=database.pending(),reviews=database.reviewCount(),loaded=p.getInt("fottoWebLoaded",-1),webQueue=p.getInt("fottoWebQueue",-1),webErrors=p.getInt("fottoWebErrors",-1);boolean webActive=p.getBoolean("fottoWebActive",false);
-  long webAt=p.getLong("fottoWebUpdatedAt",0);String camera=cs!=null&&cs.capturing?"OK · "+cs.cameraName:"Sem câmera ativa",download=errors==0?"OK":"Atenção · "+errors+" erro(s)",edit=q==0?"OK":"Processando · "+q,cur=reviews==0?"OK":"Revisão · "+reviews;
-  String fotto=webActive?(webErrors>0?"Atenção · "+webErrors+" erro(s)":"OK · monitor ativo"):(webAt>0?"Monitor parado":"Abra o painel Fotto");
+  CaptureService cs=CaptureService.active;android.content.SharedPreferences p=getSharedPreferences("hisho",0);String gallery=p.getString("fottoGalleryId","");int errors=0;try(Cursor c=database.getReadableDatabase().rawQuery("SELECT COUNT(*) FROM jobs WHERE state IN ('error','originalError')",null)){if(c.moveToFirst())errors=c.getInt(0);}int q=database.pending(),reviews=database.reviewCount(),fottoPending=gallery.isEmpty()?0:database.fottoPending(gallery),confirmed=gallery.isEmpty()?0:database.fottoDone(gallery);String lastFotto=p.getString("fottoLastStatus","Sem atividade");
   LinearLayout box=vertical();box.setPadding(dp(20),dp(8),dp(20),dp(12));
-  String[] lines={"Câmera: "+camera,"Recebimento: "+download,"Edição: "+edit,"Curadoria: "+cur,"Fotto: "+fotto,"Fila de edição: "+q,"Última foto recebida: "+age(Math.max(database.lastDownloadedAt(),p.getLong("lastPhotoAt",0))),"Fotto: "+(loaded<0?"—":loaded)+" carregada(s) · "+(webQueue<0?"—":webQueue)+" na fila","Última leitura Fotto: "+age(webAt)};
-  for(String line:lines){TextView t=text(line,13,line.contains("Atenção")||line.contains("parado")?WARN:TEXT,line.contains(": OK"));box.addView(t,new LinearLayout.LayoutParams(-1,dp(31)));}
-  new AlertDialog.Builder(MainActivity.this).setTitle("Saúde do fluxo").setView(box).setPositiveButton("Fechar",null).setNeutralButton("Abrir Fotto",(d,n)->openFottoWeb()).show();
+  String camera=cs!=null&&cs.capturing?"OK · "+cs.cameraName:"Sem câmera ativa";String download=errors==0?"OK":"Atenção · "+errors+" erro(s)";String edit=q==0?"OK":"Processando · "+q;String cur=reviews==0?"OK":"Revisão · "+reviews;String fotto=FottoApi.token(MainActivity.this).isEmpty()?"Não conectado":(gallery.isEmpty()?"Sem evento":(database.fottoLastError(gallery).isEmpty()?"OK":"Atenção"));
+  String[] lines={"Câmera: "+camera,"Recebimento: "+download,"Edição: "+edit,"Curadoria: "+cur,"Fotto direto: "+fotto,"Fila: "+q,"Última foto recebida: "+age(Math.max(database.lastDownloadedAt(),p.getLong("lastPhotoAt",0))),"Fotto: "+confirmed+" confirmada(s) · "+fottoPending+" pendente(s)","Status Fotto: "+lastFotto};
+  for(String line:lines){TextView t=text(line,13,line.contains("Atenção")||line.contains("Não conectado")?WARN:TEXT,line.endsWith("OK"));box.addView(t,new LinearLayout.LayoutParams(-1,dp(31)));}
+  new AlertDialog.Builder(MainActivity.this).setTitle("Saúde do fluxo").setView(box).setPositiveButton("Fechar",null).setNeutralButton("Retomar filas",(d,n)->QueueRecovery.resume(MainActivity.this)).show();
  }
+
  void showPhotoDetails(PhotoItem item){
   if(item==null)return;String[] meta=database.photoMeta(item.id);LinearLayout box=vertical();box.setPadding(dp(18),dp(8),dp(18),dp(8));ImageView im=new ImageView(MainActivity.this);im.setScaleType(ImageView.ScaleType.CENTER_CROP);box.addView(im,new LinearLayout.LayoutParams(-1,dp(180)));loadThumb(im,item.uri,600);gap(box,8);
   TextView score=text("Nota "+item.score+"/10",17,item.score>=8?SUCCESS:item.score>=5?WARN:DANGER,true);box.addView(score);gap(box,4);
@@ -173,7 +173,7 @@ public class MainActivity extends Activity {
 
   gap(p,8);filmScroll=new HorizontalScrollView(MainActivity.this);filmScroll.setHorizontalScrollBarEnabled(false);filmStrip=row();filmScroll.addView(filmStrip);p.addView(filmScroll,new LinearLayout.LayoutParams(-1,dp(76)));
   LinearLayout filmNav=row();previousPhoto=miniNav("‹",v->movePhoto(-1));filmNav.addView(previousPhoto,new LinearLayout.LayoutParams(dp(38),dp(34)));livePhoto=miniNav("● Novas",v->{gallery.followLatest();showSelection(true);});LinearLayout.LayoutParams liveLp=new LinearLayout.LayoutParams(0,dp(34),1);liveLp.setMargins(dp(5),0,dp(5),0);filmNav.addView(livePhoto,liveLp);nextPhoto=miniNav("›",v->movePhoto(1));filmNav.addView(nextPhoto,new LinearLayout.LayoutParams(dp(38),dp(34)));p.addView(filmNav);galleryInfo=label(p,"As fotos recentes aparecem aqui.",11);
-  gap(p,7);fottoLiveStatus=text("Fotto • monitoramento ainda não iniciado",11,MUTED,true);fottoLiveStatus.setPadding(dp(10),dp(8),dp(10),dp(8));fottoLiveStatus.setBackground(border(CARD2,12));fottoLiveStatus.setMaxLines(3);p.addView(fottoLiveStatus);
+  gap(p,7);fottoLiveStatus=text("Fotto direto • configure em Entrega",11,MUTED,true);fottoLiveStatus.setPadding(dp(10),dp(8),dp(10),dp(8));fottoLiveStatus.setBackground(border(CARD2,12));fottoLiveStatus.setMaxLines(3);p.addView(fottoLiveStatus);
 
   gap(p,8);status=text("Pronto para conectar.",12,TEXT,true);p.addView(status);timing=label(p,"Original preservado · edição e curadoria em segundo plano",11);
   resume=compactButton("Retomar edições pendentes",v->start(null));resume.setVisibility(View.GONE);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(42));rp.topMargin=dp(7);p.addView(resume,rp);
@@ -193,18 +193,21 @@ public class MainActivity extends Activity {
  }
 
  void fottoPage(){
-  LinearLayout p=pages[3];heading(p,"Entrega","O Fotto faz o envio pela própria página. O Lumo acompanha o monitoramento da pasta Editadas.");
+  LinearLayout p=pages[3];heading(p,"Entrega","Upload direto para o Fotto: o Lumo cria a mídia, envia a foto ao S3 e confirma o processamento no evento.");
   LinearLayout sync=panel(p);
-  LinearLayout head=row();fottoStatus=text("Fotto Web • Aguardando",18,TEXT,true);head.addView(fottoStatus,new LinearLayout.LayoutParams(0,-2,1));
-  fottoMenu=compactButton("Abrir",v->openFottoWeb());primary(fottoMenu);head.addView(fottoMenu,new LinearLayout.LayoutParams(dp(94),dp(40)));sync.addView(head);
-  gap(sync,6);fottoEventLabel=label(sync,"Evento: abra o painel Fotto",13);gap(sync,4);fottoUploadStatus=label(sync,"Carregados — · Na fila — · Erros — · Ignorados —",13);gap(sync,8);
-  label(sync,"No Fotto: abra o evento → Monitoramento de pasta → selecione Editadas → Iniciar. Quando ficar Ativo, o Lumo volta automaticamente e continua acompanhando o evento.",11);
-  gap(sync,10);Button web=compactButton("Abrir / acompanhar Fotto",v->openFottoWeb());primary(web);sync.addView(web,new LinearLayout.LayoutParams(-1,dp(44)));
+  LinearLayout head=row();fottoStatus=text("Fotto • Não conectado",18,TEXT,true);head.addView(fottoStatus,new LinearLayout.LayoutParams(0,-2,1));
+  fottoMenu=compactButton("⋯",v->deliverMenu());head.addView(fottoMenu,new LinearLayout.LayoutParams(dp(48),dp(40)));sync.addView(head);
+  gap(sync,5);fottoEventLabel=label(sync,"Evento: —",13);gap(sync,4);fottoUploadStatus=label(sync,"0 confirmadas · 0 na fila",13);gap(sync,10);
+  LinearLayout monitor=row();LinearLayout copy=vertical();copy.addView(text("Envio direto automático",14,TEXT,true));copy.addView(text("Nova foto aprovada → mídia Fotto → S3 → confirmação",11,MUTED,false));monitor.addView(copy,new LinearLayout.LayoutParams(0,-2,1));Switch sw=new Switch(MainActivity.this);fottoAuto=sw;sw.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{GREEN,0xff8d98a8}));monitor.addView(sw);sync.addView(monitor);
+  android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);sw.setChecked(prefs.getBoolean("fottoAuto",false));bindFottoToggle();
+  gap(sync,9);fottoSend=compactButton("Enviar pendentes agora",v->{if(!checkFottoReady())return;FottoSync.sendExisting(MainActivity.this);prefs.edit().putString("fottoLastStatus","Procurando Editadas pendentes…").apply();updateFottoStatus();});primary(fottoSend);sync.addView(fottoSend,new LinearLayout.LayoutParams(-1,dp(42)));
+  gap(sync,7);Button web=compactButton("Abrir Fotto Web · fallback",v->openFottoWeb());sync.addView(web,new LinearLayout.LayoutParams(-1,dp(42)));
+  gap(sync,5);label(sync,"O monitoramento de pasta não é necessário para o upload direto. Use o Fotto Web apenas para conferir o evento ou como fallback.",11);
   gap(p,10);fottoProblems=text("",12,DANGER,false);fottoProblems.setPadding(dp(12),dp(10),dp(12),dp(10));fottoProblems.setBackground(border(darkMode?0xff2a1717:0xfffff6f6,12));fottoProblems.setVisibility(View.GONE);p.addView(fottoProblems);
   gap(p,10);LinearLayout storage=panel(p);LinearLayout sr=row();LinearLayout st=vertical();st.addView(text("Pasta produzida pelo Lumo",14,TEXT,true));folderLabel=text("",12,MUTED,false);st.addView(folderLabel);sr.addView(st,new LinearLayout.LayoutParams(0,-2,1));folderButton=compactButton("Alterar",v->chooseExportFolder());sr.addView(folderButton,new LinearLayout.LayoutParams(dp(92),dp(38)));storage.addView(sr);
   gap(storage,8);LinearLayout cleanRow=row();Button cleanEdited=compactButton("Limpar pasta Editadas",v->confirmClearEdited());cleanEdited.setTextColor(DANGER);cleanRow.addView(cleanEdited,new LinearLayout.LayoutParams(-1,dp(42)));storage.addView(cleanRow);
   gap(storage,4);label(storage,"Remove somente as cópias editadas. Originais, notas, histórico e fotos em Revisão são preservados.",11);updateExportFolder();
-  updateFottoStatus();
+  updateFottoStatus();if(!FottoApi.token(MainActivity.this).isEmpty())loadFottoGalleries();FottoSync.kick(MainActivity.this);
  }
 
  void openFottoWeb(){Intent i=new Intent(MainActivity.this,FottoWebActivity.class).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP);startActivity(i);}
@@ -213,28 +216,15 @@ public class MainActivity extends Activity {
   if(flowStatus==null)return;CaptureService c=CaptureService.active;android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
   String cam=c==null?"Canon":c.cameraName,conn=c==null?"Sem câmera":c.connectionLabel();int battery=-1;try{battery=((BatteryManager)getSystemService(BATTERY_SERVICE)).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);}catch(Exception ignored){}
   long freeBytes=Math.max(0,getFilesDir().getUsableSpace()),gb=freeBytes/(1024L*1024L*1024L);int transfer=c==null?prefs.getInt("lastReceived",0):c.received,editing=database.processingCount();
-  int sent=prefs.getInt("fottoWebLoaded",-1),webQueue=prefs.getInt("fottoWebQueue",-1),webErrors=prefs.getInt("fottoWebErrors",-1),ignored=prefs.getInt("fottoWebIgnored",-1);
-  boolean webActive=prefs.getBoolean("fottoWebActive",false),webPaused=prefs.getBoolean("fottoWebPaused",false),webBackground=prefs.getBoolean("fottoWebBackground",false),hostAlive=prefs.getBoolean("fottoWebHostAlive",false);
-  long updated=prefs.getLong("fottoWebUpdatedAt",0),webAge=updated<=0?Long.MAX_VALUE:System.currentTimeMillis()-updated;
-  String eventId=prefs.getString("fottoWebEventId",""),activeFor=prefs.getString("fottoWebActiveFor",""),lastActivity=prefs.getString("fottoWebLastActivity","");
-  String b=battery<0?"—":battery+"%";boolean lowBattery=battery>=0&&battery<=20,lowSpace=freeBytes>0&&freeBytes<1024L*1024L*1024L,webStale=webActive&&webAge>20000;
-  flowStatus.setText(cam+" • "+conn+"   |   bateria "+b+" · "+gb+" GB   |   ↓ "+transfer+"   ✦ "+editing+"   ✓ "+(sent<0?"—":sent));
-  flowStatus.setTextColor(lowBattery||lowSpace||webErrors>0||webStale?WARN:MUTED);
-
-  if(fottoLiveStatus!=null){
-   String state=webActive?"ATIVO":webPaused?"PAUSADO":updated>0?"PARADO":"NÃO INICIADO";
-   if(webStale)state="SEM ATUALIZAÇÃO";
-   String where=webBackground&&hostAlive?" · em segundo plano":hostAlive?" · painel aberto":"";
-   String line1="Fotto • "+state+(eventId.isEmpty()?"":" · evento "+eventId)+(activeFor.isEmpty()?"":" · "+activeFor)+where;
-   String line2="Carregadas "+num(sent)+" · na fila "+num(webQueue)+" · erros "+num(webErrors)+" · ignoradas "+num(ignored)+" · atualização "+age(updated);
-   if(!lastActivity.isEmpty()&&lastActivity.length()<150)line2+="\nÚltima atividade: "+lastActivity;
-   fottoLiveStatus.setText(line1+"\n"+line2);
-   fottoLiveStatus.setTextColor(webErrors>0||webStale?WARN:(webActive?SUCCESS:MUTED));
-  }
-
-  if(prefs.getBoolean("eventMode",false)){if(lowBattery)EventAlert.signal(MainActivity.this,"bateria","Bateria em "+battery+"%. Conecte o carregador.");if(lowSpace)EventAlert.signal(MainActivity.this,"espaco","Menos de 1 GB livre. Libere armazenamento.");if(webErrors>0)EventAlert.signal(MainActivity.this,"fotto","O Fotto mostra "+webErrors+" arquivo(s) com erro.");}
+  String gallery=prefs.getString("fottoGalleryId","");int sent=gallery.isEmpty()?prefs.getInt("fottoUploadedCount",0):database.fottoDone(gallery),pending=gallery.isEmpty()?0:database.fottoPending(gallery),processing=gallery.isEmpty()?0:database.fottoProcessing(gallery);boolean directActive=prefs.getBoolean("fottoAuto",false);String fErr=gallery.isEmpty()?"":database.fottoLastError(gallery);
+  String b=battery<0?"—":battery+"%";boolean lowBattery=battery>=0&&battery<=20,lowSpace=freeBytes>0&&freeBytes<1024L*1024L*1024L;
+  flowStatus.setText(cam+" • "+conn+"   |   bateria "+b+" · "+gb+" GB   |   ↓ "+transfer+"   ✦ "+editing+"   ✓ "+sent);
+  flowStatus.setTextColor(lowBattery||lowSpace||!fErr.isEmpty()?WARN:MUTED);
+  if(fottoLiveStatus!=null){String state=FottoApi.token(MainActivity.this).isEmpty()?"NÃO CONECTADO":gallery.isEmpty()?"SEM EVENTO":directActive?"ATIVO":"PAUSADO";if(FottoSync.running())state="ENVIANDO";String title=prefs.getString("fottoGalleryTitle","");String line1="Fotto direto • "+state+(title.isEmpty()?"":" · "+title);String line2="Confirmadas "+sent+" · na fila "+pending+" · processando "+processing;String last=prefs.getString("fottoLastStatus","");if(!last.isEmpty()&&last.length()<150)line2+="\n"+last;fottoLiveStatus.setText(line1+"\n"+line2);fottoLiveStatus.setTextColor(!fErr.isEmpty()?WARN:(directActive?SUCCESS:MUTED));}
+  if(prefs.getBoolean("eventMode",false)){if(lowBattery)EventAlert.signal(MainActivity.this,"bateria","Bateria em "+battery+"%. Conecte o carregador.");if(lowSpace)EventAlert.signal(MainActivity.this,"espaco","Menos de 1 GB livre. Libere armazenamento.");if(!fErr.isEmpty())EventAlert.signal(MainActivity.this,"fotto","Falha na entrega Fotto: "+fErr);}
   int reviews=database.reviewCount();if(tabs[2]!=null)tabs[2].setText(reviews>0?"Revisão ("+reviews+")":"Revisão");
  }
+
  void captureSettingsDialog(){
   android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);ScrollView scroll=new ScrollView(MainActivity.this);LinearLayout box=vertical();box.setPadding(dp(20),dp(8),dp(20),dp(12));scroll.addView(box);
 
@@ -286,7 +276,7 @@ public class MainActivity extends Activity {
  void copyGalleryAdjustments(){if(editSelection.isEmpty()){message("Selecione uma foto para copiar os ajustes.");return;}String id=editSelection.iterator().next();String[] j=database.editorJob(id);if(j==null){message("Foto não encontrada.");return;}try{JSONObject settings=new JSONObject(j[2]);JSONObject manual=settings.optJSONObject("manual");if(manual==null)manual=new JSONObject();getSharedPreferences("hisho",0).edit().putString("manualEditClipboard",manual.toString()).apply();message("Refinamento da foto copiado. No editor você pode escolher parâmetros específicos para a próxima cópia.");}catch(Exception e){message("Não foi possível copiar os ajustes.");}}
  void pasteGalleryAdjustments(){if(editSelection.isEmpty()){message("Selecione as fotos que receberão o refinamento.");return;}if(getSharedPreferences("hisho",0).getString("manualEditClipboard","").isEmpty()){message("Copie um refinamento primeiro.");return;}openEditor(editSelection.iterator().next(),new ArrayList<>(editSelection),true);}
  void approveSelected(){if(editSelection.isEmpty()){message("Selecione fotos em revisão.");return;}ArrayList<String[]> targets=new ArrayList<>();for(String id:new ArrayList<>(editSelection)){try(Cursor c=database.getReadableDatabase().rawQuery("SELECT name,edited,state FROM jobs WHERE id=?",new String[]{id})){if(c.moveToFirst()&&"review".equals(c.getString(2)))targets.add(new String[]{id,c.getString(0),c.getString(1)});}}if(targets.isEmpty()){message("Nenhuma foto selecionada está em Revisão.");return;}editSelection.clear();selectionMode=false;for(String[] t:targets)approveReview(t[0],t[1],t[2]);}
- void sendSelected(){openFottoWeb();}
+ void sendSelected(){if(editSelection.isEmpty()){message("Selecione fotos aprovadas para enviar.");return;}if(!checkFottoReady())return;FottoSync.sendSelected(MainActivity.this,new ArrayList<>(editSelection));message("Fotos selecionadas adicionadas à entrega direta.");}
 
  void refreshReview(boolean force){
   if(reviewFiles==null)return;int count=database.reviewCount();if(reviewHeading!=null)reviewHeading.setText("Revisão ("+count+")");StringBuilder sig=new StringBuilder();ArrayList<PhotoItem> list=new ArrayList<>();try(Cursor c=database.getReadableDatabase().rawQuery("SELECT id,name,edited,COALESCE(quality_note,error,'Sob revisão'),score FROM jobs WHERE state='review' ORDER BY rowid DESC LIMIT 50",null)){while(c.moveToNext()){PhotoItem p=new PhotoItem(c.getString(0),c.getString(1),c.getString(2),"review",c.getString(3),c.getInt(4),false,database.burstSummary(c.getString(0)).length);list.add(p);sig.append(p.id).append(':').append(p.score).append(':').append(p.reason).append(';');}}
@@ -338,33 +328,18 @@ public class MainActivity extends Activity {
 
  void chooseExportFolder(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);startActivityForResult(i,20);}
  void updateExportFolder(){if(folderLabel==null)return;String raw=getSharedPreferences("hisho",0).getString("exportTreeUri","");folderLabel.setText(raw.isEmpty()?"Pictures / LUMO":exportRootLabel());}
- boolean checkFottoReady(){openFottoWeb();return false;}
- void deliverMenu(){openFottoWeb();}
- void showEventChooser(){openFottoWeb();}
- void loadFottoGalleries(){openFottoWeb();}
- void bindFottoToggle(){}
-
- void updateFottoStatus(){
-  if(fottoStatus==null)return;android.content.SharedPreferences p=getSharedPreferences("hisho",0);
-  boolean active=p.getBoolean("fottoWebActive",false),paused=p.getBoolean("fottoWebPaused",false),background=p.getBoolean("fottoWebBackground",false),hostAlive=p.getBoolean("fottoWebHostAlive",false);
-  int loaded=p.getInt("fottoWebLoaded",-1),queue=p.getInt("fottoWebQueue",-1),errors=p.getInt("fottoWebErrors",-1),ignored=p.getInt("fottoWebIgnored",-1);
-  long updated=p.getLong("fottoWebUpdatedAt",0),ageMs=updated==0?Long.MAX_VALUE:System.currentTimeMillis()-updated;String folder=p.getString("fottoWebFolder",""),eventId=p.getString("fottoWebEventId",""),activeFor=p.getString("fottoWebActiveFor",""),lastActivity=p.getString("fottoWebLastActivity","");
-  String state=active?"Ativo":paused?"Pausado":updated>0?"Sem monitoramento":"Aguardando abertura";
-  if(ageMs>20000&&active)state="Sem atualização";
-  String host=background&&hostAlive?" · segundo plano":hostAlive?" · painel aberto":"";
-  fottoStatus.setText("Fotto • "+state+host);fottoStatus.setTextColor(active&&ageMs<=20000?SUCCESS:(errors>0||ageMs>20000&&active?WARN:MUTED));
-  fottoEventLabel.setText("Evento: "+(eventId.isEmpty()?"—":eventId)+(folder.isEmpty()?"":" · pasta "+folder)+(activeFor.isEmpty()?"":" · ativo "+activeFor));
-  String detail="Carregadas "+num(loaded)+" · Na fila "+num(queue)+" · Erros "+num(errors)+" · Ignoradas "+num(ignored)+" · atualização "+age(updated);
-  if(!lastActivity.isEmpty()&&lastActivity.length()<180)detail+="\nÚltima atividade do Fotto: "+lastActivity;
-  fottoUploadStatus.setText(detail);
-  boolean failure=errors>0||ageMs>30000&&active;fottoProblems.setVisibility(failure?View.VISIBLE:View.GONE);
-  if(failure)fottoProblems.setText(errors>0?"Problemas\nO próprio Fotto informa "+errors+" arquivo(s) com erro. Abra o painel para ver a atividade.":"Problemas\nO monitor do Fotto parou de atualizar. Toque em Abrir / acompanhar Fotto para reativar o painel.");
- }
+ boolean checkFottoReady(){if(FottoApi.token(MainActivity.this).isEmpty()){message("Conecte sua conta Fotto no menu ⋯.");return false;}if(getSharedPreferences("hisho",0).getString("fottoGalleryId","").isEmpty()){message("Escolha um evento Fotto primeiro.");return false;}return true;}
+ void deliverMenu(){boolean connected=!FottoApi.token(MainActivity.this).isEmpty();String[] items={connected?"Reconectar conta Fotto":"Conectar conta Fotto","Trocar evento","Atualizar eventos","Enviar todas as pendentes","Abrir Fotto Web · fallback","Alterar pasta de exportação"};new AlertDialog.Builder(MainActivity.this).setTitle("Entrega direta").setItems(items,(d,n)->{if(n==0)startActivityForResult(new Intent(MainActivity.this,FottoLoginActivity.class),30);else if(n==1){if(!connected){message("Conecte o Fotto primeiro.");return;}if(fottoGalleries.isEmpty()){openEventChooserAfterLoad=true;loadFottoGalleries();}else showEventChooser();}else if(n==2)loadFottoGalleries();else if(n==3){if(checkFottoReady())FottoSync.sendExisting(MainActivity.this);}else if(n==4)openFottoWeb();else chooseExportFolder();}).show();}
+ void showEventChooser(){if(fottoGalleries.isEmpty()){message("Nenhum evento encontrado.");return;}String[] names=new String[fottoGalleries.size()];String saved=getSharedPreferences("hisho",0).getString("fottoGalleryId","");int checked=-1;for(int i=0;i<names.length;i++){names[i]=fottoGalleries.get(i).title;if(fottoGalleries.get(i).id.equals(saved))checked=i;}new AlertDialog.Builder(MainActivity.this).setTitle("Evento de destino").setSingleChoiceItems(names,checked,(d,which)->{FottoApi.Gallery g=fottoGalleries.get(which);android.content.SharedPreferences p=getSharedPreferences("hisho",0);String old=p.getString("fottoGalleryId","");android.content.SharedPreferences.Editor e=p.edit().putString("fottoGalleryId",g.id).putString("fottoGalleryTitle",g.title);if(!g.id.equals(old)&&p.getBoolean("fottoAuto",false))e.putLong("fottoStartRowid",database.maxRowId());e.apply();d.dismiss();updateFottoStatus();FottoSync.kick(MainActivity.this);}).setNegativeButton("Cancelar",null).show();}
+ void updateFottoStatus(){if(fottoStatus==null)return;android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);String token=FottoApi.token(MainActivity.this),galleryId=prefs.getString("fottoGalleryId","");String galleryTitle=prefs.getString("fottoGalleryTitle","");boolean active=prefs.getBoolean("fottoAuto",false);fottoStatus.setText(token.isEmpty()?"Fotto • Não conectado":FottoSync.running()?"Fotto • Enviando…":"Fotto • Conectado");fottoStatus.setTextColor(token.isEmpty()?MUTED:(FottoSync.running()?WARN:SUCCESS));fottoEventLabel.setText("Evento: "+(galleryTitle.isEmpty()?"—":galleryTitle)+(galleryId.isEmpty()?"":" · "+galleryId));int sent=galleryId.isEmpty()?prefs.getInt("fottoUploadedCount",0):database.fottoDone(galleryId);int pending=galleryId.isEmpty()?0:database.fottoPending(galleryId);int processing=galleryId.isEmpty()?0:database.fottoProcessing(galleryId);String last=prefs.getString("fottoLastStatus",active?"Envio automático ativo":"Envio automático pausado");fottoUploadStatus.setText(sent+" confirmadas · "+pending+" na fila"+(processing>0?" · "+processing+" processando":"")+(FottoSync.running()?" · sincronizando…":"")+"\n"+last);String dbError=galleryId.isEmpty()?"":database.fottoLastError(galleryId);boolean failure=(last!=null&&(last.startsWith("Falha")||last.contains("erro")||last.contains("Erro")||last.contains("Não confirmada")))||!dbError.isEmpty();fottoProblems.setVisibility(failure?View.VISIBLE:View.GONE);if(failure)fottoProblems.setText("Problemas\n"+(!dbError.isEmpty()?dbError:last));if(fottoAuto!=null&&fottoAuto.isChecked()!=active){fottoAuto.setOnCheckedChangeListener(null);fottoAuto.setChecked(active);bindFottoToggle();}}
+ void bindFottoToggle(){if(fottoAuto==null)return;fottoAuto.setOnCheckedChangeListener((b,checked)->{if(checked){if(FottoApi.token(MainActivity.this).isEmpty()){message("Conecte o Fotto antes de ativar o envio automático.");getSharedPreferences("hisho",0).edit().putBoolean("fottoAuto",false).apply();b.setChecked(false);return;}String galleryId=getSharedPreferences("hisho",0).getString("fottoGalleryId","");if(galleryId.isEmpty()){message("Escolha um evento antes de ativar o envio automático.");getSharedPreferences("hisho",0).edit().putBoolean("fottoAuto",false).apply();b.setChecked(false);return;}getSharedPreferences("hisho",0).edit().putBoolean("fottoAuto",true).putLong("fottoStartRowid",database.maxRowId()).putString("fottoLastStatus","Envio direto automático ativo").apply();FottoSync.kick(MainActivity.this);}else getSharedPreferences("hisho",0).edit().putBoolean("fottoAuto",false).putString("fottoLastStatus","Envio direto automático pausado").apply();updateFottoStatus();});}
+ void loadFottoGalleries(){if(FottoApi.token(MainActivity.this).isEmpty()){updateFottoStatus();return;}fottoStatus.setText("Fotto • Carregando eventos…");fottoNetwork.execute(()->{try{ArrayList<FottoApi.Gallery> list=FottoApi.galleries(MainActivity.this);handler.post(()->{if(destroyed)return;fottoGalleries.clear();fottoGalleries.addAll(list);String saved=getSharedPreferences("hisho",0).getString("fottoGalleryId","");boolean exists=false;for(FottoApi.Gallery g:list)if(g.id.equals(saved)){exists=true;break;}if(!exists&&!list.isEmpty()){FottoApi.Gallery g=list.get(0);getSharedPreferences("hisho",0).edit().putString("fottoGalleryId",g.id).putString("fottoGalleryTitle",g.title).apply();}if(list.isEmpty())getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Nenhum evento encontrado nesta conta.").apply();updateFottoStatus();if(openEventChooserAfterLoad){openEventChooserAfterLoad=false;showEventChooser();}});}catch(Exception e){handler.post(()->{if(destroyed)return;getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Falha ao carregar eventos · "+e.getMessage()).apply();updateFottoStatus();});}});}
  String num(int n){return n<0?"—":String.valueOf(n);}
 
 
+
  void openEditor(String focusId,Collection<String> ids,boolean paste){if(focusId==null||focusId.isEmpty()){message("Foto não encontrada no histórico.");return;}LinkedHashSet<String> unique=new LinkedHashSet<>();if(ids!=null)unique.addAll(ids);unique.add(focusId);StringBuilder packed=new StringBuilder();for(String id:unique){if(packed.length()>0)packed.append(',');packed.append(id);}Intent i=new Intent(MainActivity.this,ManualEditorActivity.class).putExtra("focusId",focusId).putExtra("jobIds",packed.toString()).putExtra("pasteOnOpen",paste);startActivity(i);}
- void approveReview(String id,String name,String reviewUri){message("Aprovando foto…");images.execute(()->{File tmp=new File(getCacheDir(),"approve_"+id+".jpg");boolean cleared=false;try(InputStream in=getContentResolver().openInputStream(Uri.parse(reviewUri));OutputStream out=new FileOutputStream(tmp)){if(in==null)throw new IOException("Foto de revisão indisponível.");Jobs.copy(in,out);database.clearEdited(id);cleared=true;Uri ready=database.save(tmp,"Editadas",name.replaceFirst("(?i)\\.jpg$","_Editada.jpg"),id,"edited");database.set(id,"done","error",null);database.history(id,System.currentTimeMillis(),"Aprovada","Aprovação manual na Revisão");try{getContentResolver().delete(Uri.parse(reviewUri),null,null);}catch(Exception ignored){}handler.post(()->{gallerySignature="";filesSignature="";reviewSignature="";refreshGallery();refreshFiles(true);refreshReview(true);message("Foto aprovada e liberada para entrega.");});}catch(Exception e){if(cleared)database.set(id,"review","edited",reviewUri);handler.post(()->message("Não foi possível aprovar: "+e.getMessage()));}finally{tmp.delete();}});}
+ void approveReview(String id,String name,String reviewUri){message("Aprovando foto…");images.execute(()->{File tmp=new File(getCacheDir(),"approve_"+id+".jpg");boolean cleared=false;try(InputStream in=getContentResolver().openInputStream(Uri.parse(reviewUri));OutputStream out=new FileOutputStream(tmp)){if(in==null)throw new IOException("Foto de revisão indisponível.");Jobs.copy(in,out);database.clearEdited(id);cleared=true;Uri ready=database.save(tmp,"Editadas",name.replaceFirst("(?i)\\.jpg$","_Editada.jpg"),id,"edited");database.set(id,"done","error",null);database.history(id,System.currentTimeMillis(),"Aprovada","Aprovação manual na Revisão");try{getContentResolver().delete(Uri.parse(reviewUri),null,null);}catch(Exception ignored){}FottoSync.kick(MainActivity.this);handler.post(()->{gallerySignature="";filesSignature="";reviewSignature="";refreshGallery();refreshFiles(true);refreshReview(true);message("Foto aprovada e liberada para entrega.");});}catch(Exception e){if(cleared)database.set(id,"review","edited",reviewUri);handler.post(()->message("Não foi possível aprovar: "+e.getMessage()));}finally{tmp.delete();}});}
  void openImage(String uri){try{Intent i=new Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(uri),"image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(i);}catch(Exception e){message("Não foi possível abrir esta foto.");}}
  void diagnostic(){TextView t=text(report==null?"":report.getText().toString(),12,MUTED,false);t.setTextIsSelectable(true);t.setPadding(dp(16),dp(16),dp(16),dp(16));ScrollView scroll=new ScrollView(MainActivity.this);scroll.addView(t);new AlertDialog.Builder(MainActivity.this).setTitle("Diagnóstico da sessão").setView(scroll).setPositiveButton("Copiar",(d,n)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("LUMO",t.getText()));message("Diagnóstico copiado.");}).setNegativeButton("Fechar",null).show();}
 
@@ -381,6 +356,7 @@ public class MainActivity extends Activity {
  static String read(InputStream stream)throws IOException{try(InputStream s=stream;ByteArrayOutputStream b=new ByteArrayOutputStream()){byte[] a=new byte[8192];int n;while((n=s.read(a))!=-1){if(b.size()+n>1024*1024)throw new IOException("Arquivo maior que 1 MB.");b.write(a,0,n);}return b.toString("UTF-8");}}
 
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
+  if(request==30){if(result==RESULT_OK){getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Conta conectada. Carregando eventos…").apply();loadFottoGalleries();updateFottoStatus();}return;}
   if(request==20&&result==RESULT_OK&&data!=null&&data.getData()!=null){Uri uri=data.getData();int flags=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);try{getContentResolver().takePersistableUriPermission(uri,flags);getSharedPreferences("hisho",0).edit().putString("exportTreeUri",uri.toString()).apply();updateExportFolder();message("Pasta de exportação salva.");}catch(Exception e){message("Não foi possível manter acesso à pasta: "+e.getMessage());}return;}
   if(request==10&&result==RESULT_OK&&data!=null)try{JSONObject parsed=PhotoEditor.parse(read(getContentResolver().openInputStream(data.getData())));presetData=parsed;presetName="Predefinição importada";try(Cursor c=getContentResolver().query(data.getData(),new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst())presetName=c.getString(0).replaceFirst("(?i)\\.xmp$","");}getSharedPreferences("hisho",0).edit().putString("preset",parsed.toString()).putString("presetName",presetName).putBoolean("presetEnabled",true).apply();PresetLibrary.put(MainActivity.this,presetName,parsed);publishLiveSettings();refreshQuickControls();message("Predefinição "+presetName+" importada.");}catch(Exception e){message("Predefinição anterior mantida: "+e.getMessage());}
  }

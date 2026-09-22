@@ -1,33 +1,48 @@
-# LUMO 0.13.0 — Produção
+# LUMO 0.15.0 — Fotto Direto
 
-Aplicativo Android para captura vinculada Canon, edição, curadoria, recuperação retroativa e entrega confirmada ao Fotto. A interface visível está em português.
+Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
 
-## Recursos desta versão
+## Novidade desta versão
 
-1. **Confirmação real no Fotto** — após o envio binário, o LUMO consulta novamente o evento e só conta a foto como confirmada quando encontra o ID/nome da mídia. Estados: enviando, processando, confirmada, não confirmada e erro.
-2. **Saúde do fluxo** — painel com Câmera, Recebimento, Edição, Curadoria, Fotto, fila, última foto recebida, confirmadas e pendentes.
-3. **Fila persistente** — SQLite, retomada após reabrir o app, troca do APK e reinicialização do aparelho, com JobScheduler.
-4. **Reconexão inteligente** — ao conectar a câmera, verifica o cartão, recupera o que ainda não foi baixado e reconcilia a fila Fotto.
-5. **Curadoria inteligente local** — combina análise técnica com heurísticas locais de rosto para sinalizar possível olho fechado, rosto muito virado, corte de pessoa/rosto, obstrução e expressão desfavorável. É uma triagem experimental, não substitui revisão humana.
-6. **Rajadas** — fotos capturadas em sequência próxima são agrupadas e ordenadas pela nota; o detalhe mostra a melhor e alternativas.
-7. **Duplicatas** — SHA-256 para duplicata exata e hash perceptual para imagens visualmente muito semelhantes fora da mesma rajada.
-8. **Histórico por foto** — captura, download, edição/predefinição, curadoria/nota, aprovação, início/fim do envio e confirmação no Fotto.
-9. **Perfis de trabalho** — Corrida, Aniversário, Ensaio, Futebol e Personalizado. Cada perfil pode guardar curadoria, intensidade automática, predefinição, recuperação retroativa, pasta de exportação, evento Fotto e comportamento de envio automático.
-10. **Modo Evento** — mantém a tela ativa, habilita recuperação/curadoria, retoma filas, monitora Fotto, bateria e espaço e usa alerta sonoro para falhas críticas. A tela fica mais enxuta ocultando configurações gerais enquanto o modo está ativo.
+O caminho principal de entrega não depende mais do monitoramento de pasta do Fotto.
 
-## Predefinição durante o evento
+**Captura → edição → Editadas → criar mídia no Fotto → PUT direto no S3 → confirmar `processed=true`.**
 
-Na tela Captura existe um controle de **Predefinição**. É possível trocar entre predefinições já salvas, desligar a predefinição ou importar um novo XMP sem encerrar a captura. A mudança vale para as próximas fotos recebidas; fotos já processadas não são reprocessadas automaticamente.
+O Fotto Web continua disponível como fallback e para conferência do evento.
 
-## Idioma
+## Entrega Fotto
 
-A interface, navegação, estados de entrega, configurações e mensagens operacionais estão em português. Termos técnicos internos de API/SQLite permanecem apenas no código e em diagnósticos técnicos.
+Na aba **Entrega**:
+
+- conecte/reconecte a conta Fotto pelo menu `⋯`;
+- escolha o evento de destino;
+- ative **Envio direto automático**;
+- use **Enviar pendentes agora** para processar fotos já aprovadas;
+- use **Abrir Fotto Web · fallback** apenas quando precisar conferir a página ou usar o método antigo.
+
+A fila é persistente e evita reenviar fotos já confirmadas para o mesmo evento.
+
+## Fluxo principal
+
+**Captura → Galeria → Revisão → Entrega**
+
+Fotos reprovadas pela curadoria permanecem em **Sob Revisão** e não entram na entrega até serem aprovadas ou corrigidas.
 
 ## Compilação
 
-- Android SDK 35 / Build Tools 35.0.0
-- `versionCode`: 25
-- `versionName`: `0.13.0-producao`
-- saída: `Lumo.apk`
+O projeto usa Java + Android SDK 35, sem Gradle.
 
-O GitHub Actions executa as verificações de recursos, os testes de fila e então `python3 build.py`.
+O GitHub Actions em `.github/workflows/build-apk.yml` instala API 35 / Build Tools 35.0.0, executa os testes e roda:
+
+```bash
+python3 build.py
+```
+
+Saída: **Lumo.apk**
+
+- `versionCode`: 36
+- `versionName`: `0.15.0-fotto-direto`
+- minSdk: 29
+- targetSdk: 35
+
+Veja `IMPLEMENTACAO-0.15.0-FOTTO-DIRETO.txt` para o fluxo e o roteiro do primeiro teste.

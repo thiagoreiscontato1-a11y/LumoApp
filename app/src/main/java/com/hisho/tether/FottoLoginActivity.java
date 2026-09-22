@@ -16,7 +16,7 @@ public class FottoLoginActivity extends Activity{
  }
  int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
 
- void setup(){WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setJavaScriptCanOpenWindowsAutomatically(true);s.setUserAgentString(s.getUserAgentString()+" LUMO/0.9.7");
+ void setup(){WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setJavaScriptCanOpenWindowsAutomatically(true);s.setUserAgentString(s.getUserAgentString()+" LUMO/0.15.0");
   CookieManager cm=CookieManager.getInstance();cm.setAcceptCookie(true);cm.setAcceptThirdPartyCookies(web,true);
   web.addJavascriptInterface(new Bridge(),"FottoBridge");web.setWebChromeClient(new WebChromeClient());
   web.setWebViewClient(new WebViewClient(){
