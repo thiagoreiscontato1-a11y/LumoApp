@@ -46,13 +46,23 @@ public class CaptureService extends Service{
       String identity=getSharedPreferences("hisho",0).getString("wifiGuid",null);if(identity==null){identity=UUID.randomUUID().toString();getSharedPreferences("hisho",0).edit().putString("wifiGuid",identity).apply();}
       ptp=new WifiPtp(wifiNetwork,wifiHost,identity);status="Wi-Fi: autorize LUMO na câmera, se solicitado.";log(status);
      }
-     transport=ptp;ptp.open();if(!capturing)return;
+     transport=ptp;
+     status="Abrindo sessão PTP…";log(status);ptp.open();if(!capturing)return;
+     // Confirma a camada USB/PTP imediatamente. Antes, a UI permanecia em
+     // CONECTANDO durante toda a listagem do cartão, especialmente perceptível na R8.
+     link.ready();alertArmed.set(true);
+     int vid=device==null?0:device.getVendorId(),pid=device==null?0:device.getProductId();
+     boolean r8=device!=null&&vid==0x04A9&&(pid==0x330C||pid==0x3113);
+     status=(r8?"Canon R8 detectada · ":"")+"PTP conectado · ativando captura Canon…";log(status+" USB "+String.format(Locale.ROOT,"%04X:%04X",vid,pid));
+     ptp.captureMode();if(!capturing)return;
+     try{ptp.drain();}catch(Ptp.Failure e){if(e.code!=0x2019)throw e;}
+     status=(r8?"R8 conectada · ":"Conectada · ")+"lendo índice do cartão…";log(status);
      List<int[]> initial=ptp.objects();seen.clear();backlog.clear();
      for(int[] o:initial)seen.add(o[0]+":"+o[1]);
      if(backfill)for(int i=initial.size()-1;i>=0;i--)backlog.addLast(initial.get(i));
-     if(!capturing)return;status="Ativando captura Canon…";log(status);ptp.captureMode();ptp.drain();if(!capturing)return;
-     link.ready();alertArmed.set(true);status=backlog.isEmpty()?"Conexão confirmada. Fotografe na câmera.":"Conexão confirmada · retroativo em segundo plano ("+backlog.size()+")";log(status);break;
-    }catch(IOException e){log("Abertura falhou: "+e.getMessage());if(ptp!=null){ptp.close();ptp=null;transport=null;}backlog.clear();if(!capturing)return;if(attempt==3)throw e;status="Câmera ainda não respondeu. Tentando novamente…";Thread.sleep(900L*attempt);}
+     if(!capturing)return;
+     status=backlog.isEmpty()?"Conexão confirmada. Fotografe na câmera.":"Conexão confirmada · retroativo em segundo plano ("+backlog.size()+")";log(status);break;
+    }catch(IOException e){log("Abertura falhou: "+e.getMessage());if(ptp!=null){try{ptp.close();}catch(Exception ignored){}ptp=null;transport=null;}backlog.clear();if(!capturing)return;if(attempt==3)throw e;link.connect();status="Câmera ainda não respondeu. Tentando novamente…";log(status);Thread.sleep(900L*attempt);}
    }
    if(ptp==null||!capturing)return;
    int transientErrors=0;

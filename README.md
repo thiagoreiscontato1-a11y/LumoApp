@@ -1,4 +1,4 @@
-# LUMO 0.15.1 — R8 + Encerrar envio
+# LUMO 0.15.2 — R8 Handshake + Encerrar envio
 
 Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
 
@@ -40,8 +40,8 @@ python3 build.py
 
 Saída: **Lumo.apk**
 
-- `versionCode`: 37
-- `versionName`: `0.15.1-r8-stop-envio`
+- `versionCode`: 38
+- `versionName`: `0.15.2-r8-handshake`
 - minSdk: 29
 - targetSdk: 35
 
@@ -55,3 +55,13 @@ Veja `IMPLEMENTACAO-0.15.0-FOTTO-DIRETO.txt` para o fluxo e o roteiro do primeir
 - conexão Canon alterada para ativar a captura antes da recuperação retroativa;
 - retroativo passa a ser recuperado gradualmente, uma foto por ciclo, sem bloquear fotos novas;
 - tolerância ampliada a respostas Canon `DeviceBusy` durante a ativação/event polling, visando a EOS R8.
+
+
+## 0.15.2
+
+- handshake USB/PTP da Canon R8 mais resiliente;
+- `DeviceBusy (0x2019)` recebe retry progressivo durante SetRemoteMode / SetEventMode / GetEvent;
+- a interface passa para **CONECTADA** assim que a sessão PTP abre, antes da varredura do cartão;
+- fases de diagnóstico mais claras (`Abrindo sessão PTP`, `ativando captura Canon`, `lendo índice do cartão`);
+- tolerância a timeouts USB transitórios antes de considerar a conexão quebrada;
+- mantém o botão **Encerrar envio** e o upload direto validado no Fotto.

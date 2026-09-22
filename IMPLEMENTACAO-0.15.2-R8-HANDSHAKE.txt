@@ -1,0 +1,9 @@
+LUMO 0.15.2 — R8 Handshake
+
+- Mantém o botão Encerrar envio da 0.15.1.
+- Confirma USB/PTP na interface antes de varrer o cartão.
+- Detecta IDs conhecidos da EOS R8 (Canon 04A9:330C / 04A9:3113) para diagnóstico.
+- Retry progressivo para DeviceBusy (PTP 0x2019) nos comandos Canon SetRemoteMode, SetEventMode e GetEvent.
+- Tolera até três timeouts transitórios de leitura USB antes de declarar a sessão quebrada.
+- Mostra fases de conexão no log: Abrindo sessão PTP, ativando captura Canon, lendo índice do cartão.
+- Retroativo continua em segundo plano e fotos novas permanecem prioritárias.
