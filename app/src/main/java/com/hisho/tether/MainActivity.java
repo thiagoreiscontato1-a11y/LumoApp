@@ -104,9 +104,7 @@ public class MainActivity extends Activity {
   LinearLayout header=vertical();header.setPadding(dp(16),dp(8),dp(16),dp(8));header.setBackgroundColor(CARD);
   LinearLayout top=row();LumoMark logo=new LumoMark(MainActivity.this);top.addView(logo,new LinearLayout.LayoutParams(dp(34),dp(34)));TextView brand=text("LUMO",19,TEXT,true);brand.setPadding(dp(9),0,0,0);top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
   healthButton=compactButton("Saúde",v->showHealthPanel());top.addView(healthButton,new LinearLayout.LayoutParams(dp(68),dp(38)));themeButton=compactButton(darkMode?"☀":"☾",v->{getSharedPreferences("hisho",0).edit().putBoolean("darkMode",!darkMode).apply();recreate();});LinearLayout.LayoutParams thp=new LinearLayout.LayoutParams(dp(44),dp(38));thp.leftMargin=dp(5);top.addView(themeButton,thp);settingsButton=compactButton("⚙",v->captureSettingsDialog());LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(44),dp(38));sp.leftMargin=dp(5);top.addView(settingsButton,sp);header.addView(top);
-  flowStatus=text("Canon • Sem câmera
-Bateria · armazenamento
-Pendentes · processadas · enviadas",10,MUTED,true);flowStatus.setSingleLine(false);flowStatus.setMaxLines(3);flowStatus.setHorizontallyScrolling(false);flowStatus.setEllipsize(null);flowStatus.setLineSpacing(dp(2),1f);flowStatus.setIncludeFontPadding(false);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,-2);fl.topMargin=dp(4);fl.bottomMargin=dp(2);header.addView(flowStatus,fl);root.addView(header);
+  flowStatus=text("Canon • Sem câmera\nBateria · armazenamento\nPendentes · processadas · enviadas",10,MUTED,true);flowStatus.setSingleLine(false);flowStatus.setMaxLines(3);flowStatus.setHorizontallyScrolling(false);flowStatus.setEllipsize(null);flowStatus.setLineSpacing(dp(2),1f);flowStatus.setIncludeFontPadding(false);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,-2);fl.topMargin=dp(4);fl.bottomMargin=dp(2);header.addView(flowStatus,fl);root.addView(header);
 
   FrameLayout content=new FrameLayout(MainActivity.this);root.addView(content,new LinearLayout.LayoutParams(-1,0,1));
   for(int i=0;i<4;i++){scrollers[i]=new ScrollView(MainActivity.this);scrollers[i].setFillViewport(true);scrollers[i].setVerticalScrollBarEnabled(false);pages[i]=vertical();pages[i].setPadding(dp(14),dp(12),dp(14),dp(18));scrollers[i].addView(pages[i]);content.addView(scrollers[i],new FrameLayout.LayoutParams(-1,-1));}
@@ -227,11 +225,8 @@ Pendentes · processadas · enviadas",10,MUTED,true);flowStatus.setSingleLine(fa
    String line1=cam+" • "+conn;
    String line2="bateria "+b+" · "+gb+" GB";
    String line3="↓ "+transfer+" novas · pend. "+editing+" · proc. "+processed+" · ↑ "+sent;
-   if(!gallery.isEmpty())line3+="
-Fotto: fila "+pending+" · enviando "+processing;
-   flowStatus.setText(line1+"
-"+line2+"
-"+line3);
+   if(!gallery.isEmpty())line3+="\nFotto: fila "+pending+" · enviando "+processing;
+   flowStatus.setText(line1+"\n"+line2+"\n"+line3);
   }else{
    flowStatus.setText(cam+" • "+conn+"   |   bateria "+b+" · "+gb+" GB   |   ↓ "+transfer+"   ✦ "+editing+"   ✓ "+processed+"   ↑ "+sent+(gallery.isEmpty()?"":"   |   fila "+pending+" · env. "+processing));
   }

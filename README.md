@@ -1,4 +1,4 @@
-# LUMO 0.15.4 — Fotto fila longa + R8 + Encerrar envio
+# LUMO 0.15.5 — Fotto fila longa + correção de build
 
 Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
 
@@ -40,8 +40,8 @@ python3 build.py
 
 Saída: **Lumo.apk**
 
-- `versionCode`: 39
-- `versionName`: `0.15.4-fotto-long-queue`
+- `versionCode`: 40
+- `versionName`: `0.15.5-fotto-long-queue-build-fix`
 - minSdk: 29
 - targetSdk: 35
 
@@ -66,6 +66,13 @@ Veja `IMPLEMENTACAO-0.15.0-FOTTO-DIRETO.txt` para o fluxo e o roteiro do primeir
 - tolerância a timeouts USB transitórios antes de considerar a conexão quebrada;
 - mantém o botão **Encerrar envio** e o upload direto validado no Fotto.
 
+
+
+## 0.15.5 — Correção de build
+
+- Corrigidas quebras de linha literais que deixavam strings Java abertas no cabeçalho do modo retrato.
+- Mantida integralmente a fila longa do Fotto da 0.15.4.
+- Adicionado teste `java_source_contract.py` ao GitHub Actions para detectar string Java atravessando linha antes da compilação.
 
 ## 0.15.4 — Fila longa do Fotto
 

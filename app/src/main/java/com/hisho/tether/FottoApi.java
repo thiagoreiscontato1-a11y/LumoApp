@@ -11,12 +11,12 @@ final class FottoApi {
  static String apiKey(Context c){String v=prefs(c).getString("fottoApiKeyV7","").trim();if(!v.isEmpty())return stripBearer(v);v=prefs(c).getString("fottoApiKeyV5","").trim();if(!v.isEmpty())return stripBearer(v);return stripBearer(prefs(c).getString("fottoApiKeyV4","").trim());}
  static String token(Context c){String k=apiKey(c);return !k.isEmpty()?k:accessToken(c);}
  static HttpURLConnection connection(String url,String method,String token)throws IOException{
-  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.15.4 Android");
+  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.15.5 Android");
   if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization",stripBearer(token));}
   return c;
  }
  static HttpURLConnection connectionBearer(String url,String method,String token)throws IOException{
-  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.15.4 Android");
+  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setRequestMethod(method);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Lumo/0.15.5 Android");
   if(token!=null&&!token.isEmpty()){c.setRequestProperty("App-Code","fotto");c.setRequestProperty("Authorization","Bearer "+stripBearer(token));}
   return c;
  }
@@ -102,7 +102,7 @@ final class FottoApi {
   for(int i=0;i<arr.length();i++){JSONObject m=arr.optJSONObject(i);if(m==null||!m.optBoolean("processed",false))continue;String id=value(m.opt("id")),original=m.optString("originalFileName",m.optString("name",""));if(!id.isEmpty())out.put(id,original);}
   return out;
  }
- static void revalidateGallery(String galleryId){HttpURLConnection c=null;try{String u="https://www.fotto.com.br/api/revalidate/medias/"+Uri.encode(galleryId)+"?type=image";c=(HttpURLConnection)new URL(u).openConnection();c.setRequestMethod("GET");c.setConnectTimeout(8000);c.setReadTimeout(10000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("User-Agent","Lumo/0.15.4 Android");int code=c.getResponseCode();InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();if(in!=null)read(in,65536);}catch(Exception ignored){}finally{if(c!=null)c.disconnect();}}
+ static void revalidateGallery(String galleryId){HttpURLConnection c=null;try{String u="https://www.fotto.com.br/api/revalidate/medias/"+Uri.encode(galleryId)+"?type=image";c=(HttpURLConnection)new URL(u).openConnection();c.setRequestMethod("GET");c.setConnectTimeout(8000);c.setReadTimeout(10000);c.setUseCaches(false);c.setRequestProperty("Accept","application/json");c.setRequestProperty("User-Agent","Lumo/0.15.5 Android");int code=c.getResponseCode();InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();if(in!=null)read(in,65536);}catch(Exception ignored){}finally{if(c!=null)c.disconnect();}}
  static String confirmMedia(Context ctx,String galleryId,String expectedId,String name)throws Exception{
   String json=call(ctx,"GET","/me/galleries/"+Uri.encode(galleryId)+"/medias",null);Object root=new JSONTokener(json).nextValue();JSONArray arr=findArray(root,"medias");
   if(arr==null&&root instanceof JSONObject){Object d=((JSONObject)root).opt("data");if(d instanceof JSONArray)arr=(JSONArray)d;else if(d!=null)arr=findArray(d,"medias");}
