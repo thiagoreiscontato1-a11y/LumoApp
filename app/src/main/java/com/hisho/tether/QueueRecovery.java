@@ -11,6 +11,8 @@ final class QueueRecovery{
     try{if(Build.VERSION.SDK_INT>=26)app.startForegroundService(i);else app.startService(i);}catch(Exception ignored){}
    }
   }finally{j.close();}
+   FottoSync.kick(app);
+   FottoSync.watchdog(app);
 schedule(app);
  }
  private QueueRecovery(){}
