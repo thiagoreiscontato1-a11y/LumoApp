@@ -8,6 +8,8 @@ assert 'while(!STOP_REQUESTED.get())' in sync
 assert 'RECONCILE_EVERY=15' in sync
 assert 'processedMedia(c,gallery)' in sync
 assert "f.state='error' AND f.attempts<4" in jobs
+assert 'fottoErrorCount' in jobs
+assert 'watchdog(Context source)' in sync
 assert "f.state='error' OR f.state='unconfirmed'" not in jobs
 assert 'fottoUploadPending' in jobs
 assert 'fottoAccepted' in jobs

@@ -85,12 +85,14 @@ if errors:
 main = ROOT / "com" / "hisho" / "tether" / "MainActivity.java"
 s = main.read_text(encoding="utf-8")
 for required in [
-    'flowStatus=text("Canon • Sem câmera\\nBateria · armazenamento\\nPendentes · processadas · enviadas"',
-    'line3+="\\nFotto: fila "',
-    'flowStatus.setText(line1+"\\n"+line2+"\\n"+line3);',
+    'metricBattery=metricChip("BATERIA")',
+    'metricPending=metricChip("PENDENTES")',
+    'metricProcessed=metricChip("PROCESSADAS")',
+    'metricSent=metricChip("ENVIADAS")',
+    'metricBattery.setText("BATERIA\\n"+b)',
 ]:
     if required not in s:
-        print("FAIL: contrato do cabeçalho não encontrado:", required)
+        print("FAIL: contrato do cabeçalho em chips não encontrado:", required)
         sys.exit(1)
 
-print("PASS: fontes Java sem string literal atravessando linha; cabeçalho retrato usa escapes \\n válidos.")
+print("PASS: fontes Java sem string literal atravessando linha; cabeçalho usa mini-cards/chips.")

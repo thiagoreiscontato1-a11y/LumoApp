@@ -23,6 +23,7 @@ public class MainActivity extends Activity {
  boolean darkMode;
 
  private TextView flowStatus,badge,status,timing,previewTitle,previewSub,galleryInfo,gallerySelectionLabel,reviewHeading,fottoLiveStatus;
+ private TextView metricBattery,metricStorage,metricPending,metricProcessed,metricSent;
  private TextView folderLabel,fottoStatus,fottoEventLabel,fottoUploadStatus,fottoProblems;
  private Button connect,resume,settingsButton,themeButton,folderButton,fottoMenu,fottoSend,healthButton,eventModeButton,presetQuick;
  private CompoundButton fottoAuto;
@@ -74,6 +75,7 @@ public class MainActivity extends Activity {
   android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
   if(status!=null){if(running){status.setText(s.status);timing.setText(s.detail.isEmpty()?"Captura e edição em filas independentes":s.detail);report.setText(s.report());badge.setText("● "+s.connectionLabel());badge.setTextColor("CONECTADA".equals(s.connectionLabel())?SUCCESS:WARN);}else{status.setText(prefs.getString("lastStatus","Pronto para conectar a câmera."));timing.setText("Original preservado · edição e curadoria em segundo plano");report.setText(prefs.getString("lastReport","Nenhuma atividade registrada."));badge.setText("● SEM CÂMERA");badge.setTextColor(MUTED);}}
   updateGlobalStatus();
+  FottoSync.watchdog(MainActivity.this);
   refreshGallery();
   long now=SystemClock.elapsedRealtime();if(now-lastUiRefresh>1500){lastUiRefresh=now;if(selected==1)refreshFiles(false);if(selected==2)refreshReview(false);if(selected==3)updateFottoStatus();}
   handler.postDelayed(this,700);
@@ -94,6 +96,17 @@ public class MainActivity extends Activity {
  Button compactButton(String value,View.OnClickListener listener){Button b=new Button(MainActivity.this);b.setText(value);b.setTextSize(13);b.setTextColor(TEXT);b.setAllCaps(false);b.setTypeface(Typeface.create("sans-serif-medium",0));b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x180b7cff),border(CARD2,12),null));b.setMinHeight(0);b.setMinimumHeight(0);b.setPadding(dp(10),0,dp(10),0);b.setOnClickListener(listener);return b;}
  void primary(Button b){b.setTextColor(Color.WHITE);b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),shape(GREEN,12),null));}
  TextView chip(String value,int fg,int bg){TextView t=text(value,10,fg,true);t.setGravity(Gravity.CENTER);t.setPadding(dp(7),dp(4),dp(7),dp(4));t.setBackground(shape(bg,10));return t;}
+ TextView metricChip(String title){TextView t=text(title+"\n—",10,TEXT,true);t.setGravity(Gravity.CENTER);t.setLines(2);t.setLineSpacing(dp(1),1f);t.setPadding(dp(5),dp(6),dp(5),dp(6));t.setBackground(border(CARD2,12));return t;}
+ void addMetric(LinearLayout row,TextView view,boolean first){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(46),1f);if(!first)lp.leftMargin=dp(6);row.addView(view,lp);}
+ void buildHeaderMetrics(LinearLayout header){
+  metricBattery=metricChip("BATERIA");metricStorage=metricChip("ESPAÇO");metricPending=metricChip("PENDENTES");metricProcessed=metricChip("PROCESSADAS");metricSent=metricChip("ENVIADAS");
+  if(compactHeader()){
+   LinearLayout a=row();addMetric(a,metricBattery,true);addMetric(a,metricStorage,false);header.addView(a,new LinearLayout.LayoutParams(-1,-2));
+   gap(header,6);LinearLayout b=row();addMetric(b,metricPending,true);addMetric(b,metricProcessed,false);addMetric(b,metricSent,false);header.addView(b,new LinearLayout.LayoutParams(-1,-2));
+  }else{
+   LinearLayout a=row();addMetric(a,metricBattery,true);addMetric(a,metricStorage,false);addMetric(a,metricPending,false);addMetric(a,metricProcessed,false);addMetric(a,metricSent,false);header.addView(a,new LinearLayout.LayoutParams(-1,-2));
+  }
+ }
 
  @Override public void onCreate(Bundle saved){
   darkMode=getSharedPreferences("hisho",0).getBoolean("darkMode",false);if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);setTheme(darkMode?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);super.onCreate(saved);applyPalette();database=new Jobs(MainActivity.this);loadPreset();PresetLibrary.seed(MainActivity.this,presetName,presetData);QueueRecovery.resume(MainActivity.this);
@@ -104,7 +117,7 @@ public class MainActivity extends Activity {
   LinearLayout header=vertical();header.setPadding(dp(16),dp(8),dp(16),dp(8));header.setBackgroundColor(CARD);
   LinearLayout top=row();LumoMark logo=new LumoMark(MainActivity.this);top.addView(logo,new LinearLayout.LayoutParams(dp(34),dp(34)));TextView brand=text("LUMO",19,TEXT,true);brand.setPadding(dp(9),0,0,0);top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
   healthButton=compactButton("Saúde",v->showHealthPanel());top.addView(healthButton,new LinearLayout.LayoutParams(dp(68),dp(38)));themeButton=compactButton(darkMode?"☀":"☾",v->{getSharedPreferences("hisho",0).edit().putBoolean("darkMode",!darkMode).apply();recreate();});LinearLayout.LayoutParams thp=new LinearLayout.LayoutParams(dp(44),dp(38));thp.leftMargin=dp(5);top.addView(themeButton,thp);settingsButton=compactButton("⚙",v->captureSettingsDialog());LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(44),dp(38));sp.leftMargin=dp(5);top.addView(settingsButton,sp);header.addView(top);
-  flowStatus=text("Canon • Sem câmera\nBateria · armazenamento\nPendentes · processadas · enviadas",10,MUTED,true);flowStatus.setSingleLine(false);flowStatus.setMaxLines(3);flowStatus.setHorizontallyScrolling(false);flowStatus.setEllipsize(null);flowStatus.setLineSpacing(dp(2),1f);flowStatus.setIncludeFontPadding(false);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,-2);fl.topMargin=dp(4);fl.bottomMargin=dp(2);header.addView(flowStatus,fl);root.addView(header);
+  flowStatus=text("Canon • Sem câmera",11,MUTED,true);flowStatus.setSingleLine(false);flowStatus.setMaxLines(2);flowStatus.setHorizontallyScrolling(false);flowStatus.setEllipsize(null);flowStatus.setIncludeFontPadding(false);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,-2);fl.topMargin=dp(4);fl.bottomMargin=dp(6);header.addView(flowStatus,fl);buildHeaderMetrics(header);root.addView(header);
 
   FrameLayout content=new FrameLayout(MainActivity.this);root.addView(content,new LinearLayout.LayoutParams(-1,0,1));
   for(int i=0;i<4;i++){scrollers[i]=new ScrollView(MainActivity.this);scrollers[i].setFillViewport(true);scrollers[i].setVerticalScrollBarEnabled(false);pages[i]=vertical();pages[i].setPadding(dp(14),dp(12),dp(14),dp(18));scrollers[i].addView(pages[i]);content.addView(scrollers[i],new FrameLayout.LayoutParams(-1,-1));}
@@ -221,17 +234,13 @@ public class MainActivity extends Activity {
   long freeBytes=Math.max(0,getFilesDir().getUsableSpace()),gb=freeBytes/(1024L*1024L*1024L);int transfer=c==null?prefs.getInt("lastReceived",0):c.received,editing=database.processingCount(),processed=database.doneCount();
   String gallery=prefs.getString("fottoGalleryId","");int confirmed=gallery.isEmpty()?prefs.getInt("fottoUploadedCount",0):database.fottoDone(gallery),sent=gallery.isEmpty()?confirmed:database.fottoAccepted(gallery),pending=gallery.isEmpty()?0:database.fottoPending(gallery),processing=gallery.isEmpty()?0:database.fottoProcessing(gallery);boolean directActive=prefs.getBoolean("fottoAuto",false);String fErr=gallery.isEmpty()?"":database.fottoLastError(gallery);
   String b=battery<0?"—":battery+"%";boolean lowBattery=battery>=0&&battery<=20,lowSpace=freeBytes>0&&freeBytes<1024L*1024L*1024L;
-  if(compactHeader()){
-   String line1=cam+" • "+conn;
-   String line2="bateria "+b+" · "+gb+" GB";
-   String line3="↓ "+transfer+" novas · pend. "+editing+" · proc. "+processed+" · ↑ "+sent;
-   if(!gallery.isEmpty())line3+="\nFotto: fila "+pending+" · enviando "+processing;
-   flowStatus.setText(line1+"\n"+line2+"\n"+line3);
-  }else{
-   flowStatus.setText(cam+" • "+conn+"   |   bateria "+b+" · "+gb+" GB   |   ↓ "+transfer+"   ✦ "+editing+"   ✓ "+processed+"   ↑ "+sent+(gallery.isEmpty()?"":"   |   fila "+pending+" · env. "+processing));
-  }
-  flowStatus.setTextColor(lowBattery||lowSpace||!fErr.isEmpty()?WARN:MUTED);
-  if(fottoLiveStatus!=null){String state=FottoApi.token(MainActivity.this).isEmpty()?"NÃO CONECTADO":gallery.isEmpty()?"SEM EVENTO":directActive?"ATIVO":"PAUSADO";if(FottoSync.running())state="ENVIANDO";String title=prefs.getString("fottoGalleryTitle","");String line1="Fotto direto • "+state+(title.isEmpty()?"":" · "+title);String line2="Enviadas "+sent+" · confirmadas "+confirmed+" · processando "+processing;String last=prefs.getString("fottoLastStatus","");if(!last.isEmpty()&&last.length()<150)line2+="\n"+last;fottoLiveStatus.setText(line1+"\n"+line2);fottoLiveStatus.setTextColor(!fErr.isEmpty()?WARN:(directActive?SUCCESS:MUTED));}
+  flowStatus.setText(cam+" • "+conn);flowStatus.setTextColor("CONECTADA".equals(conn)?SUCCESS:("Sem câmera".equals(conn)?MUTED:WARN));
+  if(metricBattery!=null){metricBattery.setText("BATERIA\n"+b);metricBattery.setTextColor(lowBattery?WARN:TEXT);}
+  if(metricStorage!=null){metricStorage.setText("ESPAÇO\n"+gb+" GB");metricStorage.setTextColor(lowSpace?WARN:TEXT);}
+  if(metricPending!=null){metricPending.setText("PENDENTES\n"+editing);metricPending.setTextColor(editing>0?WARN:MUTED);}
+  if(metricProcessed!=null){metricProcessed.setText("PROCESSADAS\n"+processed);metricProcessed.setTextColor(processed>0?TEXT:MUTED);}
+  if(metricSent!=null){metricSent.setText("ENVIADAS\n"+sent);metricSent.setTextColor(sent>0?SUCCESS:MUTED);}
+  if(fottoLiveStatus!=null){String state=FottoApi.token(MainActivity.this).isEmpty()?"NÃO CONECTADO":gallery.isEmpty()?"SEM EVENTO":directActive?"ATIVO":"PAUSADO";if(FottoSync.running())state="ENVIANDO";String title=prefs.getString("fottoGalleryTitle","");String line1="Fotto direto • "+state+(title.isEmpty()?"":" · "+title);String line2="Enviadas "+sent+" · confirmadas "+confirmed+" · processando "+processing+" · fila "+pending;String last=prefs.getString("fottoLastStatus","");if(!last.isEmpty()&&last.length()<150)line2+="\n"+last;fottoLiveStatus.setText(line1+"\n"+line2);fottoLiveStatus.setTextColor(!fErr.isEmpty()?WARN:(directActive?SUCCESS:MUTED));}
   if(prefs.getBoolean("eventMode",false)){if(lowBattery)EventAlert.signal(MainActivity.this,"bateria","Bateria em "+battery+"%. Conecte o carregador.");if(lowSpace)EventAlert.signal(MainActivity.this,"espaco","Menos de 1 GB livre. Libere armazenamento.");if(!fErr.isEmpty())EventAlert.signal(MainActivity.this,"fotto","Falha na entrega Fotto: "+fErr);}
   int reviews=database.reviewCount();if(tabs[2]!=null)tabs[2].setText(reviews>0?"Revisão ("+reviews+")":"Revisão");
  }

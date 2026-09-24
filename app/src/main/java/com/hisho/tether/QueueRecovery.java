@@ -12,6 +12,7 @@ final class QueueRecovery{
    }
   }finally{j.close();}
    FottoSync.kick(app);
+   FottoSync.watchdog(app);
 schedule(app);
  }
  private QueueRecovery(){}
