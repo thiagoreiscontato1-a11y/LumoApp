@@ -104,7 +104,9 @@ public class MainActivity extends Activity {
   LinearLayout header=vertical();header.setPadding(dp(16),dp(8),dp(16),dp(8));header.setBackgroundColor(CARD);
   LinearLayout top=row();LumoMark logo=new LumoMark(MainActivity.this);top.addView(logo,new LinearLayout.LayoutParams(dp(34),dp(34)));TextView brand=text("LUMO",19,TEXT,true);brand.setPadding(dp(9),0,0,0);top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
   healthButton=compactButton("Saúde",v->showHealthPanel());top.addView(healthButton,new LinearLayout.LayoutParams(dp(68),dp(38)));themeButton=compactButton(darkMode?"☀":"☾",v->{getSharedPreferences("hisho",0).edit().putBoolean("darkMode",!darkMode).apply();recreate();});LinearLayout.LayoutParams thp=new LinearLayout.LayoutParams(dp(44),dp(38));thp.leftMargin=dp(5);top.addView(themeButton,thp);settingsButton=compactButton("⚙",v->captureSettingsDialog());LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(44),dp(38));sp.leftMargin=dp(5);top.addView(settingsButton,sp);header.addView(top);
-  flowStatus=text("Canon • Sem câmera   bateria · armazenamento   fila",11,MUTED,true);flowStatus.setSingleLine(true);flowStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,dp(28));fl.topMargin=dp(3);header.addView(flowStatus,fl);root.addView(header);
+  flowStatus=text("Canon • Sem câmera
+Bateria · armazenamento
+Pendentes · processadas · enviadas",10,MUTED,true);flowStatus.setSingleLine(false);flowStatus.setMaxLines(3);flowStatus.setHorizontallyScrolling(false);flowStatus.setEllipsize(null);flowStatus.setLineSpacing(dp(2),1f);flowStatus.setIncludeFontPadding(false);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,-2);fl.topMargin=dp(4);fl.bottomMargin=dp(2);header.addView(flowStatus,fl);root.addView(header);
 
   FrameLayout content=new FrameLayout(MainActivity.this);root.addView(content,new LinearLayout.LayoutParams(-1,0,1));
   for(int i=0;i<4;i++){scrollers[i]=new ScrollView(MainActivity.this);scrollers[i].setFillViewport(true);scrollers[i].setVerticalScrollBarEnabled(false);pages[i]=vertical();pages[i].setPadding(dp(14),dp(12),dp(14),dp(18));scrollers[i].addView(pages[i]);content.addView(scrollers[i],new FrameLayout.LayoutParams(-1,-1));}
@@ -213,15 +215,28 @@ public class MainActivity extends Activity {
 
  void openFottoWeb(){Intent i=new Intent(MainActivity.this,FottoWebActivity.class).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP);startActivity(i);}
 
+ boolean compactHeader(){return getResources().getConfiguration().screenWidthDp<430||getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_PORTRAIT;}
+
  void updateGlobalStatus(){
   if(flowStatus==null)return;CaptureService c=CaptureService.active;android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
   String cam=c==null?"Canon":c.cameraName,conn=c==null?"Sem câmera":c.connectionLabel();int battery=-1;try{battery=((BatteryManager)getSystemService(BATTERY_SERVICE)).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);}catch(Exception ignored){}
-  long freeBytes=Math.max(0,getFilesDir().getUsableSpace()),gb=freeBytes/(1024L*1024L*1024L);int transfer=c==null?prefs.getInt("lastReceived",0):c.received,editing=database.processingCount();
-  String gallery=prefs.getString("fottoGalleryId","");int sent=gallery.isEmpty()?prefs.getInt("fottoUploadedCount",0):database.fottoDone(gallery),pending=gallery.isEmpty()?0:database.fottoPending(gallery),processing=gallery.isEmpty()?0:database.fottoProcessing(gallery);boolean directActive=prefs.getBoolean("fottoAuto",false);String fErr=gallery.isEmpty()?"":database.fottoLastError(gallery);
+  long freeBytes=Math.max(0,getFilesDir().getUsableSpace()),gb=freeBytes/(1024L*1024L*1024L);int transfer=c==null?prefs.getInt("lastReceived",0):c.received,editing=database.processingCount(),processed=database.doneCount();
+  String gallery=prefs.getString("fottoGalleryId","");int confirmed=gallery.isEmpty()?prefs.getInt("fottoUploadedCount",0):database.fottoDone(gallery),sent=gallery.isEmpty()?confirmed:database.fottoAccepted(gallery),pending=gallery.isEmpty()?0:database.fottoPending(gallery),processing=gallery.isEmpty()?0:database.fottoProcessing(gallery);boolean directActive=prefs.getBoolean("fottoAuto",false);String fErr=gallery.isEmpty()?"":database.fottoLastError(gallery);
   String b=battery<0?"—":battery+"%";boolean lowBattery=battery>=0&&battery<=20,lowSpace=freeBytes>0&&freeBytes<1024L*1024L*1024L;
-  flowStatus.setText(cam+" • "+conn+"   |   bateria "+b+" · "+gb+" GB   |   ↓ "+transfer+"   ✦ "+editing+"   ✓ "+sent);
+  if(compactHeader()){
+   String line1=cam+" • "+conn;
+   String line2="bateria "+b+" · "+gb+" GB";
+   String line3="↓ "+transfer+" novas · pend. "+editing+" · proc. "+processed+" · ↑ "+sent;
+   if(!gallery.isEmpty())line3+="
+Fotto: fila "+pending+" · enviando "+processing;
+   flowStatus.setText(line1+"
+"+line2+"
+"+line3);
+  }else{
+   flowStatus.setText(cam+" • "+conn+"   |   bateria "+b+" · "+gb+" GB   |   ↓ "+transfer+"   ✦ "+editing+"   ✓ "+processed+"   ↑ "+sent+(gallery.isEmpty()?"":"   |   fila "+pending+" · env. "+processing));
+  }
   flowStatus.setTextColor(lowBattery||lowSpace||!fErr.isEmpty()?WARN:MUTED);
-  if(fottoLiveStatus!=null){String state=FottoApi.token(MainActivity.this).isEmpty()?"NÃO CONECTADO":gallery.isEmpty()?"SEM EVENTO":directActive?"ATIVO":"PAUSADO";if(FottoSync.running())state="ENVIANDO";String title=prefs.getString("fottoGalleryTitle","");String line1="Fotto direto • "+state+(title.isEmpty()?"":" · "+title);String line2="Confirmadas "+sent+" · na fila "+pending+" · processando "+processing;String last=prefs.getString("fottoLastStatus","");if(!last.isEmpty()&&last.length()<150)line2+="\n"+last;fottoLiveStatus.setText(line1+"\n"+line2);fottoLiveStatus.setTextColor(!fErr.isEmpty()?WARN:(directActive?SUCCESS:MUTED));}
+  if(fottoLiveStatus!=null){String state=FottoApi.token(MainActivity.this).isEmpty()?"NÃO CONECTADO":gallery.isEmpty()?"SEM EVENTO":directActive?"ATIVO":"PAUSADO";if(FottoSync.running())state="ENVIANDO";String title=prefs.getString("fottoGalleryTitle","");String line1="Fotto direto • "+state+(title.isEmpty()?"":" · "+title);String line2="Enviadas "+sent+" · confirmadas "+confirmed+" · processando "+processing;String last=prefs.getString("fottoLastStatus","");if(!last.isEmpty()&&last.length()<150)line2+="\n"+last;fottoLiveStatus.setText(line1+"\n"+line2);fottoLiveStatus.setTextColor(!fErr.isEmpty()?WARN:(directActive?SUCCESS:MUTED));}
   if(prefs.getBoolean("eventMode",false)){if(lowBattery)EventAlert.signal(MainActivity.this,"bateria","Bateria em "+battery+"%. Conecte o carregador.");if(lowSpace)EventAlert.signal(MainActivity.this,"espaco","Menos de 1 GB livre. Libere armazenamento.");if(!fErr.isEmpty())EventAlert.signal(MainActivity.this,"fotto","Falha na entrega Fotto: "+fErr);}
   int reviews=database.reviewCount();if(tabs[2]!=null)tabs[2].setText(reviews>0?"Revisão ("+reviews+")":"Revisão");
  }
