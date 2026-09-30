@@ -1,0 +1,13 @@
+LUMO 0.15.13 — Sony ZV-E10 Event Detector
+
+Base: 0.15.12, validada pelo usuário como estável para disparos repetidos.
+
+Objetivo deste build:
+- manter exatamente a sessão mínima Sony da 0.15.12;
+- ler apenas o endpoint USB de eventos com timeout curto;
+- registrar qualquer evento recebido;
+- reconhecer 0xC201 e 0x4002 como candidatos de foto nova;
+- NÃO executar GetStorageIDs, GetObjectHandles, GetObjectInfo ou GetObject;
+- NÃO baixar arquivos.
+
+Critério do teste: tirar várias fotos. A câmera deve continuar responsiva e o diagnóstico deve mostrar eventos.

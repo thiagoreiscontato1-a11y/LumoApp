@@ -1,0 +1,13 @@
+LUMO 0.15.8 — SONY ZV-E10 SAFE POLL
+
+Correção do crash observado na 0.15.7 logo após a mensagem de câmera conectada.
+
+Mudança principal:
+- Sony não usa mais UsbRequest/requestWait para escutar o endpoint interrupt durante a captura.
+- Após o handshake PC Remote, o LUMO lê os handles existentes apenas para marcar o estado inicial.
+- A cada ~650 ms consulta os objetos PTP e baixa somente handles novos.
+- O caminho Canon e o fluxo Fotto permanecem inalterados.
+- Fotos antigas da Sony ainda não são baixadas automaticamente nesta versão; primeiro validamos estabilidade e captura nova.
+
+Versão: 0.15.8-sony-zve10-safe-poll
+versionCode: 43

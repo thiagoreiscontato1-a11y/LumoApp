@@ -1,0 +1,17 @@
+LUMO 0.15.12 — Sony ZV-E10 diagnóstico passivo
+
+Objetivo: isolar travamento da ZV-E10 após o disparo.
+
+Sony nesta versão:
+- abre apenas a sessão PTP básica;
+- NÃO executa sonyCaptureMode / SDIO 0x9201/0x9202;
+- NÃO lê endpoint de eventos;
+- NÃO usa GetObjectHandles;
+- NÃO tenta baixar imagens;
+- mantém o USB aberto sem transações após a conexão.
+
+Teste: conectar e tirar 10-20 fotos. Se a câmera não travar, o bloqueio está nas operações Sony posteriores ao OpenSession.
+Canon/Fotto: caminhos existentes preservados.
+
+versionCode 47
+versionName 0.15.12-sony-zve10-passive-diagnostic
