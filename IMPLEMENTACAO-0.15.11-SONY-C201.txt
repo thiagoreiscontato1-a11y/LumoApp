@@ -1,0 +1,13 @@
+LUMO 0.15.11 — Sony ZV-E10 C201 Event
+
+Base: 0.15.9 (conexão Sony estável).
+
+Mudança isolada:
+- Mantém intactos handshake e conexão da 0.15.9.
+- Não enumera GetObjectHandles em loop.
+- Não usa UsbRequest/requestWait.
+- Aceita Sony_ObjectAdded (0xC201), evento anunciado pela ZV-E10, além do ObjectAdded PTP padrão (0x4002).
+- Quando o evento trouxer um handle, usa o pipeline já existente GetObjectInfo -> GetObject -> Lumo/Fotto.
+
+versionCode: 46
+versionName: 0.15.11-sony-zve10-c201-event
