@@ -1,0 +1,12 @@
+LUMO 0.15.10 — Sony ZV-E10 Handle Watch
+
+Base: 0.15.9 (conexão Sony estável).
+
+Alteração:
+- mantém o listener seguro de eventos da 0.15.9;
+- após 2,5 s cria uma linha de base dos ObjectHandles;
+- a cada ~1,8 s compara os handles e baixa somente objetos novos;
+- DeviceBusy/OperationNotSupported durante gravação não derrubam a sessão;
+- Canon e pipeline Fotto não foram alterados.
+
+Na ZV-E10 use PC Remote USB com destino PC+Câmera.

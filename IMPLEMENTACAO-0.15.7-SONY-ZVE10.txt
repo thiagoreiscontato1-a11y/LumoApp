@@ -1,0 +1,41 @@
+LUMO 0.15.7 — SONY ZV-E10 PILOT
+
+OBJETIVO
+Adicionar captura vinculada por USB para Sony ZV-E10 sem alterar o fluxo Canon/Fotto da 0.15.6.
+
+O QUE FOI IMPLEMENTADO
+- Detecção USB de Canon (VID 04A9) e Sony (VID 054C) quando a interface é PTP Still Image Class 06/01/01.
+- Identificação específica da Sony ZV-E10 em PC Remote (PID 0D97 observado no modo Control).
+- Handshake Sony SDIO/PC Remote:
+  1) 0x9201 (1,0,0)
+  2) 0x9201 (2,0,0)
+  3) 0x9202 (0xC8)
+  4) 0x9201 (3,0,0)
+- Leitura do endpoint USB de eventos via UsbRequest.
+- Recepção de Sony_ObjectAdded (0xC201) e ObjectAdded padrão (0x4002).
+- O handle recebido no evento é usado em GetObjectInfo (0x1008) + GetObject (0x1009), entrando no mesmo pipeline existente:
+  original -> edição -> curadoria -> Editadas -> fila Fotto.
+- Canon mantém SetRemoteMode / SetEventMode / GetEvent e a recuperação retroativa já existente.
+- Sony não tenta varrer o cartão no modo PC Remote, evitando travar a sessão em câmeras que não expõem a árvore de arquivos nesse modo.
+
+CONFIGURAÇÃO PARA O PRIMEIRO TESTE NA ZV-E10
+1. Rede -> Lig. smartphone / Smartphone Connection: Desligado.
+2. Rede -> Função PC Remoto -> PC Remoto: Ligado.
+3. Método de conexão PC Remote: USB.
+4. Destino da imagem: PC+Câmera (recomendado para manter cópia no cartão).
+5. PC Save Image Size / tamanho para PC: Original.
+6. Se fotografar RAW+JPEG, preferir JPEG Only para a imagem enviada ao PC no primeiro teste.
+7. Conectar cabo USB-C de dados ao Android por OTG e autorizar o LUMO.
+
+LIMITAÇÃO DESTA PILOTO
+A recuperação retroativa do cartão continua disponível para Canon. Na Sony em PC Remote, a 0.15.7 prioriza somente fotos novas notificadas pelo evento USB. Depois de validar a ZV-E10 física, podemos adicionar um modo separado de importação do cartão se necessário.
+
+DIAGNÓSTICO ESPERADO
+- Sony ZV-E10 detectada · ativando PC Remote…
+- Sony conectada · aguardando fotos pelo evento USB
+- Sony ObjectAdded · handle 0x........
+- Baixando <arquivo>.JPG ...
+- Original salvo ...
+
+Versão: 0.15.7-sony-zve10-pilot
+versionCode: 42
