@@ -1,0 +1,10 @@
+LUMO 0.15.5 — correção de build
+
+Causa:
+MainActivity.java continha quebras de linha físicas dentro de strings Java usadas no cabeçalho retrato. O javac reportava unclosed string literal, illegal character e not a statement.
+
+Correção:
+- trocadas as quebras físicas por \n dentro das strings;
+- preservada a fila longa Fotto da 0.15.4;
+- adicionado tests/java_source_contract.py ao workflow;
+- versionCode 40 / versionName 0.15.5-fotto-long-queue-build-fix.
