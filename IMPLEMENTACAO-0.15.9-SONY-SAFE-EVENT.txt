@@ -1,0 +1,10 @@
+LUMO 0.15.9 — Sony ZV-E10 Safe Event
+
+Correção após teste real da 0.15.8:
+- Remove a enumeração contínua do cartão da Sony, que podia encerrar a sessão logo após conectar.
+- Não usa UsbRequest/requestWait (caminho que causava crash nativo na 0.15.7).
+- Lê o endpoint interrupt da Sony de forma síncrona via bulkTransfer com timeout curto.
+- Ao receber ObjectAdded (0x4002), baixa diretamente o novo handle.
+- Canon/Fotto permanecem no fluxo anterior.
+
+Teste: conectar ZV-E10 em PC Remote USB, aguardar "Sony conectada · aguardando fotos" e fotografar.
