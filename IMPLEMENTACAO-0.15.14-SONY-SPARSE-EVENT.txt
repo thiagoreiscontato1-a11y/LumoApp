@@ -1,0 +1,11 @@
+LUMO 0.15.14 — Sony ZV-E10 Sparse Event Probe
+
+Base: 0.15.12, confirmada estável fisicamente na ZV-E10.
+
+- Mantém o OpenSession Sony sem SDIO/PC Remote vendor commands.
+- Não enumera cartão, não usa GetObjectHandles e não baixa arquivos.
+- Faz uma leitura curta (20 ms) do endpoint de eventos a cada 5 s.
+- Timeout/ausência de evento nunca encerra a sessão.
+- Eventos recebidos aparecem no diagnóstico como Sony evento 0x....
+
+Objetivo: validar se uma sondagem esparsa consegue observar disparos sem provocar a desconexão vista na 0.15.13.
