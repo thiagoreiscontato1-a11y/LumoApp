@@ -1,0 +1,24 @@
+LUMO 0.15.6 — WATCHDOG FOTTO + CHIPS
+
+1. WATCHDOG DA FILA FOTTO
+- Verifica periodicamente a fila quando o envio automático está ativo.
+- Se existem fotos prontas e o worker parou, relança o envio automaticamente.
+- Se uma foto atingiu o limite interno de tentativas e ficou em erro, aguarda um intervalo de segurança, zera as tentativas e retoma sem exigir o botão Enviar pendentes.
+- O intervalo aumenta progressivamente em falhas repetidas para evitar martelar a API.
+- Erros fatais (sessão expirada, conta desconectada, arquivo inexistente/vazio) não entram em loop.
+- Fotos já aceitas pelo S3 continuam sem reupload.
+- O watchdog também é chamado pela recuperação agendada em segundo plano.
+
+2. TOPO EM MINI-CARDS
+- Bateria
+- Espaço livre
+- Pendentes de processamento
+- Processadas
+- Enviadas ao Fotto
+- Em retrato: 2 cards na primeira linha + 3 na segunda.
+- Em telas largas: 5 cards na mesma linha.
+- Estados usam cor de alerta/sucesso sem cortar texto.
+
+3. CONTADORES
+- ENVIADAS = arquivos já aceitos pelo armazenamento do Fotto.
+- O painel Entrega mantém a distinção entre enviadas, confirmadas, processando e fila.
