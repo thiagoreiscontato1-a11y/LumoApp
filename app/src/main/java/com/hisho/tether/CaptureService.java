@@ -1,7 +1,7 @@
 package com.hisho.tether;
 import android.app.*;import android.content.*;import android.content.pm.ServiceInfo;import android.hardware.usb.*;import android.os.*;import android.net.Uri;import org.json.*;import java.io.*;import java.security.*;import java.util.*;import java.util.concurrent.*;
 public class CaptureService extends Service{
- public static volatile CaptureService active;public volatile String status="Iniciando",detail="",lastImage="",cameraName="Canon";public volatile int received=0,edited=0,recovered=0,reviewed=0;public volatile boolean capturing=false;
+ public static volatile CaptureService active;public volatile String status="Iniciando",detail="",lastImage="",cameraName="Canon / Sony";public volatile int received=0,edited=0,recovered=0,reviewed=0;public volatile boolean capturing=false;
  public final ConnectionStatus link=new ConnectionStatus();private volatile UsbDevice attached;private android.net.Network wifiNetwork;private android.net.ConnectivityManager.NetworkCallback wifiCallback;private final java.util.concurrent.atomic.AtomicBoolean alertArmed=new java.util.concurrent.atomic.AtomicBoolean(false);private volatile Ptp transport;private boolean detachRegistered;
  private final BroadcastReceiver detach=new BroadcastReceiver(){public void onReceive(Context c,Intent intent){UsbDevice d=intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);if(d!=null&&attached!=null&&d.getDeviceId()==attached.getDeviceId()){link.fail("Câmera desconectada. Conecte o cabo e tente novamente.");status=link.error;capturing=false;finish=true;lostAlert(status);log(status);}}};
  void lostAlert(String reason){if(alertArmed.compareAndSet(true,false))DisconnectAlert.show(this,reason);}
@@ -14,7 +14,7 @@ public class CaptureService extends Service{
   if(intent==null){stopSelf();return START_NOT_STICKY;}
   if("stop".equals(intent.getAction())){alertArmed.set(false);capturing=false;finish=true;link.stop();status="Finalizando foto e fila…";return START_NOT_STICKY;}
   if(editThread!=null)return START_NOT_STICKY;
-  UsbDevice device=intent.getParcelableExtra("device");attached=device;String wifiHost=intent.getStringExtra("wifiHost");wifiNetwork=intent.getParcelableExtra("wifiNetwork");boolean hasCamera=device!=null||wifiHost!=null;if(device!=null){String n=device.getProductName();cameraName=n==null||n.trim().isEmpty()?"Canon USB":n.trim();}else if(wifiHost!=null)cameraName="Canon Wi-Fi";if(hasCamera)link.connect();
+  UsbDevice device=intent.getParcelableExtra("device");attached=device;String wifiHost=intent.getStringExtra("wifiHost");wifiNetwork=intent.getParcelableExtra("wifiNetwork");boolean hasCamera=device!=null||wifiHost!=null;if(device!=null){String n=device.getProductName();int v=device.getVendorId();cameraName=n==null||n.trim().isEmpty()?(v==0x054C?"Sony USB":"Canon USB"):n.trim();}else if(wifiHost!=null)cameraName="Canon Wi-Fi";if(hasCamera)link.connect();
   int type=hasCamera?ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE:0;
   if(Build.VERSION.SDK_INT>=35)type|=ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING;else type|=ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
   try{if(Build.VERSION.SDK_INT>=29)startForeground(1,notification(),type);else startForeground(1,notification());}catch(Exception e){status="Não foi possível iniciar serviço: "+e.getMessage();link.fail(status);getSharedPreferences("hisho",0).edit().putString("lastStatus",status).apply();stopSelf();return START_NOT_STICKY;}
@@ -47,37 +47,56 @@ public class CaptureService extends Service{
       ptp=new WifiPtp(wifiNetwork,wifiHost,identity);status="Wi-Fi: autorize LUMO na câmera, se solicitado.";log(status);
      }
      transport=ptp;
-     status="Abrindo sessão PTP…";log(status);ptp.open();if(!capturing)return;
+     int openingVid=device==null?0:device.getVendorId();boolean openingSony=device!=null&&openingVid==0x054C;status="Abrindo sessão PTP…";log(status);if(openingSony)ptp.openSony();else ptp.open();if(!capturing)return;
      // Confirma a camada USB/PTP imediatamente. Antes, a UI permanecia em
      // CONECTANDO durante toda a listagem do cartão, especialmente perceptível na R8.
      link.ready();alertArmed.set(true);
      int vid=device==null?0:device.getVendorId(),pid=device==null?0:device.getProductId();
-     boolean r8=device!=null&&vid==0x04A9&&(pid==0x330C||pid==0x3113);
-     status=(r8?"Canon R8 detectada · ":"")+"PTP conectado · ativando captura Canon…";log(status+" USB "+String.format(Locale.ROOT,"%04X:%04X",vid,pid));
-     ptp.captureMode();if(!capturing)return;
-     try{ptp.drain();}catch(Ptp.Failure e){if(e.code!=0x2019)throw e;}
-     status=(r8?"R8 conectada · ":"Conectada · ")+"lendo índice do cartão…";log(status);
-     List<int[]> initial=ptp.objects();seen.clear();backlog.clear();
-     for(int[] o:initial)seen.add(o[0]+":"+o[1]);
-     if(backfill)for(int i=initial.size()-1;i>=0;i--)backlog.addLast(initial.get(i));
-     if(!capturing)return;
-     status=backlog.isEmpty()?"Conexão confirmada. Fotografe na câmera.":"Conexão confirmada · retroativo em segundo plano ("+backlog.size()+")";log(status);break;
+     boolean sony=device!=null&&vid==0x054C,r8=device!=null&&vid==0x04A9&&(pid==0x330C||pid==0x3113);
+     if(sony){
+      status=(pid==0x0D97?"Sony ZV-E10 detectada · ":"Sony detectada · ")+"ativando PC Remote…";log(status+" USB "+String.format(Locale.ROOT,"%04X:%04X",vid,pid));
+      ptp.sonyCaptureMode();seen.clear();backlog.clear();if(!capturing)return;
+      // 0.15.9: não enumera o cartão logo após entrar em PC Remote. Na ZV-E10 isso pode
+      // derrubar a sessão em alguns firmwares. Também não usa UsbRequest/requestWait.
+      // O endpoint interrupt é lido de forma síncrona com bulkTransfer e timeout curto.
+      status="Sony conectada · aguardando fotos";log(status+" · eventos USB em modo seguro");
+     }else{
+      status=(r8?"Canon R8 detectada · ":"")+"PTP conectado · ativando captura Canon…";log(status+" USB "+String.format(Locale.ROOT,"%04X:%04X",vid,pid));
+      ptp.captureMode();if(!capturing)return;
+      try{ptp.drain();}catch(Ptp.Failure e){if(e.code!=0x2019)throw e;}
+      status=(r8?"R8 conectada · ":"Conectada · ")+"lendo índice do cartão…";log(status);
+      List<int[]> initial=ptp.objects();seen.clear();backlog.clear();
+      for(int[] o:initial)seen.add(o[0]+":"+o[1]);
+      if(backfill)for(int i=initial.size()-1;i>=0;i--)backlog.addLast(initial.get(i));
+      if(!capturing)return;
+      status=backlog.isEmpty()?"Conexão confirmada. Fotografe na câmera.":"Conexão confirmada · retroativo em segundo plano ("+backlog.size()+")";log(status);
+     }break;
     }catch(IOException e){log("Abertura falhou: "+e.getMessage());if(ptp!=null){try{ptp.close();}catch(Exception ignored){}ptp=null;transport=null;}backlog.clear();if(!capturing)return;if(attempt==3)throw e;link.connect();status="Câmera ainda não respondeu. Tentando novamente…";log(status);Thread.sleep(900L*attempt);}
    }
    if(ptp==null||!capturing)return;
-   int transientErrors=0;
+   final boolean sony=device!=null&&device.getVendorId()==0x054C;int transientErrors=0;
    while(capturing){long start=SystemClock.elapsedRealtime();
     try{
-     ptp.drain();List<int[]> objects=ptp.objects();boolean liveReceived=false;
-     for(int[] o:objects){if(!capturing)break;String key=o[0]+":"+o[1];if(seen.contains(key))continue;if(downloadObject(ptp,o,serial,settings,spool,seen,false))liveReceived=true;}
-     if(capturing&&!liveReceived&&!backlog.isEmpty()){
-      int[] old=backlog.peekFirst();status="Conectada · recuperando retroativo ("+backlog.size()+" restante(s))";
-      try{downloadObject(ptp,old,serial,settings,spool,seen,true);backlog.removeFirst();}
-      catch(Ptp.Failure e){if(e.code==0x2009){backlog.removeFirst();log("Retroativo ignorado · objeto já não existe no cartão.");}else throw e;}
+     if(sony){
+      boolean liveReceived=false;Ptp.Event ev=ptp.pollEventSafe(500);
+      if(ev!=null){
+       // ObjectAdded (0x4002) é o evento PTP padrão usado para anunciar um novo objeto.
+       if(ev.code==0x4002&&ev.first()!=0){int handle=ev.first();int[] o=new int[]{0,handle};String key="0:"+handle;if(!seen.contains(key)){log("Sony novo objeto · handle "+String.format(Locale.ROOT,"0x%08X",handle));if(downloadObject(ptp,o,serial,settings,spool,seen,false))liveReceived=true;}}
+       else log("Sony evento · "+String.format(Locale.ROOT,"0x%04X",ev.code));
+      }
+      transientErrors=0;if(capturing){link.ready();status=liveReceived?"Sony · foto recebida, aguardando próxima":"Sony conectada · aguardando foto";}
+     }else{
+      ptp.drain();List<int[]> objects=ptp.objects();boolean liveReceived=false;
+      for(int[] o:objects){if(!capturing)break;String key=o[0]+":"+o[1];if(seen.contains(key))continue;if(downloadObject(ptp,o,serial,settings,spool,seen,false))liveReceived=true;}
+      if(capturing&&!liveReceived&&!backlog.isEmpty()){
+       int[] old=backlog.peekFirst();status="Conectada · recuperando retroativo ("+backlog.size()+" restante(s))";
+       try{downloadObject(ptp,old,serial,settings,spool,seen,true);backlog.removeFirst();}
+       catch(Ptp.Failure e){if(e.code==0x2009){backlog.removeFirst();log("Retroativo ignorado · objeto já não existe no cartão.");}else throw e;}
+      }
+      transientErrors=0;if(capturing){link.ready();status=backlog.isEmpty()?"Conexão confirmada · aguardando fotos":"Conexão confirmada · retroativo em segundo plano ("+backlog.size()+")";}
      }
-     transientErrors=0;if(capturing){link.ready();status=backlog.isEmpty()?"Conexão confirmada · aguardando fotos":"Conexão confirmada · retroativo em segundo plano ("+backlog.size()+")";}
     }catch(Ptp.Failure e){if((e.code==0x2019||e.code==0x2009)&&++transientErrors<=8){link.busy();status="Câmera ocupada · aguardando resposta";log(status);}else throw e;}
-    long wait=Math.max(1,800-(SystemClock.elapsedRealtime()-start));Thread.sleep(wait);
+    long target=sony?550:800;long wait=Math.max(1,target-(SystemClock.elapsedRealtime()-start));Thread.sleep(wait);
    }
   }catch(Exception e){if(link.error.isEmpty()&&capturing)link.fail("Captura pausada: "+e.getMessage());status=link.error.isEmpty()?"Captura encerrada.":link.error;if(!link.error.isEmpty())lostAlert(status);log(status);}finally{capturing=false;link.stop();try{if(ptp!=null)ptp.close();}catch(Exception e){log("Falha ao liberar USB: "+e.getMessage());}finally{transport=null;usbFinished=true;finish=true;}log("Conexão encerrada; concluindo edições pendentes.");}
  }

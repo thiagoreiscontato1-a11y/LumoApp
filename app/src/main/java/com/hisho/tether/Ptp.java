@@ -6,24 +6,45 @@ import java.util.*;
 
 class Ptp implements AutoCloseable {
  static final int MAX=150*1024*1024;
- final UsbDeviceConnection connection; final UsbInterface iface; final UsbEndpoint in,out;
+ final UsbDeviceConnection connection; final UsbInterface iface; final UsbEndpoint in,out,event;
  volatile long lastActivity=android.os.SystemClock.elapsedRealtime();int transaction=1; boolean session=false,remote=false,events=false;volatile boolean broken=false;
  int timeout=15000;byte[] pending=new byte[0]; int pos;
  static class Failure extends IOException {final int code;Failure(int c){super(String.format("Resposta PTP 0x%04X",c));code=c;}}
- Ptp(){connection=null;iface=null;in=null;out=null;}
+ Ptp(){connection=null;iface=null;in=null;out=null;event=null;}
  Ptp(UsbManager manager,UsbDevice device)throws IOException{
-  UsbInterface found=null;UsbEndpoint input=null,output=null;
+  UsbInterface found=null;UsbEndpoint input=null,output=null,eventsEndpoint=null;
   for(int i=0;i<device.getInterfaceCount();i++){
    UsbInterface x=device.getInterface(i);if(x.getInterfaceClass()!=6||x.getInterfaceSubclass()!=1||x.getInterfaceProtocol()!=1)continue;
-   UsbEndpoint a=null,b=null;for(int j=0;j<x.getEndpointCount();j++){UsbEndpoint e=x.getEndpoint(j);if(e.getType()==UsbConstants.USB_ENDPOINT_XFER_BULK){if(e.getDirection()==UsbConstants.USB_DIR_IN)a=e;else b=e;}}
-   if(a!=null&&b!=null){found=x;input=a;output=b;break;}
+   UsbEndpoint a=null,b=null,c=null;for(int j=0;j<x.getEndpointCount();j++){UsbEndpoint e=x.getEndpoint(j);if(e.getType()==UsbConstants.USB_ENDPOINT_XFER_BULK){if(e.getDirection()==UsbConstants.USB_DIR_IN)a=e;else b=e;}else if(e.getType()==UsbConstants.USB_ENDPOINT_XFER_INT&&e.getDirection()==UsbConstants.USB_DIR_IN)c=e;}
+   if(a!=null&&b!=null){found=x;input=a;output=b;eventsEndpoint=c;break;}
   }
   if(found==null)throw new IOException("Interface PTP não encontrada.");
-  iface=found;in=input;out=output;connection=manager.openDevice(device);
+  iface=found;in=input;out=output;event=eventsEndpoint;connection=manager.openDevice(device);
   if(connection==null)throw new IOException("Sem acesso USB. Autorize novamente.");
   if(!connection.claimInterface(iface,true)){connection.close();throw new IOException("Câmera ocupada por outro aplicativo.");}
  }
  static ByteBuffer le(byte[] a){return ByteBuffer.wrap(a).order(ByteOrder.LITTLE_ENDIAN);}
+ static class Event {final int code,transaction;final int[] params;Event(int c,int t,int[] p){code=c;transaction=t;params=p;}int first(){return params.length==0?0:params[0];}}
+ Event pollEvent(long waitMs)throws IOException{
+  if(event==null)return null;UsbRequest request=new UsbRequest();ByteBuffer buffer=ByteBuffer.allocateDirect(Math.max(64,event.getMaxPacketSize())).order(ByteOrder.LITTLE_ENDIAN);
+  if(!request.initialize(connection,event))throw new IOException("Não foi possível iniciar o canal de eventos USB.");
+  try{if(!request.queue(buffer))throw new IOException("Não foi possível aguardar eventos da câmera.");UsbRequest done;try{done=connection.requestWait(waitMs);}catch(java.util.concurrent.TimeoutException e){request.cancel();return null;}if(done==null){request.cancel();return null;}int n=buffer.position();if(n<12)return null;buffer.flip();int length=buffer.getInt(),type=buffer.getShort()&65535,code=buffer.getShort()&65535,tx=buffer.getInt();if(type!=4||length<12||length>n)return null;int count=Math.min(3,(length-12)/4);int[] params=new int[count];for(int i=0;i<count;i++)params[i]=buffer.getInt();lastActivity=android.os.SystemClock.elapsedRealtime();return new Event(code,tx,params);}
+  finally{request.close();}
+ }
+
+ Event pollEventSafe(int waitMs)throws IOException{
+  if(event==null)return null;
+  byte[] packet=new byte[Math.max(64,event.getMaxPacketSize())];
+  int n=connection.bulkTransfer(event,packet,packet.length,Math.max(50,waitMs));
+  if(n<=0)return null;
+  if(n<12)return null;
+  ByteBuffer b=ByteBuffer.wrap(packet,0,n).order(ByteOrder.LITTLE_ENDIAN);
+  int length=b.getInt(),type=b.getShort()&65535,code=b.getShort()&65535,tx=b.getInt();
+  if(type!=4||length<12||length>n)return null;
+  int count=Math.min(3,(length-12)/4);int[] params=new int[count];for(int i=0;i<count;i++)params[i]=b.getInt();
+  lastActivity=android.os.SystemClock.elapsedRealtime();return new Event(code,tx,params);
+ }
+
  void readFully(byte[] dest,int off,int len)throws IOException{
   int empty=0,timeouts=0;while(len>0){
    if(pos==pending.length){
@@ -57,6 +78,7 @@ class Ptp implements AutoCloseable {
   }catch(Failure e){throw e;}catch(IOException e){broken=true;throw e;}
  }
  void open()throws IOException{execute(0x1001);execute(0x1002,1);session=true;}
+ void openSony()throws IOException{execute(0x1002,1);session=true;execute(0x1001);}
  void canonCommandBusyRetry(int code,int...params)throws IOException{
   Failure last=null;for(int attempt=1;attempt<=8;attempt++){
    try{execute(code,params);return;}catch(Failure e){
@@ -72,6 +94,18 @@ class Ptp implements AutoCloseable {
   if(!remote){canonCommandBusyRetry(0x9114,1);remote=true;}
   if(!events){canonCommandBusyRetry(0x9115,1);events=true;}
   try{canonCommandBusyRetry(0x9116);}catch(Failure e){if(e.code!=0x2019&&e.code!=0x2009)throw e;}
+ }
+ byte[] sonyCommandBusyRetry(int code,int...params)throws IOException{
+  Failure last=null;for(int attempt=1;attempt<=8;attempt++){try{return execute(code,params);}catch(Failure e){last=e;if(e.code!=0x2019)throw e;try{Thread.sleep(Math.min(800,100L*attempt));}catch(InterruptedException x){Thread.currentThread().interrupt();throw new IOException("Inicialização Sony interrompida.");}}}if(last!=null)throw last;return new byte[0];
+ }
+ void sonyCaptureMode()throws IOException{
+  // Handshake SDIO usado pelas Sony Alpha/ZV em PC Remote.
+  // Sequência observada na ZV-E10 e também usada pelo libgphoto2.
+  sonyCommandBusyRetry(0x9201,1,0,0);sonyCommandBusyRetry(0x9201,2,0,0);
+  boolean extReady=false;for(int i=0;i<10;i++){try{byte[] ext=sonyCommandBusyRetry(0x9202,0xC8);if(ext.length>=4){extReady=true;break;}}catch(Failure e){if(e.code==0x2005){extReady=true;break;}throw e;}try{Thread.sleep(50L*(i+1));}catch(InterruptedException x){Thread.currentThread().interrupt();throw new IOException("Inicialização Sony interrompida.");}}
+  sonyCommandBusyRetry(0x9201,3,0,0);
+  if(!extReady)throw new IOException("A Sony respondeu ao PC Remote, mas não liberou as extensões PTP. Reconecte o cabo e tente novamente.");
+  if(event==null)throw new IOException("Canal de eventos Sony não encontrado. Na ZV-E10, ative PC Remote por USB e reconecte o cabo.");
  }
  void drain()throws IOException{if(events)try{execute(0x9116);}catch(Failure e){if(e.code!=0x2019&&e.code!=0x2009)throw e;}}
  static int[] array(byte[] bytes)throws IOException{if(bytes.length<4)throw new IOException("Lista PTP incompleta.");ByteBuffer b=le(bytes);int n=b.getInt();if(n<0||n>(bytes.length-4)/4)throw new IOException("Lista PTP inválida.");int[] a=new int[n];for(int i=0;i<n;i++)a[i]=b.getInt();return a;}
