@@ -1,0 +1,18 @@
+LUMO 0.15.15 - PASTA MONITORADA (PILOTO)
+
+Base: 0.15.12 Sony diagnóstico passivo.
+
+Novo:
+- Configurações > Pasta monitorada.
+- Seleção via seletor de pastas do Android (SAF) com permissão persistente.
+- Monitoramento em segundo plano a cada ~1,2 s.
+- Importa JPG/JPEG novos para a fila interna do Lumo.
+- Evita duplicata por ID persistente e hash do conteúdo.
+- Depois da importação, usa a mesma fila de edição/curadoria e Fotto já existente.
+- Funciona como fonte paralela; não altera o caminho Canon e não adiciona comandos PTP à Sony.
+
+Teste:
+1. Abra Configurações > Pasta monitorada > Selecionar pasta.
+2. Escolha uma pasta do armazenamento do Android.
+3. Copie/salve um JPG novo nessa pasta.
+4. O Lumo deve mostrar notificação "Nova foto importada" e processar a imagem.
