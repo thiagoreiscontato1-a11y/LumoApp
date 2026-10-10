@@ -10,6 +10,7 @@ import android.hardware.usb.*;
 import android.net.Uri;
 import android.os.*;
 import android.provider.OpenableColumns;
+import android.provider.DocumentsContract;
 import android.view.*;
 import android.widget.*;
 import org.json.*;
@@ -23,8 +24,10 @@ public class MainActivity extends Activity {
  boolean darkMode;
 
  private TextView flowStatus,badge,status,timing,previewTitle,previewSub,galleryInfo,gallerySelectionLabel,reviewHeading,fottoLiveStatus;
+ private TextView metricBattery,metricStorage,metricPending,metricProcessed,metricSent;
  private TextView folderLabel,fottoStatus,fottoEventLabel,fottoUploadStatus,fottoProblems;
  private Button connect,resume,settingsButton,themeButton,folderButton,fottoMenu,fottoSend,healthButton,eventModeButton,presetQuick;
+ private Button importCard;
  private CompoundButton fottoAuto;
  private boolean openEventChooserAfterLoad=false;
  private final ArrayList<FottoApi.Gallery> fottoGalleries=new ArrayList<>();
@@ -74,6 +77,7 @@ public class MainActivity extends Activity {
   android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
   if(status!=null){if(running){status.setText(s.status);timing.setText(s.detail.isEmpty()?"Captura e edição em filas independentes":s.detail);report.setText(s.report());badge.setText("● "+s.connectionLabel());badge.setTextColor("CONECTADA".equals(s.connectionLabel())?SUCCESS:WARN);}else{status.setText(prefs.getString("lastStatus","Pronto para conectar a câmera."));timing.setText("Original preservado · edição e curadoria em segundo plano");report.setText(prefs.getString("lastReport","Nenhuma atividade registrada."));badge.setText("● SEM CÂMERA");badge.setTextColor(MUTED);}}
   updateGlobalStatus();
+  FottoSync.watchdog(MainActivity.this);
   refreshGallery();
   long now=SystemClock.elapsedRealtime();if(now-lastUiRefresh>1500){lastUiRefresh=now;if(selected==1)refreshFiles(false);if(selected==2)refreshReview(false);if(selected==3)updateFottoStatus();}
   handler.postDelayed(this,700);
@@ -94,6 +98,17 @@ public class MainActivity extends Activity {
  Button compactButton(String value,View.OnClickListener listener){Button b=new Button(MainActivity.this);b.setText(value);b.setTextSize(13);b.setTextColor(TEXT);b.setAllCaps(false);b.setTypeface(Typeface.create("sans-serif-medium",0));b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x180b7cff),border(CARD2,12),null));b.setMinHeight(0);b.setMinimumHeight(0);b.setPadding(dp(10),0,dp(10),0);b.setOnClickListener(listener);return b;}
  void primary(Button b){b.setTextColor(Color.WHITE);b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),shape(GREEN,12),null));}
  TextView chip(String value,int fg,int bg){TextView t=text(value,10,fg,true);t.setGravity(Gravity.CENTER);t.setPadding(dp(7),dp(4),dp(7),dp(4));t.setBackground(shape(bg,10));return t;}
+ TextView metricChip(String title){TextView t=text(title+"\n—",10,TEXT,true);t.setGravity(Gravity.CENTER);t.setLines(2);t.setLineSpacing(dp(1),1f);t.setPadding(dp(5),dp(6),dp(5),dp(6));t.setBackground(border(CARD2,12));return t;}
+ void addMetric(LinearLayout row,TextView view,boolean first){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(46),1f);if(!first)lp.leftMargin=dp(6);row.addView(view,lp);}
+ void buildHeaderMetrics(LinearLayout header){
+  metricBattery=metricChip("BATERIA");metricStorage=metricChip("ESPAÇO");metricPending=metricChip("PENDENTES");metricProcessed=metricChip("PROCESSADAS");metricSent=metricChip("ENVIADAS");
+  if(compactHeader()){
+   LinearLayout a=row();addMetric(a,metricBattery,true);addMetric(a,metricStorage,false);header.addView(a,new LinearLayout.LayoutParams(-1,-2));
+   gap(header,6);LinearLayout b=row();addMetric(b,metricPending,true);addMetric(b,metricProcessed,false);addMetric(b,metricSent,false);header.addView(b,new LinearLayout.LayoutParams(-1,-2));
+  }else{
+   LinearLayout a=row();addMetric(a,metricBattery,true);addMetric(a,metricStorage,false);addMetric(a,metricPending,false);addMetric(a,metricProcessed,false);addMetric(a,metricSent,false);header.addView(a,new LinearLayout.LayoutParams(-1,-2));
+  }
+ }
 
  @Override public void onCreate(Bundle saved){
   darkMode=getSharedPreferences("hisho",0).getBoolean("darkMode",false);if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);setTheme(darkMode?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);super.onCreate(saved);applyPalette();database=new Jobs(MainActivity.this);loadPreset();PresetLibrary.seed(MainActivity.this,presetName,presetData);QueueRecovery.resume(MainActivity.this);
@@ -104,7 +119,7 @@ public class MainActivity extends Activity {
   LinearLayout header=vertical();header.setPadding(dp(16),dp(8),dp(16),dp(8));header.setBackgroundColor(CARD);
   LinearLayout top=row();LumoMark logo=new LumoMark(MainActivity.this);top.addView(logo,new LinearLayout.LayoutParams(dp(34),dp(34)));TextView brand=text("LUMO",19,TEXT,true);brand.setPadding(dp(9),0,0,0);top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
   healthButton=compactButton("Saúde",v->showHealthPanel());top.addView(healthButton,new LinearLayout.LayoutParams(dp(68),dp(38)));themeButton=compactButton(darkMode?"☀":"☾",v->{getSharedPreferences("hisho",0).edit().putBoolean("darkMode",!darkMode).apply();recreate();});LinearLayout.LayoutParams thp=new LinearLayout.LayoutParams(dp(44),dp(38));thp.leftMargin=dp(5);top.addView(themeButton,thp);settingsButton=compactButton("⚙",v->captureSettingsDialog());LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(44),dp(38));sp.leftMargin=dp(5);top.addView(settingsButton,sp);header.addView(top);
-  flowStatus=text("Canon • Sem câmera   bateria · armazenamento   fila",11,MUTED,true);flowStatus.setSingleLine(true);flowStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,dp(28));fl.topMargin=dp(3);header.addView(flowStatus,fl);root.addView(header);
+  flowStatus=text("Canon • Sem câmera",11,MUTED,true);flowStatus.setSingleLine(false);flowStatus.setMaxLines(2);flowStatus.setHorizontallyScrolling(false);flowStatus.setEllipsize(null);flowStatus.setIncludeFontPadding(false);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,-2);fl.topMargin=dp(4);fl.bottomMargin=dp(6);header.addView(flowStatus,fl);buildHeaderMetrics(header);root.addView(header);
 
   FrameLayout content=new FrameLayout(MainActivity.this);root.addView(content,new LinearLayout.LayoutParams(-1,0,1));
   for(int i=0;i<4;i++){scrollers[i]=new ScrollView(MainActivity.this);scrollers[i].setFillViewport(true);scrollers[i].setVerticalScrollBarEnabled(false);pages[i]=vertical();pages[i].setPadding(dp(14),dp(12),dp(14),dp(18));scrollers[i].addView(pages[i]);content.addView(scrollers[i],new FrameLayout.LayoutParams(-1,-1));}
@@ -163,7 +178,8 @@ public class MainActivity extends Activity {
  void capturePage(){
   LinearLayout p=pages[0];
   LinearLayout top=row();badge=chip("● SEM CÂMERA",MUTED,darkMode?0xff20262e:0xffedf1f6);top.addView(badge);top.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));connect=compactButton("Conectar câmera",v->{CaptureService s=CaptureService.active;if(s!=null){if(s.capturing)new AlertDialog.Builder(MainActivity.this).setTitle("Encerrar captura?").setMessage("A foto em andamento e as edições pendentes serão concluídas.").setPositiveButton("Encerrar",(d,n)->startService(new Intent(MainActivity.this,CaptureService.class).setAction("stop"))).setNegativeButton("Continuar",null).show();}else chooseTransport();});primary(connect);top.addView(connect,new LinearLayout.LayoutParams(dp(148),dp(42)));p.addView(top);gap(p,7);
-  LinearLayout quick=row();presetQuick=compactButton("Predefinição: "+presetName,v->showPresetChooser());quick.addView(presetQuick,new LinearLayout.LayoutParams(0,dp(38),1));eventModeButton=compactButton("Modo evento",v->toggleEventMode());LinearLayout.LayoutParams em=new LinearLayout.LayoutParams(dp(112),dp(38));em.leftMargin=dp(6);quick.addView(eventModeButton,em);p.addView(quick);refreshQuickControls();gap(p,9);
+  LinearLayout quick=row();presetQuick=compactButton("Predefinição: "+presetName,v->showPresetChooser());quick.addView(presetQuick,new LinearLayout.LayoutParams(0,dp(38),1));eventModeButton=compactButton("Modo evento",v->toggleEventMode());LinearLayout.LayoutParams em=new LinearLayout.LayoutParams(dp(112),dp(38));em.leftMargin=dp(6);quick.addView(eventModeButton,em);p.addView(quick);refreshQuickControls();gap(p,6);
+  importCard=compactButton("Importar fotos do cartão USB",v->chooseCardFolder());p.addView(importCard,new LinearLayout.LayoutParams(-1,dp(40)));gap(p,8);
 
   int screen=getResources().getConfiguration().screenHeightDp;int previewH=Math.max(390,Math.min(680,(int)(screen*.66f)));
   previewFrame=new FrameLayout(MainActivity.this);previewFrame.setBackground(shape(darkMode?0xff090b0f:0xff111318,18));previewFrame.setClipToOutline(true);p.addView(previewFrame,new LinearLayout.LayoutParams(-1,dp(previewH)));
@@ -213,15 +229,21 @@ public class MainActivity extends Activity {
 
  void openFottoWeb(){Intent i=new Intent(MainActivity.this,FottoWebActivity.class).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP);startActivity(i);}
 
+ boolean compactHeader(){return getResources().getConfiguration().screenWidthDp<430||getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_PORTRAIT;}
+
  void updateGlobalStatus(){
   if(flowStatus==null)return;CaptureService c=CaptureService.active;android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
   String cam=c==null?"Canon":c.cameraName,conn=c==null?"Sem câmera":c.connectionLabel();int battery=-1;try{battery=((BatteryManager)getSystemService(BATTERY_SERVICE)).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);}catch(Exception ignored){}
-  long freeBytes=Math.max(0,getFilesDir().getUsableSpace()),gb=freeBytes/(1024L*1024L*1024L);int transfer=c==null?prefs.getInt("lastReceived",0):c.received,editing=database.processingCount();
-  String gallery=prefs.getString("fottoGalleryId","");int sent=gallery.isEmpty()?prefs.getInt("fottoUploadedCount",0):database.fottoDone(gallery),pending=gallery.isEmpty()?0:database.fottoPending(gallery),processing=gallery.isEmpty()?0:database.fottoProcessing(gallery);boolean directActive=prefs.getBoolean("fottoAuto",false);String fErr=gallery.isEmpty()?"":database.fottoLastError(gallery);
+  long freeBytes=Math.max(0,getFilesDir().getUsableSpace()),gb=freeBytes/(1024L*1024L*1024L);int transfer=c==null?prefs.getInt("lastReceived",0):c.received,editing=database.processingCount(),processed=database.doneCount();
+  String gallery=prefs.getString("fottoGalleryId","");int confirmed=gallery.isEmpty()?prefs.getInt("fottoUploadedCount",0):database.fottoDone(gallery),sent=gallery.isEmpty()?confirmed:database.fottoAccepted(gallery),pending=gallery.isEmpty()?0:database.fottoPending(gallery),processing=gallery.isEmpty()?0:database.fottoProcessing(gallery);boolean directActive=prefs.getBoolean("fottoAuto",false);String fErr=gallery.isEmpty()?"":database.fottoLastError(gallery);
   String b=battery<0?"—":battery+"%";boolean lowBattery=battery>=0&&battery<=20,lowSpace=freeBytes>0&&freeBytes<1024L*1024L*1024L;
-  flowStatus.setText(cam+" • "+conn+"   |   bateria "+b+" · "+gb+" GB   |   ↓ "+transfer+"   ✦ "+editing+"   ✓ "+sent);
-  flowStatus.setTextColor(lowBattery||lowSpace||!fErr.isEmpty()?WARN:MUTED);
-  if(fottoLiveStatus!=null){String state=FottoApi.token(MainActivity.this).isEmpty()?"NÃO CONECTADO":gallery.isEmpty()?"SEM EVENTO":directActive?"ATIVO":"PAUSADO";if(FottoSync.running())state="ENVIANDO";String title=prefs.getString("fottoGalleryTitle","");String line1="Fotto direto • "+state+(title.isEmpty()?"":" · "+title);String line2="Confirmadas "+sent+" · na fila "+pending+" · processando "+processing;String last=prefs.getString("fottoLastStatus","");if(!last.isEmpty()&&last.length()<150)line2+="\n"+last;fottoLiveStatus.setText(line1+"\n"+line2);fottoLiveStatus.setTextColor(!fErr.isEmpty()?WARN:(directActive?SUCCESS:MUTED));}
+  flowStatus.setText(cam+" • "+conn);flowStatus.setTextColor("CONECTADA".equals(conn)?SUCCESS:("Sem câmera".equals(conn)?MUTED:WARN));
+  if(metricBattery!=null){metricBattery.setText("BATERIA\n"+b);metricBattery.setTextColor(lowBattery?WARN:TEXT);}
+  if(metricStorage!=null){metricStorage.setText("ESPAÇO\n"+gb+" GB");metricStorage.setTextColor(lowSpace?WARN:TEXT);}
+  if(metricPending!=null){metricPending.setText("PENDENTES\n"+editing);metricPending.setTextColor(editing>0?WARN:MUTED);}
+  if(metricProcessed!=null){metricProcessed.setText("PROCESSADAS\n"+processed);metricProcessed.setTextColor(processed>0?TEXT:MUTED);}
+  if(metricSent!=null){metricSent.setText("ENVIADAS\n"+sent);metricSent.setTextColor(sent>0?SUCCESS:MUTED);}
+  if(fottoLiveStatus!=null){String state=FottoApi.token(MainActivity.this).isEmpty()?"NÃO CONECTADO":gallery.isEmpty()?"SEM EVENTO":directActive?"ATIVO":"PAUSADO";if(FottoSync.running())state="ENVIANDO";String title=prefs.getString("fottoGalleryTitle","");String line1="Fotto direto • "+state+(title.isEmpty()?"":" · "+title);String line2="Enviadas "+sent+" · confirmadas "+confirmed+" · processando "+processing+" · fila "+pending;String last=prefs.getString("fottoLastStatus","");if(!last.isEmpty()&&last.length()<150)line2+="\n"+last;fottoLiveStatus.setText(line1+"\n"+line2);fottoLiveStatus.setTextColor(!fErr.isEmpty()?WARN:(directActive?SUCCESS:MUTED));}
   if(prefs.getBoolean("eventMode",false)){if(lowBattery)EventAlert.signal(MainActivity.this,"bateria","Bateria em "+battery+"%. Conecte o carregador.");if(lowSpace)EventAlert.signal(MainActivity.this,"espaco","Menos de 1 GB livre. Libere armazenamento.");if(!fErr.isEmpty())EventAlert.signal(MainActivity.this,"fotto","Falha na entrega Fotto: "+fErr);}
   int reviews=database.reviewCount();if(tabs[2]!=null)tabs[2].setText(reviews>0?"Revisão ("+reviews+")":"Revisão");
  }
@@ -354,9 +376,62 @@ public class MainActivity extends Activity {
  void permission(UsbDevice d){UsbManager m=(UsbManager)getSystemService(USB_SERVICE);if(m.hasPermission(d)){start(d);return;}Intent i=new Intent(USB).setPackage(getPackageName());PendingIntent pi=PendingIntent.getBroadcast(MainActivity.this,1,i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_MUTABLE);m.requestPermission(d,pi);}
  void start(UsbDevice d){startCamera(d,null,null);}
  void startCamera(UsbDevice d,String wifiHost,android.net.Network wifiNetwork){if(CaptureService.active!=null){message("Serviço já ativo.");return;}try{JSONObject cfg=buildCurrentSettings();getSharedPreferences("hisho",0).edit().putString("liveSettings",cfg.toString()).apply();Intent i=new Intent(MainActivity.this,CaptureService.class).putExtra("settings",cfg.toString());if(d!=null)i.putExtra("device",d);if(wifiHost!=null)i.putExtra("wifiHost",wifiHost).putExtra("wifiNetwork",wifiNetwork);startForegroundService(i);}catch(Exception e){message(e.getMessage());}}
+ static final int REQUEST_CARD_FOLDER=40;
+ static final class CardPhoto{final Uri uri;final String name;final long size,modified;CardPhoto(Uri u,String n,long s,long m){uri=u;name=n;size=s;modified=m;}}
+ void chooseCardFolder(){
+  Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+  try{startActivityForResult(i,REQUEST_CARD_FOLDER);}catch(Exception e){message("O seletor de pastas não está disponível neste aparelho.");}
+ }
+ ArrayList<CardPhoto> scanCardFolder(Uri tree,Uri folder,int depth,Set<String> visited)throws IOException{
+  if(depth>24)throw new IOException("A estrutura de pastas do cartão excede o limite de segurança.");
+  String folderId=DocumentsContract.getDocumentId(folder);if(!visited.add(folderId))return new ArrayList<>();
+  Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,folderId);
+  String[] columns={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_SIZE,DocumentsContract.Document.COLUMN_LAST_MODIFIED};
+  ArrayList<CardPhoto> photos=new ArrayList<>();
+  try(Cursor c=getContentResolver().query(children,columns,null,null,null)){
+   if(c==null)throw new IOException("Não foi possível ler uma pasta do cartão.");
+   int idCol=c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID),nameCol=c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME),mimeCol=c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE),sizeCol=c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE),modifiedCol=c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+   while(c.moveToNext()){
+    String id=c.getString(idCol),name=nameCol>=0?c.getString(nameCol):"foto";String mime=mimeCol>=0?c.getString(mimeCol):"";
+    Uri child=DocumentsContract.buildDocumentUriUsingTree(tree,id);
+    if(DocumentsContract.Document.MIME_TYPE_DIR.equals(mime))photos.addAll(scanCardFolder(tree,child,depth+1,visited));
+    else if(isSupportedCardPhoto(name,mime)){long size=sizeCol>=0&&!c.isNull(sizeCol)?c.getLong(sizeCol):-1;long modified=modifiedCol>=0&&!c.isNull(modifiedCol)?c.getLong(modifiedCol):0;photos.add(new CardPhoto(child,name,size,modified));}
+   }
+  }catch(SecurityException e){throw new IOException("Acesso ao cartão USB foi negado.",e);}
+  return photos;
+ }
+ static boolean isSupportedCardPhoto(String name,String mime){String n=name==null?"":name.toLowerCase(Locale.ROOT);return mime!=null&&mime.startsWith("image/")||n.matches(".*\\.(jpg|jpeg|cr2|cr3|dng|nef|arw|raf|rw2|orf|pef|srw|tif|tiff|heic|heif|png)$");}
+ static String sha256Text(String value)throws Exception{byte[] bytes=java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8"));StringBuilder b=new StringBuilder();for(byte v:bytes)b.append(String.format(Locale.ROOT,"%02x",v));return b.toString();}
+ void importCard(Uri tree){
+  final String settings;try{JSONObject cfg=buildCurrentSettings();settings=cfg.toString();getSharedPreferences("hisho",0).edit().putString("liveSettings",settings).apply();}catch(Exception e){message("Não foi possível preparar as configurações de edição.");return;}
+  final boolean ownService=CaptureService.active==null;
+  if(ownService){try{startForegroundService(new Intent(this,CaptureService.class).setAction("queue_import").putExtra("settings",settings));}catch(Exception e){message("Não foi possível iniciar a fila de edição: "+e.getMessage());return;}}
+  if(importCard!=null){importCard.setEnabled(false);importCard.setText("Lendo cartão USB…");}
+  images.execute(()->{
+   int imported=0,duplicates=0,unsupported=0,failed=0;ArrayList<CardPhoto> photos;
+   try{String rootId=DocumentsContract.getTreeDocumentId(tree);Uri root=DocumentsContract.buildDocumentUriUsingTree(tree,rootId);photos=scanCardFolder(tree,root,0,new HashSet<>());}
+   catch(Exception e){photos=new ArrayList<>();failed++;final String error=e.getMessage();handler.post(()->message("Não foi possível ler o cartão: "+error));}
+   File spool=new File(getFilesDir(),"queue");if(!spool.exists())spool.mkdirs();
+   for(CardPhoto photo:photos){File temp=null;String insertedId="";try{
+    String lower=photo.name.toLowerCase(Locale.ROOT);if(!(lower.endsWith(".jpg")||lower.endsWith(".jpeg"))){unsupported++;continue;}
+    long size=photo.size;long modified=photo.modified;String sourceKey=photo.uri.toString()+"|"+size+"|"+modified;String id=sha256Text("card:"+sourceKey);if(database.exists(id)){duplicates++;continue;}
+    if(getFilesDir().getUsableSpace()<(size>0?size*3L:64L*1024L*1024L))throw new IOException("Pouco espaço livre no aparelho.");
+    temp=new File(spool,id+".jpg");try(InputStream in=getContentResolver().openInputStream(photo.uri);OutputStream out=new FileOutputStream(temp)){if(in==null)throw new IOException("Foto não disponível no cartão.");byte[] buf=new byte[64*1024];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);}
+    String hash=PhotoHash.sha256(temp);if(!database.duplicateByContent(hash).isEmpty()){temp.delete();duplicates++;continue;}
+    String pHash="";try{pHash=PhotoHash.perceptualHash(temp);}catch(Exception ignored){}
+    String base=photo.name.replaceFirst("(?i)\\.(jpe?g)$","").replaceAll("[^a-zA-Z0-9_-]","_");String outName=base+"_Cartao_"+id.substring(0,10)+".jpg";long captured=modified>0?modified:System.currentTimeMillis();
+    database.addImported(id,temp,outName,settings,captured,hash,pHash,temp.length());insertedId=id;
+    Uri original=database.save(temp,"Originais",outName,id,"original");database.set(id,"ready","original",original.toString());imported++;
+   }catch(Exception e){if(temp!=null)temp.delete();if(!insertedId.isEmpty())try{database.set(insertedId,"originalError","error",e.toString());}catch(Exception ignored){}failed++;}}
+   if(ownService)try{startService(new Intent(MainActivity.this,CaptureService.class).setAction("finish_import"));}catch(Exception ignored){}
+   final int done=imported,dupes=duplicates,skip=unsupported,errors=failed;
+   handler.post(()->{if(importCard!=null){importCard.setEnabled(true);importCard.setText("Importar fotos do cartão USB");}gallerySignature="";filesSignature="";reviewSignature="";if(selected==1)refreshFiles(true);if(selected==2)refreshReview(true);refreshGallery();message("Cartão processado: "+done+" foto(s) na edição, "+dupes+" duplicada(s), "+skip+" arquivo(s) não JPEG e "+errors+" erro(s).");});
+  });
+ }
  static String read(InputStream stream)throws IOException{try(InputStream s=stream;ByteArrayOutputStream b=new ByteArrayOutputStream()){byte[] a=new byte[8192];int n;while((n=s.read(a))!=-1){if(b.size()+n>1024*1024)throw new IOException("Arquivo maior que 1 MB.");b.write(a,0,n);}return b.toString("UTF-8");}}
 
  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
+  if(request==REQUEST_CARD_FOLDER){if(result==RESULT_OK&&data!=null&&data.getData()!=null){Uri tree=data.getData();int flags=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);try{getContentResolver().takePersistableUriPermission(tree,flags);importCard(tree);}catch(Exception e){message("Não foi possível acessar o cartão USB: "+e.getMessage());}}return;}
   if(request==30){if(result==RESULT_OK){getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Conta conectada. Carregando eventos…").apply();loadFottoGalleries();updateFottoStatus();}return;}
   if(request==20&&result==RESULT_OK&&data!=null&&data.getData()!=null){Uri uri=data.getData();int flags=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);try{getContentResolver().takePersistableUriPermission(uri,flags);getSharedPreferences("hisho",0).edit().putString("exportTreeUri",uri.toString()).apply();updateExportFolder();message("Pasta de exportação salva.");}catch(Exception e){message("Não foi possível manter acesso à pasta: "+e.getMessage());}return;}
   if(request==10&&result==RESULT_OK&&data!=null)try{JSONObject parsed=PhotoEditor.parse(read(getContentResolver().openInputStream(data.getData())));presetData=parsed;presetName="Predefinição importada";try(Cursor c=getContentResolver().query(data.getData(),new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst())presetName=c.getString(0).replaceFirst("(?i)\\.xmp$","");}getSharedPreferences("hisho",0).edit().putString("preset",parsed.toString()).putString("presetName",presetName).putBoolean("presetEnabled",true).apply();PresetLibrary.put(MainActivity.this,presetName,parsed);publishLiveSettings();refreshQuickControls();message("Predefinição "+presetName+" importada.");}catch(Exception e){message("Predefinição anterior mantida: "+e.getMessage());}

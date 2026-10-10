@@ -12,6 +12,7 @@ public class CaptureService extends Service{
  public void onCreate(){super.onCreate();active=this;IntentFilter filter=new IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED);if(Build.VERSION.SDK_INT>=33)registerReceiver(detach,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(detach,filter);detachRegistered=true;jobs=new Jobs(this);NotificationManager n=getSystemService(NotificationManager.class);n.createNotificationChannel(new NotificationChannel("capture","Captura e edição",NotificationManager.IMPORTANCE_LOW));wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"LUMO:Capture");}
  public int onStartCommand(Intent intent,int flags,int startId){
   if(intent==null){stopSelf();return START_NOT_STICKY;}
+  if("finish_import".equals(intent.getAction())){finish=true;status="Concluindo edição das fotos importadas…";log(status);return START_NOT_STICKY;}
   if("stop".equals(intent.getAction())){alertArmed.set(false);capturing=false;finish=true;link.stop();status="Finalizando foto e fila…";return START_NOT_STICKY;}
   if(editThread!=null)return START_NOT_STICKY;
   UsbDevice device=intent.getParcelableExtra("device");attached=device;String wifiHost=intent.getStringExtra("wifiHost");wifiNetwork=intent.getParcelableExtra("wifiNetwork");boolean hasCamera=device!=null||wifiHost!=null;if(device!=null){String n=device.getProductName();cameraName=n==null||n.trim().isEmpty()?"Canon USB":n.trim();}else if(wifiHost!=null)cameraName="Canon Wi-Fi";if(hasCamera)link.connect();
@@ -20,7 +21,7 @@ public class CaptureService extends Service{
   try{if(Build.VERSION.SDK_INT>=29)startForeground(1,notification(),type);else startForeground(1,notification());}catch(Exception e){status="Não foi possível iniciar serviço: "+e.getMessage();link.fail(status);getSharedPreferences("hisho",0).edit().putString("lastStatus",status).apply();stopSelf();return START_NOT_STICKY;}
   wake.acquire(6*60*60*1000L);jobs.retry();
   String settings=intent.getStringExtra("settings");if(settings==null)settings="{}";final String config=settings;
-  capturing=hasCamera;usbFinished=!hasCamera;finish=!hasCamera;
+  capturing=hasCamera;usbFinished=!hasCamera;finish=!hasCamera&&!"queue_import".equals(intent.getAction());
   if(wifiNetwork!=null){wifiCallback=new android.net.ConnectivityManager.NetworkCallback(){public void onLost(android.net.Network n){if(n.equals(wifiNetwork)&&capturing){link.fail("Rede Wi-Fi da câmera desconectada.");status=link.error;capturing=false;finish=true;lostAlert(status);log(status);}}};getSystemService(android.net.ConnectivityManager.class).registerNetworkCallback(new android.net.NetworkRequest.Builder().addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI).build(),wifiCallback);}
   if(hasCamera){usbThread=new Thread(()->capture(device,config,wifiHost),"LUMO-USB");usbThread.start();}
   editThread=new Thread(this::editLoop,"LUMO-Editor");editThread.setPriority(Thread.MIN_PRIORITY);editThread.start();return START_NOT_STICKY;
