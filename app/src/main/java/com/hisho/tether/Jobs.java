@@ -172,6 +172,17 @@ final class Jobs extends SQLiteOpenHelper{
   ContentValues v=new ContentValues();v.put(MediaStore.Images.Media.IS_PENDING,0);if(r.update(uri,v,null,null)!=1)throw new IOException("Falha ao concluir gravação.");return uri;
  }
 
+ synchronized void deletePhoto(String id)throws IOException{
+  String file,original,edited,state;try(Cursor c=getReadableDatabase().rawQuery("SELECT file,original,edited,state FROM jobs WHERE id=?",new String[]{id})){if(!c.moveToFirst())return;file=c.getString(0);original=c.getString(1);edited=c.getString(2);state=c.getString(3);}
+  if("editing".equals(state)||"ready".equals(state)||"original".equals(state))throw new IOException("Foto ainda está na fila de processamento.");
+  // Delete only the exact copies recorded for this job, never the source card tree.
+  if(edited!=null&&!edited.isEmpty())deletePhotoUri(edited);
+  if(original!=null&&!original.isEmpty()&&!original.equals(edited))deletePhotoUri(original);
+  if(file!=null&&!file.isEmpty()){File spool=new File(file);if(spool.exists()&&!spool.delete())throw new IOException("Não foi possível apagar a cópia temporária.");}
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{db.delete("fotto_uploads","job_id=?",new String[]{id});db.delete("history","job_id=?",new String[]{id});db.delete("jobs","id=?",new String[]{id});db.setTransactionSuccessful();}finally{db.endTransaction();}
+ }
+ void deletePhotoUri(String raw)throws IOException{Uri uri=Uri.parse(raw);try{if(DocumentsContract.isDocumentUri(context,uri)){if(!DocumentsContract.deleteDocument(context.getContentResolver(),uri))throw new IOException("Não foi possível excluir arquivo.");}else context.getContentResolver().delete(uri,null,null);}catch(FileNotFoundException alreadyDeleted){}catch(Exception e){throw new IOException("Falha ao excluir cópia: "+e.getMessage(),e);}}
+
  int clearEditedFolder()throws IOException{
   int deleted=0;
   String tree=context.getSharedPreferences("hisho",0).getString("exportTreeUri","");
