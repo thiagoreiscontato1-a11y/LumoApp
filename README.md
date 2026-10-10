@@ -1,4 +1,33 @@
-# LUMO 0.15.2 — R8 Handshake + Encerrar envio
+# LUMO 0.15.16 — Importação de cartão USB
+
+Baseado no projeto 0.15.6, anterior às alterações experimentais para Sony. Mantém o fluxo Canon R8/SL2, edição, curadoria e entrega Fotto.
+
+## Importar fotos de um cartão
+
+Conecte um leitor de cartão USB/OTG ao Android e toque em **Importar fotos do cartão USB**. Escolha a pasta do cartão no seletor do Android; o LUMO percorre as subpastas e coloca os JPEGs na mesma fila da câmera, preservando originais e usando as configurações atuais de edição, predefinição, curadoria e Fotto. A importação identifica duplicatas por origem e conteúdo.
+
+O importador processa `.jpg` e `.jpeg`. Arquivos RAW, como CR2/CR3, são detectados e ignorados porque esta versão do editor não os decodifica. Se o Android não permitir selecionar a raiz do volume, selecione `DCIM`.
+
+- `versionCode`: 42
+- `versionName`: `0.15.16-usb-card-import`
+
+---
+
+# LUMO 0.15.6 — Watchdog Fotto + topo em chips
+
+Atualização sobre a 0.15.5 com duas melhorias principais:
+
+- **Watchdog do Fotto**: se o envio automático parar com fotos pendentes/erro e não houver progresso, o Lumo detecta a fila parada e tenta retomá-la sozinho. Erros fatais de sessão expirada ou arquivo inexistente não entram em loop. O intervalo aumenta progressivamente quando uma falha persiste.
+- **Topo em mini-cards/chips**: bateria, espaço, pendentes de processamento, processadas e enviadas ficam em cartões compactos e responsivos; no celular em pé aparecem em duas linhas e em telas largas em uma linha.
+
+`ENVIADAS` representa arquivos já aceitos pelo armazenamento do Fotto; o painel Entrega continua mostrando também quantas foram confirmadas/processadas no evento.
+
+- `versionCode`: 41
+- `versionName`: `0.15.6-fotto-watchdog-chips`
+
+---
+
+# LUMO 0.15.5 — Fotto fila longa + correção de build
 
 Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
 
@@ -40,8 +69,8 @@ python3 build.py
 
 Saída: **Lumo.apk**
 
-- `versionCode`: 38
-- `versionName`: `0.15.2-r8-handshake`
+- `versionCode`: 40
+- `versionName`: `0.15.5-fotto-long-queue-build-fix`
 - minSdk: 29
 - targetSdk: 35
 
@@ -65,3 +94,23 @@ Veja `IMPLEMENTACAO-0.15.0-FOTTO-DIRETO.txt` para o fluxo e o roteiro do primeir
 - fases de diagnóstico mais claras (`Abrindo sessão PTP`, `ativando captura Canon`, `lendo índice do cartão`);
 - tolerância a timeouts USB transitórios antes de considerar a conexão quebrada;
 - mantém o botão **Encerrar envio** e o upload direto validado no Fotto.
+
+
+
+## 0.15.5 — Correção de build
+
+- Corrigidas quebras de linha literais que deixavam strings Java abertas no cabeçalho do modo retrato.
+- Mantida integralmente a fila longa do Fotto da 0.15.4.
+- Adicionado teste `java_source_contract.py` ao GitHub Actions para detectar string Java atravessando linha antes da compilação.
+
+## 0.15.4 — Fila longa do Fotto
+
+- remove o limite interno de 40 uploads por execução;
+- a fila continua drenando enquanto houver fotos novas;
+- elimina a corrida entre o fim da fila e a chegada de uma nova foto;
+- uma foto cujo PUT ao S3 retornou sucesso nunca é reenviada só porque a confirmação demorou;
+- confirmação passou a ser em lote, reduzindo centenas de GETs para uma única leitura periódica;
+- aplica revalidação da galeria antes da confirmação, seguindo o fluxo observado no HAR do Fotto;
+- retries suaves para HTTP 429/502/503/504;
+- retomada por JobScheduler também reativa a fila Fotto;
+- painel separa enviadas/aceitas de confirmadas.
