@@ -1,8 +1,0 @@
-Lumo 0.15.18
-Exclusão por seleção ou filtros de status e intervalo de datas.
-Data: importação/download, captura ou última edição (dias inclusivos, fuso do aparelho).
-Editadas: edição registrada; não editadas: nenhuma edição registrada.
-Confirmação mostra quantidade e filtros. Apaga cópias locais e histórico; não remove origem do cartão/câmera nem mídia no Fotto.
-Pare captura/edição e envio automático antes de excluir. Fotos ainda na fila são protegidas.
-Mantém galeria, troca de preset e painel lateral da 0.15.17.
-Projeto fonte; compile APK pelo GitHub Actions incluído.
