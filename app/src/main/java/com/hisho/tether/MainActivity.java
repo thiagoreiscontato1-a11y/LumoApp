@@ -88,7 +88,7 @@ public class MainActivity extends Activity {
   CaptureService s=CaptureService.active;boolean running=s!=null;
   if(connect!=null){connect.setText(!running?"Conectar câmera":s.capturing?"Encerrar captura":"Concluindo fila…");connect.setEnabled(!running||s.capturing);connect.setAlpha(connect.isEnabled()?1f:.45f);}
   if(settingsButton!=null){settingsButton.setEnabled(!running);settingsButton.setAlpha(running?.4f:1f);}
-  if(resume!=null){boolean show=!running&&database.pending()>0;resume.setVisibility(show?View.VISIBLE:View.GONE);}
+  if(resume!=null){boolean show=database.pending()>0;resume.setVisibility(show?View.VISIBLE:View.GONE);resume.setText(running?"Processamento ativo · verificar fila":"Continuar processamento · "+database.pending()+" pendentes");}
   android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
   if(status!=null){if(running){status.setText(s.status);timing.setText(s.detail.isEmpty()?"Captura e edição em filas independentes":s.detail);report.setText(s.report());badge.setText("● "+s.connectionLabel());badge.setTextColor("CONECTADA".equals(s.connectionLabel())?SUCCESS:WARN);}else{status.setText(prefs.getString("lastStatus","Pronto para conectar a câmera."));timing.setText("Original preservado · edição e curadoria em segundo plano");report.setText(prefs.getString("lastReport","Nenhuma atividade registrada."));badge.setText("● SEM CÂMERA");badge.setTextColor(MUTED);}}
   updateGlobalStatus();
@@ -207,7 +207,18 @@ public class MainActivity extends Activity {
   gap(p,7);fottoLiveStatus=text("Fotto direto • configure em Entrega",11,MUTED,true);fottoLiveStatus.setPadding(dp(10),dp(8),dp(10),dp(8));fottoLiveStatus.setBackground(border(CARD2,12));fottoLiveStatus.setMaxLines(3);p.addView(fottoLiveStatus);
 
   gap(p,8);status=text("Pronto para conectar.",12,TEXT,true);p.addView(status);timing=label(p,"Original preservado · edição e curadoria em segundo plano",11);
-  resume=compactButton("Retomar edições pendentes",v->start(null));resume.setVisibility(View.GONE);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(42));rp.topMargin=dp(7);p.addView(resume,rp);
+  resume=compactButton("Continuar processamento",v->continuePendingProcessing());resume.setVisibility(View.GONE);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(42));rp.topMargin=dp(7);p.addView(resume,rp);
+ }
+ void continuePendingProcessing(){
+  int pending=database.pending();if(pending<=0){message("Não há fotos pendentes de edição.");return;}
+  CaptureService service=CaptureService.active;
+  if(service!=null){
+   new AlertDialog.Builder(this).setTitle("Processamento em andamento")
+    .setMessage("Há "+pending+" foto(s) pendente(s). O serviço de edição ainda está ativo. Para evitar duplicação ou perda de arquivos, não será iniciada uma segunda fila simultaneamente. Se estiver travado, aguarde o serviço encerrar ou reinicie o aplicativo e toque novamente em Continuar processamento.")
+    .setPositiveButton("Entendi",null).show();return;
+  }
+  message("Retomando edição de "+pending+" foto(s) pendente(s)…");
+  QueueRecovery.resume(MainActivity.this);
  }
  Button miniNav(String title,View.OnClickListener l){Button b=compactButton(title,l);b.setTextSize(11);return b;}
 
