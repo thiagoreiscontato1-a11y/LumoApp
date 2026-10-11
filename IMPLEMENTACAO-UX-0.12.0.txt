@@ -1,0 +1,82 @@
+LUMO 0.12.0 / versionCode 24
+
+IMPLEMENTAÇÃO UX/UI
+
+1. CAPTURE COMO TELA PRINCIPAL
+- Preview ocupa aproximadamente 66% da altura útil do aparelho.
+- Última imagem em destaque.
+- Filmstrip horizontal das 60 fotos recentes.
+- Controles de sessão foram movidos para o botão de configurações.
+
+2. STATUS GLOBAL
+- Sempre visível no topo.
+- Câmera/conexão, bateria do CELULAR, armazenamento livre do app, recebidas, processando e enviadas.
+- Exemplo: Canon EOS R8 • CONECTADA | bat 82% · 31 GB | ↓ 14 ✦ 2 ✓ 11.
+
+3. INTERFACE COMPACTA
+- Cards menores, botões menores, divisores leves e mais espaço para a fotografia.
+
+4. GALLERY PARA VOLUME
+- Grid de 3 colunas em celulares e 4 em telas maiores.
+- Indicadores: ✓ pronta, ● processando, ! review e ↑ enviada.
+- Score sobre a miniatura.
+- Pressão longa ativa seleção múltipla.
+- Barra contextual: Editar, Copiar, Colar, Aprovar e Enviar.
+
+5. REVIEW DEDICADO
+- Aba Review (N).
+- Só mostra imagens bloqueadas pela curadoria.
+- Mostra score e razão técnica.
+- Aprovar libera a foto para Editadas/Fotto.
+- Editar abre o editor contextual.
+
+6. EDITOR CONTEXTUAL
+- Não existe mais aba Edit na navegação principal.
+- Foto ocupa a maior parte da tela.
+- Um slider por vez.
+- Faixa horizontal: Exposição, Contraste, Realces, Sombras, Brancos, Pretos, Temperatura, Matiz, Vibração e Saturação.
+- Mostra Base, Auto e Preset para o parâmetro selecionado.
+- Slider atualiza a prévia durante o movimento.
+
+7. ANTES / DEPOIS
+- Botões Original, Auto, Preset e Final.
+- Segurar a foto mostra Original; soltar retorna ao Final.
+
+8. EDIÇÃO EM LOTE
+- Editor recebe todas as fotos selecionadas.
+- Exibe a quantidade selecionada.
+- Botão Aplicar em N.
+- Copiar permite escolher parâmetros específicos; Colar altera somente os parâmetros copiados.
+
+9. DELIVER SIMPLIFICADO
+- Fotto • Conectado.
+- Evento atual.
+- Enviadas e fila.
+- Menu ⋯ para conta, evento, atualização, pasta e envio das pendentes.
+- Erros aparecem somente na área Problemas.
+
+10. NAVEGAÇÃO
+- Capture · Gallery · Review · Deliver.
+- Editor é contextual.
+
+11. MODO ESCURO
+- Alternância no cabeçalho.
+- Estado persistido entre reinicializações.
+- Editor acompanha o mesmo modo.
+
+12. SCORE TÉCNICO 1–10
+- Persistido no banco SQLite.
+- Calculado por nitidez/desfoque, exposição, contraste, clipping e enquadramento técnico.
+- O score é calculado mesmo quando o bloqueio automático da Curadoria está desligado.
+- Fotos antigas sem score são analisadas gradualmente ao aparecerem na Gallery.
+- Score não é nota estética/artística; serve como apoio de triagem.
+
+SEGURANÇA DE FLUXO
+- Foto em Review continua impedida de ser enviada automaticamente ao Fotto.
+- Aprovar/editar e passar pela curadoria libera a foto.
+- Original é preservado para reedição.
+
+VALIDAÇÃO
+- Os testes locais de recuperação e fila Fotto incluídos no projeto passaram.
+- O workflow do GitHub contém verificações de presença das mudanças UX antes da compilação Android.
+- A compilação Android completa continua sendo executada no GitHub Actions, que instala API 35 e Build Tools 35.0.0.

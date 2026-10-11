@@ -1,0 +1,9 @@
+Lumo 0.14.1
+
+Correções:
+- Restaurado openEditor(), removido acidentalmente no refactor do Fotto Web.
+- A ação Fotto na Galeria agora abre somente o painel WebView; não chama mais FottoSync.
+- Removido retorno do login/API antigo no onActivityResult.
+- Status individual da Galeria não usa mais registros antigos da API para afirmar envio.
+- Incluído .github/workflows/main.yml atualizado, porque o repositório LumoApp ainda executava o workflow antigo "Compilar Lumo 0.9.4".
+- build-apk.yml também atualizado para 0.14.1.

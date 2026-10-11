@@ -1,0 +1,9 @@
+CORRECAO DO BUILD: o build.py no repositorio GitHub estava VAZIO.
+
+Envie TODOS os arquivos deste ZIP para a RAIZ do repositorio (nao apenas a pasta .github).
+Em particular, substitua build.py na raiz e .github/workflows/main.yml.
+No GitHub, abra build.py e confirme que ele tem codigo Python (nao 0 bytes).
+Depois execute o workflow Compilar Lumo 0.15.26 - Build completo.
+
+Se o workflow mostrar o nome 0.9.4, o main.yml antigo ainda esta sendo executado.
+Nao foi possivel compilar o APK localmente por falta de Android SDK no ambiente.

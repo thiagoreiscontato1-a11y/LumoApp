@@ -1,0 +1,23 @@
+LUMO 0.15.21 — Eventos antigos do Fotto
+
+Base: LUMO 0.15.20 (galeria contínua), com recursos de câmera Canon, cartão USB, RAW/álbuns, reedição e fila Fotto preservados.
+
+CORREÇÃO
+- Antes: GET /me/galleries somente uma vez, causando sumiço de eventos antigos quando o Fotto entregava apenas a primeira página.
+- Agora: paginação progressiva com reconhecimento de metadados, links/cursores, e fallback de páginas numéricas. Elimina duplicatas por ID e evita loop quando o servidor repete respostas.
+- Status indica quando o servidor NÃO comprova que devolveu todas as páginas.
+- Busca por nome (inclusive sem acento) ou ID nos eventos recebidos.
+- Opção Informar ID para tentar consultar um evento antigo diretamente no Fotto e verificar o nome antes de selecionar.
+- Nunca substitui automaticamente o evento salvo por outro mais recente quando ele não aparece na lista.
+- Solicita confirmação do destino e não permite trocar durante envio em andamento.
+
+USO
+1. Abra Entrega > menu ⋯ > Atualizar lista completa, ou Trocar evento > Recarregar.
+2. Pesquise pelo nome ou ID e selecione, confirmando o destino.
+3. Se não aparecer, toque em Informar ID e cole o ID ou o link de administração do Fotto contendo /galleries/ID; esta opção precisa de permissão da conta.
+4. Confira o campo Evento na tela Entrega antes de iniciar o envio automático.
+
+IMPORTANTE
+- A listagem completa depende de o Fotto disponibilizar todas as páginas pela API autenticada. O formato de paginação e a consulta individual de eventos antigos não foram validados com uma conta real.
+- Projeto-fonte pronto para compilação com GitHub Actions; este pacote não contém APK.
+- APK assinado com a chave de teste herdada da base; mantenha seu backup antes de atualizar.

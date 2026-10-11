@@ -1,0 +1,1 @@
+Lumo 0.15.24: botão Continuar processamento na tela de captura para retomar fotos pendentes sem reconectar a câmera. Evita iniciar fila duplicada quando serviço já está ativo. Se o serviço ainda estiver ativo mas travado, mostra orientação de recuperação segura.

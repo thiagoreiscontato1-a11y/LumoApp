@@ -1,0 +1,21 @@
+Lumo 0.14.3 — correção do retorno à tela de selecionar pasta
+
+Causa provável confirmada pela arquitetura do WebView:
+O Fotto recebe um FileSystemDirectoryHandle e tenta persistir esse handle para continuar o monitoramento.
+Na 0.14.2, o Lumo entregava um objeto JavaScript funcional, mas ele não se comportava como um handle
+persistível ao passar pelo IndexedDB/structured clone do site. O Fotto então descartava a seleção e voltava
+para a tela de escolher pasta.
+
+Alterações:
+- showDirectoryPicker reutiliza imediatamente a pasta já autorizada pelo Lumo.
+- DirectoryHandle e FileHandle passaram a usar protótipos próprios.
+- Camada de compatibilidade com IndexedDB substitui o handle por um marcador serializável ao salvar.
+- Quando o site lê o marcador, o Lumo reconstrói o DirectoryHandle.
+- O DirectoryHandle agora implementa values, entries, keys, Symbol.asyncIterator, getFileHandle,
+  getDirectoryHandle, resolve, queryPermission, requestPermission e isSameEntry.
+- Erros JavaScript/unhandled promise rejection agora aparecem no cabeçalho do Fotto dentro do Lumo.
+- Após escolher a pasta, o Lumo reinjeta a camada antes de resolver a promessa do Fotto.
+
+Validação:
+Se o Fotto ainda voltar à seleção, observe a mensagem abaixo do título Fotto. A 0.14.3 passa a mostrar
+a rejeição real do site (ex.: DataCloneError, TypeError etc.), permitindo corrigir o ponto exato.

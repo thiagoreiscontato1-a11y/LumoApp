@@ -1,0 +1,13 @@
+LUMO 0.15.1 — R8 + Encerrar envio
+
+1. Entrega
+- Novo botão Encerrar envio.
+- Desativa fottoAuto e solicita parada da fila.
+- Se houver uma foto em PUT/confirmação, ela termina; nenhuma nova foto é iniciada.
+
+2. Canon R8
+- O fluxo anterior fazia todo o backfill antes de ativar a captura Canon.
+- Agora abre PTP, enumera o cartão, ativa captura e marca a câmera como conectada primeiro.
+- Fotos existentes são recuperadas em segundo plano, uma por ciclo.
+- Fotos novas têm prioridade sobre o retroativo.
+- DeviceBusy/InvalidObjectHandle durante o poll de eventos Canon não derruba imediatamente a sessão.

@@ -1,0 +1,16 @@
+LUMO 0.13.0 / versionCode 25
+
+[OK] 1. Confirmação real no Fotto
+[OK] 2. Painel Saúde do fluxo
+[OK] 3. Fila persistente + retomada
+[OK] 4. Sincronização automática após reconexão
+[OK] 5. Curadoria semântica local/heurística (experimental)
+[OK] 6. Agrupamento e ranking de rajadas
+[OK] 7. SHA-256 + hash perceptual contra duplicatas
+[OK] 8. Histórico completo por foto
+[OK] 9. Perfis de trabalho com preset, curadoria, intensidade, pasta/evento e envio
+[OK] 10. Modo Evento com tela ativa, monitoramento e alertas
+[OK] Troca de predefinição durante o evento
+[OK] Interface em português
+
+Observação: a análise de olhos/expressão/rosto é heurística local e deve ser tratada como triagem, não como classificação infalível.

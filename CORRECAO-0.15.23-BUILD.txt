@@ -1,0 +1,1 @@
+Lumo 0.15.23: restaura o método openEditor ausente em MainActivity.java, corrigindo cinco erros cannot find symbol nas linhas 189, 323, 336, 338 e 346. Mantém a validação do upload editado da versão 0.15.22.

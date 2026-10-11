@@ -1,0 +1,8 @@
+Lumo 0.15.20
+Galeria contínua: inicia com 80 fotos e busca mais 80 perto do fim da rolagem.
+Lista nativa recicla linhas fora da tela; miniaturas são criadas apenas para linhas exibidas.
+Busca em executor dedicado, indicador de carregamento e proteção contra buscas simultâneas.
+Paginação por rowid evita duplicar fotos se novos arquivos forem importados durante a navegação.
+Troca de álbum invalida resultados anteriores e volta ao início.
+Mantém RAW, álbuns, seleção, exclusão, reedição e preparação online.
+Projeto fonte; ainda requer compilação e validação visual em Android.
