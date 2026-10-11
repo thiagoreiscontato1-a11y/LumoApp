@@ -12,7 +12,7 @@ for label, source, required in [
         "ACTION_OPEN_DOCUMENT_TREE",
         "takePersistableUriPermission(tree,flags)",
         "scanCardFolder(tree,child,depth+1,visited)",
-        "lower.endsWith(\".jpg\")||lower.endsWith(\".jpeg\")",
+        "lower.endsWith(\".jpg\")||lower.endsWith(\".jpeg\")||raw",
         "database.duplicateByContent(hash)",
         "database.addImported(id,temp,outName,settings",
         "database.set(id,\"ready\",\"original\",original.toString())",

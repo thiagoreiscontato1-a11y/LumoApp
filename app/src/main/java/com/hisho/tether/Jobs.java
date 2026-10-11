@@ -11,13 +11,14 @@ import java.util.*;
 
 final class Jobs extends SQLiteOpenHelper{
  final Context context;
- Jobs(Context c){super(c,"queue.db",null,6);context=c;}
+ Jobs(Context c){super(c,"queue.db",null,7);context=c;}
 
  public void onCreate(SQLiteDatabase d){
-  d.execSQL("CREATE TABLE jobs (id TEXT PRIMARY KEY, file TEXT NOT NULL, name TEXT NOT NULL, settings TEXT NOT NULL, original TEXT, edited TEXT, state TEXT NOT NULL, error TEXT, score INTEGER NOT NULL DEFAULT 0, quality_note TEXT, content_hash TEXT, phash TEXT, file_size INTEGER NOT NULL DEFAULT 0, captured_at INTEGER NOT NULL DEFAULT 0, downloaded_at INTEGER NOT NULL DEFAULT 0, edited_at INTEGER NOT NULL DEFAULT 0, burst_id TEXT, duplicate_of TEXT, semantic_note TEXT)");
+  d.execSQL("CREATE TABLE jobs (id TEXT PRIMARY KEY, file TEXT NOT NULL, name TEXT NOT NULL, settings TEXT NOT NULL, original TEXT, edited TEXT, state TEXT NOT NULL, error TEXT, score INTEGER NOT NULL DEFAULT 0, quality_note TEXT, content_hash TEXT, phash TEXT, file_size INTEGER NOT NULL DEFAULT 0, captured_at INTEGER NOT NULL DEFAULT 0, downloaded_at INTEGER NOT NULL DEFAULT 0, edited_at INTEGER NOT NULL DEFAULT 0, burst_id TEXT, duplicate_of TEXT, semantic_note TEXT, album TEXT NOT NULL DEFAULT 'Sem álbum', raw_original TEXT, source_name TEXT)");
   createFotto(d);createHistory(d);
  }
  public void onUpgrade(SQLiteDatabase d,int a,int b){
+  if(a<7){d.execSQL("ALTER TABLE jobs ADD COLUMN album TEXT NOT NULL DEFAULT 'Sem álbum'");d.execSQL("ALTER TABLE jobs ADD COLUMN raw_original TEXT");d.execSQL("ALTER TABLE jobs ADD COLUMN source_name TEXT");}
   if(a<2)createFotto(d);
   if(a<3){
    try{d.execSQL("ALTER TABLE jobs ADD COLUMN score INTEGER NOT NULL DEFAULT 0");}catch(Exception ignored){}
@@ -56,7 +57,7 @@ final class Jobs extends SQLiteOpenHelper{
  }
  private void addSource(String id,File file,String name,String settings,long capturedAt,String contentHash,String pHash,long fileSize,boolean imported){
   String burst=burstFor(capturedAt);
-  ContentValues v=new ContentValues();v.put("id",id);v.put("file",file.getAbsolutePath());v.put("name",name);v.put("settings",settings);v.put("state","original");v.put("content_hash",contentHash);v.put("phash",pHash);v.put("file_size",fileSize);v.put("captured_at",capturedAt);v.put("downloaded_at",System.currentTimeMillis());v.put("burst_id",burst);getWritableDatabase().insertOrThrow("jobs",null,v);
+  ContentValues v=new ContentValues();v.put("id",id);v.put("file",file.getAbsolutePath());v.put("name",name);v.put("album",new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.ROOT).format(new Date(capturedAt>0?capturedAt:System.currentTimeMillis())));v.put("settings",settings);v.put("state","original");v.put("content_hash",contentHash);v.put("phash",pHash);v.put("file_size",fileSize);v.put("captured_at",capturedAt);v.put("downloaded_at",System.currentTimeMillis());v.put("burst_id",burst);getWritableDatabase().insertOrThrow("jobs",null,v);
   history(id,capturedAt>0?capturedAt:System.currentTimeMillis(),imported?"Importada":"Capturada",imported?"Lida do cartão de memória USB":"Registrada pela câmera");
   history(id,System.currentTimeMillis(),"Baixada","Original recebido e preservado");
  }
@@ -153,7 +154,7 @@ final class Jobs extends SQLiteOpenHelper{
   try{String rootId=DocumentsContract.getTreeDocumentId(tree);root=DocumentsContract.buildDocumentUriUsingTree(tree,rootId);}catch(Exception e){throw new IOException("Pasta de exportação inválida. Escolha a pasta novamente.",e);}
   Uri dir=findChild(r,root,folder,true);if(dir==null)throw new IOException("Não foi possível criar a pasta "+folder+" no destino escolhido.");
   Uri uri=null;
-  try{uri=DocumentsContract.createDocument(r,dir,"image/jpeg",name);}catch(Exception e){throw new IOException("Não foi possível criar "+name+" na pasta escolhida.",e);}
+  try{uri=DocumentsContract.createDocument(r,dir,RawPreview.isRaw(name)?"application/octet-stream":"image/jpeg",name);}catch(Exception e){throw new IOException("Não foi possível criar "+name+" na pasta escolhida.",e);}
   if(uri==null)throw new IOException("Não foi possível criar o arquivo na pasta escolhida.");
   try(InputStream input=new FileInputStream(source);OutputStream output=r.openOutputStream(uri,"w")){if(output==null)throw new IOException("Pasta de exportação indisponível.");copy(input,output);}catch(Exception e){try{DocumentsContract.deleteDocument(r,uri);}catch(Exception ignored){}throw e instanceof IOException?(IOException)e:new IOException(e);}
   ContentValues u=new ContentValues();u.put(column,uri.toString());getWritableDatabase().update("jobs",u,"id=?",new String[]{id});return uri;
@@ -167,17 +168,21 @@ final class Jobs extends SQLiteOpenHelper{
   Uri uri=null;try(Cursor c=getReadableDatabase().rawQuery("SELECT "+column+" FROM jobs WHERE id=?",new String[]{id})){if(c.moveToFirst()&&!c.isNull(0))uri=Uri.parse(c.getString(0));}
   ContentResolver r=context.getContentResolver();
   if(uri!=null){try(Cursor c=r.query(uri,new String[]{MediaStore.Images.Media.IS_PENDING},null,null,null)){if(c==null||!c.moveToFirst())uri=null;else if(c.getInt(0)==0)return uri;}}
-  if(uri==null){ContentValues v=new ContentValues();v.put(MediaStore.Images.Media.DISPLAY_NAME,name);v.put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg");v.put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/LUMO/"+folder);v.put(MediaStore.Images.Media.IS_PENDING,1);uri=r.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,v);if(uri==null)throw new IOException("Não foi possível criar o arquivo na galeria.");ContentValues u=new ContentValues();u.put(column,uri.toString());getWritableDatabase().update("jobs",u,"id=?",new String[]{id});}
+  if(uri==null){ContentValues v=new ContentValues();v.put(MediaStore.Images.Media.DISPLAY_NAME,name);v.put(MediaStore.Images.Media.MIME_TYPE,RawPreview.isRaw(name)?"application/octet-stream":"image/jpeg");v.put(MediaStore.Images.Media.RELATIVE_PATH,(RawPreview.isRaw(name)?"Download/LUMO/":"Pictures/LUMO/")+folder);v.put(MediaStore.Images.Media.IS_PENDING,1);uri=r.insert(RawPreview.isRaw(name)?MediaStore.Downloads.EXTERNAL_CONTENT_URI:MediaStore.Images.Media.EXTERNAL_CONTENT_URI,v);if(uri==null)throw new IOException("Não foi possível criar o arquivo na galeria.");ContentValues u=new ContentValues();u.put(column,uri.toString());getWritableDatabase().update("jobs",u,"id=?",new String[]{id});}
   try(InputStream input=new FileInputStream(source);OutputStream output=r.openOutputStream(uri,"wt")){if(output==null)throw new IOException("Pasta indisponível.");copy(input,output);}
   ContentValues v=new ContentValues();v.put(MediaStore.Images.Media.IS_PENDING,0);if(r.update(uri,v,null,null)!=1)throw new IOException("Falha ao concluir gravação.");return uri;
  }
 
+ synchronized void setAlbum(String id,String album,String source){ContentValues v=new ContentValues();v.put("album",album);v.put("source_name",source);getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
+ synchronized ArrayList<String> albums(){ArrayList<String> list=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT album FROM jobs ORDER BY album",null)){while(c.moveToNext())list.add(c.getString(0));}return list;}
+ String onlineManifest()throws Exception{org.json.JSONObject root=new org.json.JSONObject();root.put("schemaVersion",1);root.put("generatedAt",System.currentTimeMillis());org.json.JSONArray photos=new org.json.JSONArray();try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,album,source_name,state,captured_at,downloaded_at,edited_at,raw_original,edited FROM jobs ORDER BY rowid",null)){while(c.moveToNext()){org.json.JSONObject item=new org.json.JSONObject();item.put("id",c.getString(0));item.put("name",c.getString(1));item.put("album",c.getString(2));item.put("sourceName",c.getString(3));item.put("state",c.getString(4));item.put("capturedAt",c.getLong(5));item.put("importedAt",c.getLong(6));item.put("editedAt",c.getLong(7));item.put("hasRaw",!c.isNull(8));item.put("hasEdited",!c.isNull(9));photos.put(item);}}root.put("photos",photos);return root.toString(2);}
  synchronized void deletePhoto(String id)throws IOException{
-  String file,original,edited,state;try(Cursor c=getReadableDatabase().rawQuery("SELECT file,original,edited,state FROM jobs WHERE id=?",new String[]{id})){if(!c.moveToFirst())return;file=c.getString(0);original=c.getString(1);edited=c.getString(2);state=c.getString(3);}
+  String file,original,edited,state,raw;try(Cursor c=getReadableDatabase().rawQuery("SELECT file,original,edited,state,raw_original FROM jobs WHERE id=?",new String[]{id})){if(!c.moveToFirst())return;file=c.getString(0);original=c.getString(1);edited=c.getString(2);state=c.getString(3);raw=c.getString(4);}
   if("editing".equals(state)||"ready".equals(state)||"original".equals(state))throw new IOException("Foto ainda está na fila de processamento.");
   // Delete only the exact copies recorded for this job, never the source card tree.
   if(edited!=null&&!edited.isEmpty())deletePhotoUri(edited);
   if(original!=null&&!original.isEmpty()&&!original.equals(edited))deletePhotoUri(original);
+  if(raw!=null&&!raw.isEmpty()&&!raw.equals(original)&&!raw.equals(edited))deletePhotoUri(raw);
   if(file!=null&&!file.isEmpty()){File spool=new File(file);if(spool.exists()&&!spool.delete())throw new IOException("Não foi possível apagar a cópia temporária.");}
   SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{db.delete("fotto_uploads","job_id=?",new String[]{id});db.delete("history","job_id=?",new String[]{id});db.delete("jobs","id=?",new String[]{id});db.setTransactionSuccessful();}finally{db.endTransaction();}
  }
