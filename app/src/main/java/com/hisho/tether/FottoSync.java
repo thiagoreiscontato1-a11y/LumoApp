@@ -48,6 +48,7 @@ final class FottoSync{
     String[] x=jobs.nextFotto(gallery,after);if(x==null)break;String id=x[0],name=x[1],uri=x[2];
     try{
      jobs.fottoSet(id,gallery,"uploading","","",true);jobs.history(id,System.currentTimeMillis(),"Envio iniciado","Enviando para "+title);p.edit().putString("fottoLastStatus","Enviando "+name+" → "+title).apply();
+     verifyEdited(c,jobs,id,uri);
      FottoApi.Uploaded done=FottoApi.upload(c,Uri.parse(uri),name,gallery);
      // PUT 2xx: o binário já foi aceito. Daqui em diante NUNCA reenviar a foto automaticamente.
      jobs.fottoSet(id,gallery,"uploaded",done.mediaId,"Aguardando processamento/confirmacao no evento.",false);jobs.history(id,System.currentTimeMillis(),"Envio aceito","Arquivo recebido pelo armazenamento do Fotto · mídia "+done.mediaId);
@@ -76,11 +77,31 @@ final class FottoSync{
   try{
    reconcileBatch(c,jobs,gallery,true);
    for(String id:ids){if(STOP_REQUESTED.get())break;String[] j=jobs.editorJob(id);if(j==null||!"done".equals(j[5])||j[4]==null||j[4].isEmpty()){skipped++;continue;}if(jobs.fottoWasSent(id,gallery)){skipped++;continue;}String[] state=jobs.fottoState(id,gallery);if("uploaded".equals(state[0])||"unconfirmed".equals(state[0])){skipped++;continue;}String name=j[1].replaceFirst("(?i)\\.jpg$","_Editada.jpg");
-    try{jobs.fottoSet(id,gallery,"uploading","","",true);jobs.history(id,System.currentTimeMillis(),"Envio iniciado","Envio manual para "+title);p.edit().putString("fottoLastStatus","Enviando "+name+" → "+title).apply();FottoApi.Uploaded done=FottoApi.upload(c,Uri.parse(j[4]),name,gallery);jobs.fottoSet(id,gallery,"uploaded",done.mediaId,"Aguardando processamento/confirmacao.",false);jobs.history(id,System.currentTimeMillis(),"Envio aceito","Arquivo recebido pelo armazenamento do Fotto · mídia "+done.mediaId);sent++;p.edit().putLong("fottoLastUploadAt",System.currentTimeMillis()).putInt("fottoWatchdogRecoveries",0).putLong("fottoWatchdogRecoveryAt",0).apply();if(sent%RECONCILE_EVERY==0)reconcileBatch(c,jobs,gallery,true);
+    try{jobs.fottoSet(id,gallery,"uploading","","",true);jobs.history(id,System.currentTimeMillis(),"Envio iniciado","Envio manual para "+title);p.edit().putString("fottoLastStatus","Enviando "+name+" → "+title).apply();verifyEdited(c,jobs,id,j[4]);FottoApi.Uploaded done=FottoApi.upload(c,Uri.parse(j[4]),name,gallery);jobs.fottoSet(id,gallery,"uploaded",done.mediaId,"Aguardando processamento/confirmacao.",false);jobs.history(id,System.currentTimeMillis(),"Envio aceito","Arquivo recebido pelo armazenamento do Fotto · mídia "+done.mediaId);sent++;p.edit().putLong("fottoLastUploadAt",System.currentTimeMillis()).putInt("fottoWatchdogRecoveries",0).putLong("fottoWatchdogRecoveryAt",0).apply();if(sent%RECONCILE_EVERY==0)reconcileBatch(c,jobs,gallery,true);
     }catch(Exception e){String msg=e.getMessage()==null?e.toString():e.getMessage();jobs.fottoSet(id,gallery,"error","",msg,false);p.edit().putString("fottoLastStatus","Falha no Fotto · "+msg).apply();EventAlert.signal(c,"fotto","Falha no envio para o Fotto: "+msg);QueueRecovery.schedule(c);break;}
    }
    if(sent>0){SystemClock.sleep(1200);reconcileBatch(c,jobs,gallery,true);}if(STOP_REQUESTED.get())p.edit().putString("fottoLastStatus","Envio encerrado"+(sent>0?" · "+sent+" foto(s) enviada(s)":"")).apply();else if(sent>0)p.edit().putString("fottoLastStatus",sent+" foto(s) aceita(s) pelo Fotto"+(skipped>0?" · "+skipped+" ignorada(s)":"")).apply();else if(skipped>0)p.edit().putString("fottoLastStatus","As fotos selecionadas já estavam enviadas ou ainda não estão aprovadas.").apply();
   }finally{jobs.close();RUNNING.set(false);}
+ }
+ /** Never silently send the original instead of the exported JPEG. */
+ private static void verifyEdited(Context c,Jobs jobs,String id,String uri)throws Exception{
+  String[] job=jobs.editorJob(id);
+  if(job==null||!"done".equals(job[5])||uri==null||uri.isEmpty()||!uri.equals(job[4]))throw new java.io.IOException("Arquivo editado não corresponde à versão aprovada; envio bloqueado.");
+  Uri edited=Uri.parse(uri);java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");
+  byte[] header=new byte[3];long count=0;
+  try(java.io.InputStream in=c.getContentResolver().openInputStream(edited)){
+   if(in==null)throw new java.io.IOException("Arquivo editado indisponível.");
+   byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1){if(count<3)for(int i=0;i<n&&count+i<3;i++)header[(int)count+i]=buffer[i];digest.update(buffer,0,n);count+=n;}
+  }
+  if(count<100||header[0]!=(byte)0xff||header[1]!=(byte)0xd8||header[2]!=(byte)0xff)throw new java.io.IOException("Exportação editada não é um JPEG válido; envio bloqueado.");
+  if(job[3]!=null&&!job[3].isEmpty()){
+   try(java.io.InputStream original=c.getContentResolver().openInputStream(Uri.parse(job[3]))){
+    if(original!=null){java.security.MessageDigest d=java.security.MessageDigest.getInstance("SHA-256");byte[] b=new byte[65536];int n;while((n=original.read(b))!=-1)d.update(b,0,n);
+     if(java.util.Arrays.equals(d.digest(),digest.digest()))throw new java.io.IOException("Arquivo exportado é idêntico ao original; envio bloqueado. Reexporte a foto.");
+    }
+   }catch(java.io.FileNotFoundException ignored){} // Original may have been cleaned after editing.
+  }
+  jobs.history(id,System.currentTimeMillis(),"Upload editado validado","JPEG exportado · "+count+" bytes · "+edited.getLastPathSegment());
  }
  static boolean recoverableError(String message){
   String m=message==null?"":message.toLowerCase(Locale.ROOT);

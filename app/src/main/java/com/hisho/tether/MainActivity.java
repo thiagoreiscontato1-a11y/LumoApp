@@ -30,6 +30,8 @@ public class MainActivity extends Activity {
  private Button importCard;
  private CompoundButton fottoAuto;
  private boolean openEventChooserAfterLoad=false;
+ private boolean fottoGalleriesLoading=false;
+ private String fottoEventsSummary="";
  private final ArrayList<FottoApi.Gallery> fottoGalleries=new ArrayList<>();
  private final ExecutorService fottoNetwork=Executors.newSingleThreadExecutor();
 
@@ -388,16 +390,153 @@ public class MainActivity extends Activity {
  void chooseExportFolder(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);startActivityForResult(i,20);}
  void updateExportFolder(){if(folderLabel==null)return;String raw=getSharedPreferences("hisho",0).getString("exportTreeUri","");folderLabel.setText(raw.isEmpty()?"Pictures / LUMO":exportRootLabel());}
  boolean checkFottoReady(){if(FottoApi.token(MainActivity.this).isEmpty()){message("Conecte sua conta Fotto no menu ⋯.");return false;}if(getSharedPreferences("hisho",0).getString("fottoGalleryId","").isEmpty()){message("Escolha um evento Fotto primeiro.");return false;}return true;}
- void deliverMenu(){boolean connected=!FottoApi.token(MainActivity.this).isEmpty();String[] items={connected?"Reconectar conta Fotto":"Conectar conta Fotto","Trocar evento","Atualizar eventos","Enviar todas as pendentes","Abrir Fotto Web · fallback","Alterar pasta de exportação"};new AlertDialog.Builder(MainActivity.this).setTitle("Entrega direta").setItems(items,(d,n)->{if(n==0)startActivityForResult(new Intent(MainActivity.this,FottoLoginActivity.class),30);else if(n==1){if(!connected){message("Conecte o Fotto primeiro.");return;}if(fottoGalleries.isEmpty()){openEventChooserAfterLoad=true;loadFottoGalleries();}else showEventChooser();}else if(n==2)loadFottoGalleries();else if(n==3){if(checkFottoReady())FottoSync.sendExisting(MainActivity.this);}else if(n==4)openFottoWeb();else chooseExportFolder();}).show();}
- void showEventChooser(){if(fottoGalleries.isEmpty()){message("Nenhum evento encontrado.");return;}String[] names=new String[fottoGalleries.size()];String saved=getSharedPreferences("hisho",0).getString("fottoGalleryId","");int checked=-1;for(int i=0;i<names.length;i++){names[i]=fottoGalleries.get(i).title;if(fottoGalleries.get(i).id.equals(saved))checked=i;}new AlertDialog.Builder(MainActivity.this).setTitle("Evento de destino").setSingleChoiceItems(names,checked,(d,which)->{FottoApi.Gallery g=fottoGalleries.get(which);android.content.SharedPreferences p=getSharedPreferences("hisho",0);String old=p.getString("fottoGalleryId","");android.content.SharedPreferences.Editor e=p.edit().putString("fottoGalleryId",g.id).putString("fottoGalleryTitle",g.title);if(!g.id.equals(old)&&p.getBoolean("fottoAuto",false))e.putLong("fottoStartRowid",database.maxRowId());e.apply();d.dismiss();updateFottoStatus();FottoSync.kick(MainActivity.this);}).setNegativeButton("Cancelar",null).show();}
+ void deliverMenu(){
+  boolean connected=!FottoApi.token(MainActivity.this).isEmpty();
+  String[] items={connected?"Reconectar conta Fotto":"Conectar conta Fotto","Trocar evento","Atualizar lista completa","Informar ID do evento","Enviar todas as pendentes","Abrir Fotto Web · fallback","Alterar pasta de exportação"};
+  new AlertDialog.Builder(this).setTitle("Entrega direta").setItems(items,(d,n)->{
+   if(n==0)startActivityForResult(new Intent(this,FottoLoginActivity.class),30);
+   else if(n==1){if(!connected){message("Conecte o Fotto primeiro.");return;}if(fottoGalleries.isEmpty()){openEventChooserAfterLoad=true;loadFottoGalleries();}else showEventChooser();}
+   else if(n==2){openEventChooserAfterLoad=true;loadFottoGalleries();}
+   else if(n==3)showManualEventDialog();
+   else if(n==4){if(checkFottoReady())FottoSync.sendExisting(this);}
+   else if(n==5)openFottoWeb();
+   else chooseExportFolder();
+  }).show();
+ }
+ static String normalizeEventText(String value){
+  String text=java.text.Normalizer.normalize(value==null?"":value,java.text.Normalizer.Form.NFD);
+  return text.replaceAll("\\p{M}+","").toLowerCase(java.util.Locale.ROOT).trim();
+ }
+ void showEventChooser(){
+  if(destroyed)return;
+  android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
+  String current=prefs.getString("fottoGalleryId","");
+  LinearLayout content=vertical();content.setPadding(dp(16),dp(8),dp(16),dp(6));
+  String info=fottoEventsSummary.isEmpty()?fottoGalleries.size()+" evento(s) carregado(s)":fottoEventsSummary;
+  TextView count=text(info,12,MUTED,false);content.addView(count);
+  if(!current.isEmpty()){
+   TextView saved=text("Destino atual: "+prefs.getString("fottoGalleryTitle",current),12,SUCCESS,true);
+   saved.setPadding(0,dp(7),0,dp(4));content.addView(saved);
+  }
+  EditText search=new EditText(this);search.setSingleLine(true);search.setHint("Buscar por nome ou ID (eventos antigos)");
+  search.setTextSize(14);search.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+  content.addView(search,new LinearLayout.LayoutParams(-1,dp(52)));
+  ListView events=new ListView(this);events.setDividerHeight(dp(1));events.setFastScrollEnabled(true);
+  content.addView(events,new LinearLayout.LayoutParams(-1,dp(320)));
+  ArrayList<FottoApi.Gallery> filtered=new ArrayList<>();
+  ArrayList<String> labels=new ArrayList<>();
+  ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_list_item_1,labels);
+  events.setAdapter(adapter);
+  Runnable filter=()->{
+   String q=normalizeEventText(search.getText().toString());filtered.clear();labels.clear();
+   for(FottoApi.Gallery g:fottoGalleries){
+    if(!q.isEmpty()&&!normalizeEventText(g.title+" "+g.id).contains(q))continue;
+    filtered.add(g);labels.add((g.id.equals(current)?"✓ ":"")+g.title+"\n"+g.id);
+   }
+   adapter.notifyDataSetChanged();
+   count.setText((q.isEmpty()?"":filtered.size()+" encontrado(s) de ")+info+(filtered.isEmpty()?"\nSe não aparecer, use Informar ID.":""));
+  };
+  search.addTextChangedListener(new android.text.TextWatcher(){
+   public void beforeTextChanged(CharSequence t,int start,int count,int after){}
+   public void onTextChanged(CharSequence t,int start,int before,int count){filter.run();}
+   public void afterTextChanged(android.text.Editable e){}
+  });
+  AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Selecionar evento Fotto")
+   .setView(content).setNegativeButton("Fechar",null)
+   .setNeutralButton("Informar ID",(d,w)->showManualEventDialog())
+   .setPositiveButton("Recarregar",(d,w)->{openEventChooserAfterLoad=true;loadFottoGalleries();}).create();
+  events.setOnItemClickListener((parent,view,position,id)->{
+   FottoApi.Gallery selected=filtered.get(position);
+   confirmEventSelection(selected,()->dialog.dismiss());
+  });
+  filter.run();dialog.show();
+ }
+ void confirmEventSelection(FottoApi.Gallery gallery,Runnable onSelected){
+  android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
+  String current=prefs.getString("fottoGalleryId","");
+  if(gallery.id.equals(current)){if(onSelected!=null)onSelected.run();return;}
+  if(FottoSync.running()){
+   message("Encerre o envio atual antes de trocar de evento para não misturar fotos.");return;
+  }
+  new AlertDialog.Builder(this).setTitle("Confirmar destino das fotos")
+   .setMessage("Enviar as próximas fotos para este evento?\n\n"+gallery.title+"\nID: "+gallery.id+"\n\nO destino atual não será alterado até você confirmar.")
+   .setNegativeButton("Voltar",null).setPositiveButton("Selecionar evento",(d,w)->{
+    android.content.SharedPreferences.Editor editor=prefs.edit().putString("fottoGalleryId",gallery.id)
+     .putString("fottoGalleryTitle",gallery.title).putString("fottoLastStatus","Evento selecionado: "+gallery.title);
+    if(prefs.getBoolean("fottoAuto",false))editor.putLong("fottoStartRowid",database.maxRowId());
+    editor.apply();
+    boolean found=false;for(FottoApi.Gallery g:fottoGalleries)if(g.id.equals(gallery.id)){found=true;break;}
+    if(!found)fottoGalleries.add(0,gallery);
+    updateFottoStatus();if(onSelected!=null)onSelected.run();FottoSync.kick(this);
+   }).show();
+ }
+ static String parseFottoEventId(String input){
+  String value=input==null?"":input.trim();
+  if(value.startsWith("https://")||value.startsWith("http://")){
+   try{
+    java.net.URI u=new java.net.URI(value);String host=u.getHost();
+    if(host==null||!(host.equalsIgnoreCase("fotto.com.br")||host.toLowerCase(java.util.Locale.ROOT).endsWith(".fotto.com.br")))return "";
+    java.util.regex.Matcher m=java.util.regex.Pattern.compile("/(?:galleries|gallery)/([A-Za-z0-9_-]{3,120})(?:/|$)").matcher(u.getPath());
+    if(m.find())return m.group(1);
+    String q=u.getRawQuery();if(q!=null){m=java.util.regex.Pattern.compile("(?:^|&)(?:galleryId|gallery_id|eventId|event_id)=([A-Za-z0-9_-]{3,120})(?:&|$)",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(q);if(m.find())return m.group(1);}
+   }catch(Exception ignored){}return "";
+  }
+  return value.matches("[A-Za-z0-9_-]{3,120}")?value:"";
+ }
+ void showManualEventDialog(){
+  if(FottoApi.token(this).isEmpty()){message("Conecte a conta Fotto antes de informar o evento.");return;}
+  EditText entry=new EditText(this);entry.setSingleLine(true);entry.setHint("ID do evento ou link do painel Fotto");entry.setTextSize(14);
+  LinearLayout body=vertical();body.setPadding(dp(20),dp(4),dp(20),0);
+  label(body,"Para eventos que não aparecem na listagem, use o ID do painel do fotógrafo. Links públicos sem ID não funcionam.",12);
+  body.addView(entry,new LinearLayout.LayoutParams(-1,dp(58)));
+  AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Localizar evento pelo ID")
+   .setView(body).setNegativeButton("Cancelar",null).setPositiveButton("Verificar evento",null).create();
+  dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+   String eventId=parseFottoEventId(entry.getText().toString());
+   if(eventId.isEmpty()){entry.setError("Informe o ID, não apenas o link público do evento.");return;}
+   dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+   fottoNetwork.execute(()->{
+    try{
+     FottoApi.Gallery found=FottoApi.galleryById(this,eventId);
+     handler.post(()->{if(destroyed)return;dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);confirmEventSelection(found,()->dialog.dismiss());});
+    }catch(Exception e){handler.post(()->{if(destroyed)return;dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);new AlertDialog.Builder(this).setTitle("Evento não confirmado").setMessage(e.getMessage()).setPositiveButton("OK",null).show();});}
+   });
+  }));dialog.show();
+ }
  void updateFottoStatus(){if(fottoStatus==null)return;android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);String token=FottoApi.token(MainActivity.this),galleryId=prefs.getString("fottoGalleryId","");String galleryTitle=prefs.getString("fottoGalleryTitle","");boolean active=prefs.getBoolean("fottoAuto",false);fottoStatus.setText(token.isEmpty()?"Fotto • Não conectado":FottoSync.running()?"Fotto • Enviando…":"Fotto • Conectado");fottoStatus.setTextColor(token.isEmpty()?MUTED:(FottoSync.running()?WARN:SUCCESS));fottoEventLabel.setText("Evento: "+(galleryTitle.isEmpty()?"—":galleryTitle)+(galleryId.isEmpty()?"":" · "+galleryId));int sent=galleryId.isEmpty()?prefs.getInt("fottoUploadedCount",0):database.fottoDone(galleryId);int pending=galleryId.isEmpty()?0:database.fottoPending(galleryId);int processing=galleryId.isEmpty()?0:database.fottoProcessing(galleryId);String last=prefs.getString("fottoLastStatus",active?"Envio automático ativo":"Envio automático pausado");fottoUploadStatus.setText(sent+" confirmadas · "+pending+" na fila"+(processing>0?" · "+processing+" processando":"")+(FottoSync.running()?" · sincronizando…":"")+"\n"+last);String dbError=galleryId.isEmpty()?"":database.fottoLastError(galleryId);boolean failure=(last!=null&&(last.startsWith("Falha")||last.contains("erro")||last.contains("Erro")||last.contains("Não confirmada")))||!dbError.isEmpty();fottoProblems.setVisibility(failure?View.VISIBLE:View.GONE);if(failure)fottoProblems.setText("Problemas\n"+(!dbError.isEmpty()?dbError:last));if(fottoAuto!=null&&fottoAuto.isChecked()!=active){fottoAuto.setOnCheckedChangeListener(null);fottoAuto.setChecked(active);bindFottoToggle();}}
  void bindFottoToggle(){if(fottoAuto==null)return;fottoAuto.setOnCheckedChangeListener((b,checked)->{if(checked){if(deletingPhotos){b.setChecked(false);message("Aguarde a exclusão terminar.");return;}if(FottoApi.token(MainActivity.this).isEmpty()){message("Conecte o Fotto antes de ativar o envio automático.");getSharedPreferences("hisho",0).edit().putBoolean("fottoAuto",false).apply();b.setChecked(false);return;}String galleryId=getSharedPreferences("hisho",0).getString("fottoGalleryId","");if(galleryId.isEmpty()){message("Escolha um evento antes de ativar o envio automático.");getSharedPreferences("hisho",0).edit().putBoolean("fottoAuto",false).apply();b.setChecked(false);return;}getSharedPreferences("hisho",0).edit().putBoolean("fottoAuto",true).putLong("fottoStartRowid",database.maxRowId()).putString("fottoLastStatus","Envio direto automático ativo").apply();FottoSync.kick(MainActivity.this);}else getSharedPreferences("hisho",0).edit().putBoolean("fottoAuto",false).putString("fottoLastStatus","Envio direto automático pausado").apply();updateFottoStatus();});}
- void loadFottoGalleries(){if(FottoApi.token(MainActivity.this).isEmpty()){updateFottoStatus();return;}fottoStatus.setText("Fotto • Carregando eventos…");fottoNetwork.execute(()->{try{ArrayList<FottoApi.Gallery> list=FottoApi.galleries(MainActivity.this);handler.post(()->{if(destroyed)return;fottoGalleries.clear();fottoGalleries.addAll(list);String saved=getSharedPreferences("hisho",0).getString("fottoGalleryId","");boolean exists=false;for(FottoApi.Gallery g:list)if(g.id.equals(saved)){exists=true;break;}if(!exists&&!list.isEmpty()){FottoApi.Gallery g=list.get(0);getSharedPreferences("hisho",0).edit().putString("fottoGalleryId",g.id).putString("fottoGalleryTitle",g.title).apply();}if(list.isEmpty())getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Nenhum evento encontrado nesta conta.").apply();updateFottoStatus();if(openEventChooserAfterLoad){openEventChooserAfterLoad=false;showEventChooser();}});}catch(Exception e){handler.post(()->{if(destroyed)return;getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Falha ao carregar eventos · "+e.getMessage()).apply();updateFottoStatus();});}});}
- String num(int n){return n<0?"—":String.valueOf(n);}
-
-
-
- void openEditor(String focusId,Collection<String> ids,boolean paste){if(deletingPhotos){message("Aguarde a exclusão terminar.");return;}String[] job=database.editorJob(focusId);if(job!=null&&"rawOnly".equals(job[5])){message("RAW preservado sem prévia compatível. A revelação RAW não está disponível nesta versão.");return;}if(focusId==null||focusId.isEmpty()){message("Foto não encontrada no histórico.");return;}LinkedHashSet<String> unique=new LinkedHashSet<>();if(ids!=null)unique.addAll(ids);unique.add(focusId);StringBuilder packed=new StringBuilder();for(String id:unique){if(packed.length()>0)packed.append(',');packed.append(id);}Intent i=new Intent(MainActivity.this,ManualEditorActivity.class).putExtra("focusId",focusId).putExtra("jobIds",packed.toString()).putExtra("pasteOnOpen",paste);startActivity(i);}
+ void loadFottoGalleries(){
+  if(FottoApi.token(this).isEmpty()){updateFottoStatus();return;}
+  if(fottoGalleriesLoading)return;
+  fottoGalleriesLoading=true;
+  if(fottoStatus!=null)fottoStatus.setText("Fotto • Buscando todos os eventos…");
+  fottoNetwork.execute(()->{
+   try{
+    FottoApi.GalleryListing result=FottoApi.galleriesDetailed(this);
+    handler.post(()->{
+     fottoGalleriesLoading=false;if(destroyed)return;
+     fottoGalleries.clear();fottoGalleries.addAll(result.items);
+     String saved=getSharedPreferences("hisho",0).getString("fottoGalleryId","");
+     // Never silently replace a previously selected older event with the newest.
+     boolean present=saved.isEmpty();for(FottoApi.Gallery g:fottoGalleries)if(g.id.equals(saved)){present=true;break;}
+     if(!present){
+      String savedTitle=getSharedPreferences("hisho",0).getString("fottoGalleryTitle","Evento salvo");
+      fottoGalleries.add(0,new FottoApi.Gallery(saved,savedTitle));
+     }
+     fottoEventsSummary=result.items.size()+" evento(s) recebido(s) da conta"+(result.complete?" · fim da lista":" · listagem não confirmada")
+      +(result.warning.isEmpty()?"":"\n"+result.warning);
+     if(result.items.isEmpty()&&saved.isEmpty())getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Nenhum evento encontrado. Tente informar o ID.").apply();
+     updateFottoStatus();
+     if(openEventChooserAfterLoad){openEventChooserAfterLoad=false;showEventChooser();}
+    });
+   }catch(Exception e){handler.post(()->{
+    fottoGalleriesLoading=false;if(destroyed)return;
+    openEventChooserAfterLoad=false;
+    getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Falha ao carregar eventos · "+e.getMessage()).apply();
+    updateFottoStatus();message("Falha na consulta. Use Informar ID ou tente atualizar novamente.");
+   });}
+  });
+ }
  void approveReview(String id,String name,String reviewUri){message("Aprovando foto…");images.execute(()->{File tmp=new File(getCacheDir(),"approve_"+id+".jpg");boolean cleared=false;try(InputStream in=getContentResolver().openInputStream(Uri.parse(reviewUri));OutputStream out=new FileOutputStream(tmp)){if(in==null)throw new IOException("Foto de revisão indisponível.");Jobs.copy(in,out);database.clearEdited(id);cleared=true;Uri ready=database.save(tmp,"Editadas",name.replaceFirst("(?i)\\.jpg$","_Editada.jpg"),id,"edited");database.set(id,"done","error",null);database.history(id,System.currentTimeMillis(),"Aprovada","Aprovação manual na Revisão");try{getContentResolver().delete(Uri.parse(reviewUri),null,null);}catch(Exception ignored){}FottoSync.kick(MainActivity.this);handler.post(()->{gallerySignature="";filesSignature="";reviewSignature="";refreshGallery();refreshFiles(true);refreshReview(true);message("Foto aprovada e liberada para entrega.");});}catch(Exception e){if(cleared)database.set(id,"review","edited",reviewUri);handler.post(()->message("Não foi possível aprovar: "+e.getMessage()));}finally{tmp.delete();}});}
  void openImage(String uri){try{Intent i=new Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(uri),"image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(i);}catch(Exception e){message("Não foi possível abrir esta foto.");}}
  void diagnostic(){TextView t=text(report==null?"":report.getText().toString(),12,MUTED,false);t.setTextIsSelectable(true);t.setPadding(dp(16),dp(16),dp(16),dp(16));ScrollView scroll=new ScrollView(MainActivity.this);scroll.addView(t);new AlertDialog.Builder(MainActivity.this).setTitle("Diagnóstico da sessão").setView(scroll).setPositiveButton("Copiar",(d,n)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("LUMO",t.getText()));message("Diagnóstico copiado.");}).setNegativeButton("Fechar",null).show();}

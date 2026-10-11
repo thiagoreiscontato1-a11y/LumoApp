@@ -1,3 +1,19 @@
+# LUMO 0.15.21 — Busca de eventos antigos do Fotto
+
+Corrige o carregamento de eventos na aba Entrega, mantendo os recursos da 0.15.20.
+O Lumo agora tenta buscar todas as páginas da API Fotto (em vez de somente a primeira), oferece busca por nome/ID, conserva o evento salvo e permite verificar o ID de um evento diretamente no painel do fotógrafo.
+
+**Para usar:** Entrega → ⋯ → **Atualizar lista completa** → buscar e selecionar o evento. Se não aparecer: **Informar ID do evento** (ID ou link do painel contendo `/galleries/ID`). Verifique o nome e confirme antes do envio.
+
+**Limitação:** não foi possível autenticar uma conta Fotto para comprovar a paginação real nem a consulta individual. A interface avisa quando não consegue confirmar que a lista terminou.
+
+**Compilar:** publique a pasta inteira em um repositório GitHub, abra Actions → `Compilar Lumo 0.15.21 Fotto todos os eventos` → Run workflow e baixe o artefato com `Lumo.apk`. Também é possível rodar `python3 build.py` com Android SDK 35 / Build Tools 35.0.0 e Java 17.
+
+- `versionCode`: 47
+- `versionName`: `0.15.21-fotto-all-events`
+
+---
+
 # LUMO 0.15.16 — Importação de cartão USB
 
 Baseado no projeto 0.15.6, anterior às alterações experimentais para Sony. Mantém o fluxo Canon R8/SL2, edição, curadoria e entrega Fotto.
