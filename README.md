@@ -143,3 +143,23 @@ Veja `IMPLEMENTACAO-0.15.0-FOTTO-DIRETO.txt` para o fluxo e o roteiro do primeir
 - Tour inicial de 17 etapas, repetível pelo botão Tour do Lumo, e ajuda contextual de 5 etapas no editor. O tour não executa importações, exclusões nem uploads.
 - Teste da licença: `python3 tests/demo_license_test.py` (Java 17).
 - Compilação e assinatura verificadas; conexão física e UI precisam de teste no Android.
+
+
+## 0.15.28 — Captura por evento
+
+Crie ou escolha um evento no topo antes de conectar a câmera ou importar do cartão.
+Os álbuns por data/pasta ficam dentro do evento selecionado, assim como Galeria,
+Revisão e exportação do manifesto. Fotos anteriores à atualização permanecem
+em **Fotos anteriores**, sem mover ou apagar arquivos.
+
+Saída: `Eventos/<nome>_<identificador>/Originais`, `Editadas`, `Sob Revisao` e `RAW`.
+A troca exige captura/importação/envio encerrados. Fotos em fila preservam seu
+evento mesmo depois de reiniciar o aplicativo. Duplicatas são detectadas dentro
+do evento. Limpar editadas afeta somente as cópias registradas do evento atual.
+
+O evento local e o evento do Fotto são independentes. O destino Fotto é lembrado
+por evento local; ao trocar, o envio automático fica pausado até ser reativado.
+O tour explica o novo primeiro passo. A demo mantém o código e o prazo anteriores.
+
+Validação: build Android e assinatura; regressões e testes SQLite de migração/
+isolamento. Navegação, armazenamento SAF e captura física requerem teste Android.
