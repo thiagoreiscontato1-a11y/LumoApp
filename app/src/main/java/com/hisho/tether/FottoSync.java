@@ -39,13 +39,13 @@ final class FottoSync{
  }
 
  private static void run(Context c,long after,boolean resetErrors){
-  Jobs jobs=new Jobs(c);android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);String gallery=p.getString("fottoGalleryId",""),title=p.getString("fottoGalleryTitle","Evento");int handled=0;boolean failed=false;
+  Jobs jobs=new Jobs(c);android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);String gallery=p.getString("fottoGalleryId",""),title=p.getString("fottoGalleryTitle","Evento");String localEvent=jobs.activeEvent();int handled=0;boolean failed=false;
   try{
    jobs.fottoRecover(gallery);if(resetErrors)jobs.fottoRetry(gallery);
    // Só uma reconciliação leve no começo; nunca bloqueia a fila por foto.
    reconcileBatch(c,jobs,gallery,true);
    while(!STOP_REQUESTED.get()){if(!DemoLicense.allowed(c))break;
-    String[] x=jobs.nextFotto(gallery,after);if(x==null)break;String id=x[0],name=x[1],uri=x[2];
+    String[] x=jobs.nextFotto(gallery,after,localEvent);if(x==null)break;String id=x[0],name=x[1],uri=x[2];
     try{
      jobs.fottoSet(id,gallery,"uploading","","",true);jobs.history(id,System.currentTimeMillis(),"Envio iniciado","Enviando para "+title);p.edit().putString("fottoLastStatus","Enviando "+name+" → "+title).apply();
      verifyEdited(c,jobs,id,uri);
