@@ -23,6 +23,7 @@ public class MainActivity extends Activity {
  int BG,CARD,CARD2,LINE,TEXT,MUTED,GREEN,CYAN,SUCCESS,WARN,DANGER,DARK;
  boolean darkMode;
 
+ private TextView demoStatus;
  private TextView flowStatus,badge,status,timing,previewTitle,previewSub,galleryInfo,gallerySelectionLabel,reviewHeading,fottoLiveStatus;
  private TextView metricBattery,metricStorage,metricPending,metricProcessed,metricSent;
  private TextView folderLabel,fottoStatus,fottoEventLabel,fottoUploadStatus,fottoProblems;
@@ -84,7 +85,8 @@ public class MainActivity extends Activity {
  private final BroadcastReceiver receiver=new BroadcastReceiver(){public void onReceive(Context c,Intent i){if(USB.equals(i.getAction())){UsbDevice d=i.getParcelableExtra(UsbManager.EXTRA_DEVICE);if(d!=null&&((UsbManager)getSystemService(USB_SERVICE)).hasPermission(d))start(d);else message("Acesso USB não autorizado.");}}};
 
  private final Runnable update=new Runnable(){public void run(){
-  if(destroyed)return;
+  if(destroyed||!DemoLicense.allowed(MainActivity.this))return;
+  if(demoStatus!=null)demoStatus.setText(DemoLicense.status(MainActivity.this));
   CaptureService s=CaptureService.active;boolean running=s!=null;
   if(connect!=null){connect.setText(!running?"Conectar câmera":s.capturing?"Encerrar captura":"Concluindo fila…");connect.setEnabled(!running||s.capturing);connect.setAlpha(connect.isEnabled()?1f:.45f);}
   if(settingsButton!=null){settingsButton.setEnabled(!running);settingsButton.setAlpha(running?.4f:1f);}
@@ -135,6 +137,8 @@ public class MainActivity extends Activity {
   LinearLayout top=row();LumoMark logo=new LumoMark(MainActivity.this);top.addView(logo,new LinearLayout.LayoutParams(dp(34),dp(34)));TextView brand=text("LUMO",19,TEXT,true);brand.setPadding(dp(9),0,0,0);top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
   healthButton=compactButton("Saúde",v->showHealthPanel());top.addView(healthButton,new LinearLayout.LayoutParams(dp(68),dp(38)));themeButton=compactButton(darkMode?"☀":"☾",v->{getSharedPreferences("hisho",0).edit().putBoolean("darkMode",!darkMode).apply();recreate();});LinearLayout.LayoutParams thp=new LinearLayout.LayoutParams(dp(44),dp(38));thp.leftMargin=dp(5);top.addView(themeButton,thp);settingsButton=compactButton("⚙",v->captureSettingsDialog());LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(44),dp(38));sp.leftMargin=dp(5);top.addView(settingsButton,sp);header.addView(top);
   flowStatus=text("Canon • Sem câmera",11,MUTED,true);flowStatus.setSingleLine(false);flowStatus.setMaxLines(2);flowStatus.setHorizontallyScrolling(false);flowStatus.setEllipsize(null);flowStatus.setIncludeFontPadding(false);LinearLayout.LayoutParams fl=new LinearLayout.LayoutParams(-1,-2);fl.topMargin=dp(4);fl.bottomMargin=dp(6);header.addView(flowStatus,fl);buildHeaderMetrics(header);root.addView(header);
+  Button tour=compactButton("Tour do Lumo · como usar",v->showTour(0));header.addView(tour,new LinearLayout.LayoutParams(-1,dp(38)));
+  if(DemoLicense.isDemo(this)){demoStatus=text(DemoLicense.status(this),12,GREEN,true);header.addView(demoStatus);}
 
   FrameLayout content=new FrameLayout(MainActivity.this);root.addView(content,new LinearLayout.LayoutParams(-1,0,1));
   for(int i=0;i<4;i++){scrollers[i]=new ScrollView(MainActivity.this);scrollers[i].setFillViewport(true);scrollers[i].setVerticalScrollBarEnabled(false);pages[i]=vertical();pages[i].setPadding(dp(14),dp(12),dp(14),dp(18));scrollers[i].addView(pages[i]);content.addView(scrollers[i],new FrameLayout.LayoutParams(-1,-1));}
@@ -146,7 +150,44 @@ public class MainActivity extends Activity {
   IntentFilter filter=new IntentFilter(USB);if(Build.VERSION.SDK_INT>=33)registerReceiver(receiver,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiver,filter);registered=true;
   if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},20);
   if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);handler.post(update);
+  if(DemoLicense.allowed(this)&&!getSharedPreferences("hisho",0).getBoolean("tourSeen",false))handler.post(()->showTour(0));
  }
+
+ private AlertDialog tourDialog;
+ void showTour(int step){
+  if(isFinishing()||destroyed||!DemoLicense.allowed(this))return;
+  String[][] steps={
+   {"0","Bem-vindo ao Lumo","O fluxo é: receber fotos → editar → revisar → entregar. Este tour abre as abas reais sem conectar câmera, alterar fotos ou enviar arquivos. Use Próximo, Voltar ou Sair do tour."},
+   {"0","Conectar a câmera","Toque em Conectar câmera, escolha Cabo USB e autorize o acesso. Use um cabo de dados/OTG e fotografe normalmente. Wi-Fi é experimental e exige conexão à rede da câmera e autorização nela."},
+   {"0","Importar do cartão USB","Conecte o leitor ao aparelho, toque em Importar fotos do cartão USB e escolha a pasta, como DCIM. O Lumo procura nas subpastas e ignora fotos já importadas. RAW é preservado; a edição usa a prévia JPEG embutida quando disponível, não uma revelação RAW completa."},
+   {"0","Predefinições e ajustes automáticos","Toque em Predefinição para escolher um preset ou importar XMP. Use a engrenagem para configurar edição automática, intensidade, resolução, curadoria e fotos anteriores. As opções afetam as próximas fotos; fotos antigas podem ser reeditadas na Galeria."},
+   {"0","Modo evento","Toque em Modo evento para manter a tela ligada e ativar o conjunto de opções de trabalho. Se a conta e o evento do Fotto já estiverem configurados, esse modo também pode ativar o envio automático. Configure a Entrega antes de usar em um evento real."},
+   {"0","Prévia e fila","As miniaturas mostram fotos recentes. Use as setas para navegar e Novas para acompanhar a última foto. Toque na prévia para ampliar. Retomar edições pendentes aparece quando há trabalho parado. Encerrar captura conclui a foto e a fila em andamento."},
+   {"0","Indicadores, saúde e aparência","Os indicadores mostram bateria, espaço, pendentes, processadas e enviadas. Saúde reúne problemas da câmera, edição e Fotto e acesso ao diagnóstico. O botão de sol/lua troca o tema. O botão Tour do Lumo permite rever esta ajuda."},
+   {"1","Galeria e álbuns","A Galeria reúne fotos importadas e carrega mais itens conforme você rola. Toque em Álbum para filtrar pelas pastas de origem. Toque em uma foto para abrir as opções; segure para selecionar várias."},
+   {"1","Editor manual","Nas opções de uma foto, abra Editar. Compare Original, Automático, Predefinição e Final. Selecione Exposição, Contraste, Realces, Sombras, Brancos, Pretos, Temperatura, Matiz, Vibração ou Saturação e ajuste a barra. O botão Ajuda no editor explica cada etapa na própria tela."},
+   {"1","Edição em lote","Segure uma foto e selecione outras. Use Editar para abrir o grupo, Copiar para guardar os ajustes de uma foto e Colar para reaplicá-los. No editor, confira se está salvando na foto atual ou no grupo. O original continua preservado."},
+   {"1","Compartilhar e excluir","Compartilhar originais selecionados abre os aplicativos de compartilhamento do Android. Excluir remove a seleção após confirmação. Excluir por filtros permite escolher situação e período; confira a quantidade antes de confirmar. A exclusão é real, inclusive durante a demonstração."},
+   {"1","Preparação para galeria online","Exportar manifesto gera um arquivo JSON com os dados das fotos. Isso prepara uma integração futura; não publica uma galeria online nem envia as fotos por si só."},
+   {"2","Curadoria e Revisão","Fotos sinalizadas pela curadoria aparecem aqui com nota e motivo. Confira cada imagem e aprove manualmente as boas para liberar a entrega. Você pode editar antes de aprovar. Uma nota técnica ajuda a decidir, mas não substitui sua avaliação."},
+   {"3","Conta e evento Fotto","Abra o menu de três pontos na Entrega, conecte sua conta e selecione o evento de destino. Atualize a lista se necessário; também existe a opção de informar o ID. Confira o evento antes de ativar qualquer envio."},
+   {"3","Envio e confirmação","Envio direto automático acompanha novas fotos aprovadas. Enviar pendentes agora processa a fila existente. Acompanhe confirmadas, pendentes e erros: estar na fila não significa que a foto já chegou. Encerrar envio conclui a foto em andamento antes de parar."},
+   {"3","Fotto Web e pasta de saída","Fotto Web é uma alternativa para conferir o evento ou usar o fluxo pelo site. Em Pasta produzida pelo Lumo, Alterar permite escolher onde salvar. Limpar pasta Editadas remove as cópias editadas após confirmação; leia o aviso antes de executar."},
+   {"0","Pronto para começar","Escolha primeiro a pasta de saída e o preset; depois conecte a câmera ou importe do cartão. Faça um teste com poucas fotos, revise o resultado e configure a Entrega. Você pode sair e repetir este tour quando quiser."}
+  };
+  if(step<0||step>=steps.length)return;
+  if(tourDialog!=null)tourDialog.dismiss();
+  int page=Integer.parseInt(steps[step][0]);select(page);
+  if(page==1&&galleryList!=null)galleryList.setSelection(0);else scrollers[page].smoothScrollTo(0,0);
+  ScrollView scroll=new ScrollView(this);TextView body=text(steps[step][2],16,TEXT,false);body.setPadding(dp(22),dp(12),dp(22),dp(12));scroll.addView(body);
+  AlertDialog.Builder builder=new AlertDialog.Builder(this).setTitle((step+1)+"/"+steps.length+" · "+steps[step][1]).setView(scroll)
+   .setPositiveButton(step==steps.length-1?"Concluir":"Próximo",(d,n)->{if(step==steps.length-1)finishTour();else showTour(step+1);})
+   .setNegativeButton("Sair do tour",(d,n)->finishTour());
+  if(step>0)builder.setNeutralButton("Voltar",(d,n)->showTour(step-1));
+  tourDialog=builder.create();tourDialog.setOnCancelListener(d->finishTour());tourDialog.setCanceledOnTouchOutside(false);tourDialog.show();
+  Window w=tourDialog.getWindow();if(w!=null){w.setGravity(Gravity.BOTTOM);w.setDimAmount(.15f);w.setLayout(-1,-2);}
+ }
+ void finishTour(){getSharedPreferences("hisho",0).edit().putBoolean("tourSeen",true).apply();tourDialog=null;}
 
  void loadPreset(){try{String saved=getSharedPreferences("hisho",0).getString("preset",null);presetData=new JSONObject(saved==null?read(getAssets().open("vibrant.json")):saved);presetName=getSharedPreferences("hisho",0).getString("presetName","Vibrant");}catch(Exception e){presetData=new JSONObject();presetName="Vibrant";}}
 
@@ -601,7 +642,7 @@ public class MainActivity extends Activity {
    try{String rootId=DocumentsContract.getTreeDocumentId(tree);Uri root=DocumentsContract.buildDocumentUriUsingTree(tree,rootId);photos=scanCardFolder(tree,root,0,new HashSet<>());}
    catch(Exception e){photos=new ArrayList<>();failed++;final String error=e.getMessage();handler.post(()->message("Não foi possível ler o cartão: "+error));}
    File spool=new File(getFilesDir(),"queue");if(!spool.exists())spool.mkdirs();
-   for(CardPhoto photo:photos){File temp=null;String insertedId="";try{
+   for(CardPhoto photo:photos){if(!DemoLicense.allowed(MainActivity.this))break;File temp=null;String insertedId="";try{
     String lower=photo.name.toLowerCase(Locale.ROOT);boolean raw=RawPreview.isRaw(lower);if(!(lower.endsWith(".jpg")||lower.endsWith(".jpeg")||raw)){unsupported++;continue;}
     long size=photo.size;long modified=photo.modified;String sourceKey=photo.uri.toString()+"|"+size+"|"+modified;String id=sha256Text("card:"+sourceKey);if(database.exists(id)){duplicates++;continue;}
     if(getFilesDir().getUsableSpace()<(size>0?size*3L:64L*1024L*1024L))throw new IOException("Pouco espaço livre no aparelho.");
@@ -632,5 +673,5 @@ public class MainActivity extends Activity {
  @Override protected void onResume(){super.onResume();QueueRecovery.resume(MainActivity.this);gallerySignature="";filesSignature="";reviewSignature="";requestedUri="";thumbCache.evictAll();handler.removeCallbacks(update);handler.post(update);}
  @Override protected void onPause(){handler.removeCallbacks(update);super.onPause();}
  @Override protected void onSaveInstanceState(Bundle state){state.putInt("page",selected);state.putBoolean("follow",gallery.follow);state.putString("photo",gallery.selected);super.onSaveInstanceState(state);}
- @Override protected void onDestroy(){destroyed=true;previewGeneration++;stripGeneration++;handler.removeCallbacks(update);thumbnails.shutdownNow();images.shutdownNow();scoring.shutdownNow();fottoNetwork.shutdownNow();galleryWorker.shutdownNow();thumbCache.evictAll();if(previewBitmap!=null)previewBitmap.recycle();database.close();if(registered)unregisterReceiver(receiver);super.onDestroy();}
+ @Override protected void onDestroy(){destroyed=true;if(tourDialog!=null)tourDialog.dismiss();previewGeneration++;stripGeneration++;handler.removeCallbacks(update);thumbnails.shutdownNow();images.shutdownNow();scoring.shutdownNow();fottoNetwork.shutdownNow();galleryWorker.shutdownNow();thumbCache.evictAll();if(previewBitmap!=null)previewBitmap.recycle();database.close();if(registered)unregisterReceiver(receiver);super.onDestroy();}
 }
