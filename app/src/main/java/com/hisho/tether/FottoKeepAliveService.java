@@ -11,6 +11,7 @@ public class FottoKeepAliveService extends Service {
  PowerManager.WakeLock wakeLock;
 
  final Runnable tick=new Runnable(){public void run(){
+  if(!DemoLicense.allowed(FottoKeepAliveService.this)){stopSelf();return;}
   android.content.SharedPreferences p=getSharedPreferences("hisho",0);
   boolean active=p.getBoolean("fottoWebActive",false),paused=p.getBoolean("fottoWebPaused",false);
   long updated=p.getLong("fottoWebUpdatedAt",0),age=updated<=0?Long.MAX_VALUE:System.currentTimeMillis()-updated;
