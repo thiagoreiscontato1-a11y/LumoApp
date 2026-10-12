@@ -11,6 +11,7 @@ public class CaptureService extends Service{
  public IBinder onBind(Intent i){return null;}
  public void onCreate(){super.onCreate();active=this;IntentFilter filter=new IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED);if(Build.VERSION.SDK_INT>=33)registerReceiver(detach,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(detach,filter);detachRegistered=true;jobs=new Jobs(this);NotificationManager n=getSystemService(NotificationManager.class);n.createNotificationChannel(new NotificationChannel("capture","Captura e edição",NotificationManager.IMPORTANCE_LOW));wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"LUMO:Capture");}
  public int onStartCommand(Intent intent,int flags,int startId){
+  if(!DemoLicense.allowed(this)){stopSelf();return START_NOT_STICKY;}
   if(intent==null){stopSelf();return START_NOT_STICKY;}
   if("finish_import".equals(intent.getAction())){finish=true;status="Concluindo edição das fotos importadas…";log(status);return START_NOT_STICKY;}
   if("stop".equals(intent.getAction())){alertArmed.set(false);capturing=false;finish=true;link.stop();status="Finalizando foto e fila…";return START_NOT_STICKY;}
@@ -67,7 +68,7 @@ public class CaptureService extends Service{
    }
    if(ptp==null||!capturing)return;
    int transientErrors=0;
-   while(capturing){long start=SystemClock.elapsedRealtime();
+   while(capturing&&DemoLicense.allowed(this)){long start=SystemClock.elapsedRealtime();
     try{
      ptp.drain();List<int[]> objects=ptp.objects();boolean liveReceived=false;
      for(int[] o:objects){if(!capturing)break;String key=o[0]+":"+o[1];if(seen.contains(key))continue;if(downloadObject(ptp,o,serial,settings,spool,seen,false))liveReceived=true;}
@@ -105,7 +106,7 @@ public class CaptureService extends Service{
  void editLoop(){
   try{
    originals();
-   while(!abort){String[] item=jobs.next();if(item==null){if(finish&&usbFinished)break;Thread.sleep(300);continue;}
+   while(!abort&&DemoLicense.allowed(this)){String[] item=jobs.next();if(item==null){if(finish&&usbFinished)break;Thread.sleep(300);continue;}
     File output=new File(getCacheDir(),item[0]+".jpg");
     try{
      jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);
