@@ -130,3 +130,16 @@ Veja `IMPLEMENTACAO-0.15.0-FOTTO-DIRETO.txt` para o fluxo e o roteiro do primeir
 - retries suaves para HTTP 429/502/503/504;
 - retomada por JobScheduler também reativa a fila Fotto;
 - painel separa enviadas/aceitas de confirmadas.
+
+
+## Demonstração 0.15.27 e tour
+
+- Build completo: `ANDROID_SDK_ROOT=/caminho/sdk python3 build.py`.
+- Build de avaliação: `ANDROID_SDK_ROOT=/caminho/sdk LUMO_DEMO=1 python3 build.py`, saída `Lumo-Demo.apk`.
+- O APK demo usa pacote `com.hisho.tether.demo` e nome Lumo Demo, podendo coexistir com o Lumo completo.
+- O código de distribuição é entregue ao proprietário separadamente; somente seu SHA-256 fica no código. O mesmo código libera cada instalação por 15 dias a partir da primeira ativação. Reintroduzir o código não renova uma instalação expirada.
+- Validação offline: prazo persistido, relógio monotônico na mesma inicialização e maior horário observado. NÃO impede reinício do teste apagando dados/reinstalando, alteração do APK ou manipulação sofisticada do relógio. Não é licença por pessoa nem código de uso único. Para isso, integrar um servidor de licenças.
+- Ao expirar, impede novo trabalho de captura/edição/envio. Uma operação já iniciada pode terminar. Não apaga fotos.
+- Tour inicial de 17 etapas, repetível pelo botão Tour do Lumo, e ajuda contextual de 5 etapas no editor. O tour não executa importações, exclusões nem uploads.
+- Teste da licença: `python3 tests/demo_license_test.py` (Java 17).
+- Compilação e assinatura verificadas; conexão física e UI precisam de teste no Android.
