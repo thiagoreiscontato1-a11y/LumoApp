@@ -10,7 +10,7 @@ final class FottoSync{
 
  static void kick(Context c){long after=c.getSharedPreferences("hisho",0).getLong("fottoStartRowid",Long.MAX_VALUE);kick(c,after,false);}
  static void sendExisting(Context c){STOP_REQUESTED.set(false);kick(c,0,true);}
- static void kick(Context source,long after,boolean resetErrors){Context c=source.getApplicationContext();android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);if(!p.getBoolean("fottoAuto",false)&&!resetErrors)return;if(FottoApi.token(c).isEmpty()||p.getString("fottoGalleryId","").isEmpty())return;if(!RUNNING.compareAndSet(false,true))return;STOP_REQUESTED.set(false);EXEC.execute(()->run(c,after,resetErrors));}
+ static void kick(Context source,long after,boolean resetErrors){if(!DemoLicense.allowed(source))return;Context c=source.getApplicationContext();android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);if(!p.getBoolean("fottoAuto",false)&&!resetErrors)return;if(FottoApi.token(c).isEmpty()||p.getString("fottoGalleryId","").isEmpty())return;if(!RUNNING.compareAndSet(false,true))return;STOP_REQUESTED.set(false);EXEC.execute(()->run(c,after,resetErrors));}
  static void sendSelected(Context source,Collection<String> ids){STOP_REQUESTED.set(false);if(ids==null||ids.isEmpty())return;Context c=source.getApplicationContext();android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);if(FottoApi.token(c).isEmpty()||p.getString("fottoGalleryId","").isEmpty()){p.edit().putString("fottoLastStatus","Conecte o Fotto e escolha um evento antes de enviar.").apply();return;}if(!RUNNING.compareAndSet(false,true))return;EXEC.execute(()->runSelected(c,new ArrayList<>(ids)));}
  static void stop(Context source){Context c=source.getApplicationContext();STOP_REQUESTED.set(true);android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);p.edit().putBoolean("fottoAuto",false).putString("fottoLastStatus",RUNNING.get()?"Encerrando envio após a foto atual…":"Envio encerrado").apply();}
  static boolean stopRequested(){return STOP_REQUESTED.get();}
@@ -44,7 +44,7 @@ final class FottoSync{
    jobs.fottoRecover(gallery);if(resetErrors)jobs.fottoRetry(gallery);
    // Só uma reconciliação leve no começo; nunca bloqueia a fila por foto.
    reconcileBatch(c,jobs,gallery,true);
-   while(!STOP_REQUESTED.get()){
+   while(!STOP_REQUESTED.get()){if(!DemoLicense.allowed(c))break;
     String[] x=jobs.nextFotto(gallery,after);if(x==null)break;String id=x[0],name=x[1],uri=x[2];
     try{
      jobs.fottoSet(id,gallery,"uploading","","",true);jobs.history(id,System.currentTimeMillis(),"Envio iniciado","Enviando para "+title);p.edit().putString("fottoLastStatus","Enviando "+name+" → "+title).apply();
@@ -76,7 +76,7 @@ final class FottoSync{
   Jobs jobs=new Jobs(c);android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);String gallery=p.getString("fottoGalleryId",""),title=p.getString("fottoGalleryTitle","Evento");int sent=0,skipped=0;
   try{
    reconcileBatch(c,jobs,gallery,true);
-   for(String id:ids){if(STOP_REQUESTED.get())break;String[] j=jobs.editorJob(id);if(j==null||!"done".equals(j[5])||j[4]==null||j[4].isEmpty()){skipped++;continue;}if(jobs.fottoWasSent(id,gallery)){skipped++;continue;}String[] state=jobs.fottoState(id,gallery);if("uploaded".equals(state[0])||"unconfirmed".equals(state[0])){skipped++;continue;}String name=j[1].replaceFirst("(?i)\\.jpg$","_Editada.jpg");
+   for(String id:ids){if(!DemoLicense.allowed(c))break;if(STOP_REQUESTED.get())break;String[] j=jobs.editorJob(id);if(j==null||!"done".equals(j[5])||j[4]==null||j[4].isEmpty()){skipped++;continue;}if(jobs.fottoWasSent(id,gallery)){skipped++;continue;}String[] state=jobs.fottoState(id,gallery);if("uploaded".equals(state[0])||"unconfirmed".equals(state[0])){skipped++;continue;}String name=j[1].replaceFirst("(?i)\\.jpg$","_Editada.jpg");
     try{jobs.fottoSet(id,gallery,"uploading","","",true);jobs.history(id,System.currentTimeMillis(),"Envio iniciado","Envio manual para "+title);p.edit().putString("fottoLastStatus","Enviando "+name+" → "+title).apply();verifyEdited(c,jobs,id,j[4]);FottoApi.Uploaded done=FottoApi.upload(c,Uri.parse(j[4]),name,gallery);jobs.fottoSet(id,gallery,"uploaded",done.mediaId,"Aguardando processamento/confirmacao.",false);jobs.history(id,System.currentTimeMillis(),"Envio aceito","Arquivo recebido pelo armazenamento do Fotto · mídia "+done.mediaId);sent++;p.edit().putLong("fottoLastUploadAt",System.currentTimeMillis()).putInt("fottoWatchdogRecoveries",0).putLong("fottoWatchdogRecoveryAt",0).apply();if(sent%RECONCILE_EVERY==0)reconcileBatch(c,jobs,gallery,true);
     }catch(Exception e){String msg=e.getMessage()==null?e.toString():e.getMessage();jobs.fottoSet(id,gallery,"error","",msg,false);p.edit().putString("fottoLastStatus","Falha no Fotto · "+msg).apply();EventAlert.signal(c,"fotto","Falha no envio para o Fotto: "+msg);QueueRecovery.schedule(c);break;}
    }
@@ -109,7 +109,7 @@ final class FottoSync{
   return true;
  }
 
- static void watchdog(Context source){
+ static void watchdog(Context source){if(!DemoLicense.allowed(source))return;
   long now=SystemClock.elapsedRealtime();if(now-LAST_WATCHDOG_AT<WATCHDOG_INTERVAL_MS)return;LAST_WATCHDOG_AT=now;
   Context c=source.getApplicationContext();android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);
   if(STOP_REQUESTED.get()||RUNNING.get()||!p.getBoolean("fottoAuto",false)||FottoApi.token(c).isEmpty()||p.getString("fottoGalleryId","").isEmpty())return;
