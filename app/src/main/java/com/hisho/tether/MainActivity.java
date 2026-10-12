@@ -188,6 +188,20 @@ public class MainActivity extends Activity {
   gap(box,8);box.addView(text("Histórico",14,TEXT,true));java.text.SimpleDateFormat tf=new java.text.SimpleDateFormat("HH:mm:ss",Locale.ROOT);for(String[] h:database.historyRows(item.id)){long ts=0;try{ts=Long.parseLong(h[0]);}catch(Exception ignored){}label(box,tf.format(new Date(ts))+" · "+h[1]+(h[2].isEmpty()?"":" · "+h[2]),11);}
   ScrollView scroll=new ScrollView(MainActivity.this);scroll.addView(box);new AlertDialog.Builder(MainActivity.this).setTitle(item.name.replaceFirst("(?i)\\.jpg$","")).setView(scroll).setPositiveButton("Abrir foto",(d,n)->openImage(item.uri)).setNeutralButton("Editar",(d,n)->openEditor(item.id,Collections.singletonList(item.id),false)).setNegativeButton("Fechar",null).show();
  }
+ void openEditor(String focusId,List<String> ids,boolean pasteOnOpen){
+  ArrayList<String> selectedIds=new ArrayList<>();
+  if(ids!=null)for(String id:ids)if(id!=null&&!id.trim().isEmpty()&&!selectedIds.contains(id))selectedIds.add(id);
+  String primary=focusId==null?"":focusId.trim();
+  if(primary.isEmpty()&&!selectedIds.isEmpty())primary=selectedIds.get(0);
+  if(primary.isEmpty()){message("Selecione uma foto para editar.");return;}
+  if(!selectedIds.contains(primary))selectedIds.add(0,primary);
+  Intent editor=new Intent(MainActivity.this,ManualEditorActivity.class);
+  editor.putExtra("focusId",primary);
+  editor.putExtra("jobIds",android.text.TextUtils.join(",",selectedIds));
+  editor.putExtra("pasteOnOpen",pasteOnOpen);
+  try{startActivity(editor);}catch(Exception e){message("Não foi possível abrir o editor: "+e.getMessage());}
+ }
+
  void select(int page){if(page<0||page>=4)page=0;selected=page;for(int i=0;i<4;i++){scrollers[i].setVisibility(i==page&&i!=1?View.VISIBLE:View.GONE);tabs[i].setTextColor(i==page?GREEN:MUTED);tabs[i].setBackground(i==page?shape(darkMode?0xff152840:0xffeaf4ff,12):shape(Color.TRANSPARENT,12));}if(galleryList!=null)galleryList.setVisibility(page==1?View.VISIBLE:View.GONE);if(page==1)refreshFiles(true);if(page==2)refreshReview(true);if(page==3)updateFottoStatus();}
 
  void capturePage(){
