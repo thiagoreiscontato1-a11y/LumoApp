@@ -11,13 +11,14 @@ import java.util.*;
 
 final class Jobs extends SQLiteOpenHelper{
  final Context context;
- Jobs(Context c){super(c,"queue.db",null,7);context=c;}
+ Jobs(Context c){super(c,"queue.db",null,8);context=c;}
 
  public void onCreate(SQLiteDatabase d){
-  d.execSQL("CREATE TABLE jobs (id TEXT PRIMARY KEY, file TEXT NOT NULL, name TEXT NOT NULL, settings TEXT NOT NULL, original TEXT, edited TEXT, state TEXT NOT NULL, error TEXT, score INTEGER NOT NULL DEFAULT 0, quality_note TEXT, content_hash TEXT, phash TEXT, file_size INTEGER NOT NULL DEFAULT 0, captured_at INTEGER NOT NULL DEFAULT 0, downloaded_at INTEGER NOT NULL DEFAULT 0, edited_at INTEGER NOT NULL DEFAULT 0, burst_id TEXT, duplicate_of TEXT, semantic_note TEXT, album TEXT NOT NULL DEFAULT 'Sem álbum', raw_original TEXT, source_name TEXT)");
-  createFotto(d);createHistory(d);
+  d.execSQL("CREATE TABLE jobs (id TEXT PRIMARY KEY, file TEXT NOT NULL, name TEXT NOT NULL, settings TEXT NOT NULL, original TEXT, edited TEXT, state TEXT NOT NULL, error TEXT, score INTEGER NOT NULL DEFAULT 0, quality_note TEXT, content_hash TEXT, phash TEXT, file_size INTEGER NOT NULL DEFAULT 0, captured_at INTEGER NOT NULL DEFAULT 0, downloaded_at INTEGER NOT NULL DEFAULT 0, edited_at INTEGER NOT NULL DEFAULT 0, burst_id TEXT, duplicate_of TEXT, semantic_note TEXT, album TEXT NOT NULL DEFAULT 'Sem álbum', raw_original TEXT, source_name TEXT, event_id TEXT NOT NULL DEFAULT '')");
+  createFotto(d);createHistory(d);createEvents(d);
  }
  public void onUpgrade(SQLiteDatabase d,int a,int b){
+  if(a<8){d.execSQL("ALTER TABLE jobs ADD COLUMN event_id TEXT NOT NULL DEFAULT ''");createEvents(d);}
   if(a<7){d.execSQL("ALTER TABLE jobs ADD COLUMN album TEXT NOT NULL DEFAULT 'Sem álbum'");d.execSQL("ALTER TABLE jobs ADD COLUMN raw_original TEXT");d.execSQL("ALTER TABLE jobs ADD COLUMN source_name TEXT");}
   if(a<2)createFotto(d);
   if(a<3){
@@ -47,6 +48,14 @@ final class Jobs extends SQLiteOpenHelper{
  static void createFotto(SQLiteDatabase d){d.execSQL("CREATE TABLE IF NOT EXISTS fotto_uploads (job_id TEXT NOT NULL, gallery_id TEXT NOT NULL, state TEXT NOT NULL, media_id TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(job_id,gallery_id))");}
  static void createHistory(SQLiteDatabase d){d.execSQL("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, ts INTEGER NOT NULL, type TEXT NOT NULL, detail TEXT)");}
 
+ static void createEvents(SQLiteDatabase d){d.execSQL("CREATE TABLE IF NOT EXISTS local_events (id TEXT PRIMARY KEY,name TEXT NOT NULL,created_at INTEGER NOT NULL)");d.execSQL("CREATE INDEX IF NOT EXISTS idx_jobs_event ON jobs(event_id,album)");}
+ String activeEvent(){return context.getSharedPreferences("hisho",0).getString("localEventId","");}
+ String eventSql(){return "event_id="+android.database.DatabaseUtils.sqlEscapeString(activeEvent());}
+ String eventName(){try(Cursor c=getReadableDatabase().rawQuery("SELECT name FROM local_events WHERE id=?",new String[]{activeEvent()})){return c.moveToFirst()?c.getString(0):"Fotos anteriores";}}
+ String createEvent(String name){String id=UUID.randomUUID().toString();ContentValues v=new ContentValues();v.put("id",id);v.put("name",name);v.put("created_at",System.currentTimeMillis());getWritableDatabase().insertOrThrow("local_events",null,v);return id;}
+ ArrayList<String[]> events(){ArrayList<String[]> out=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name FROM local_events ORDER BY created_at DESC",null)){while(c.moveToNext())out.add(new String[]{c.getString(0),c.getString(1)});}out.add(new String[]{"","Fotos anteriores"});return out;}
+ String eventForJob(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT event_id FROM jobs WHERE id=?",new String[]{id})){return c.moveToFirst()?c.getString(0):"";}}
+ String outputFolder(String id,String folder){String event=eventForJob(id);if(event.isEmpty())return folder;String name="Evento";try(Cursor c=getReadableDatabase().rawQuery("SELECT name FROM local_events WHERE id=?",new String[]{event})){if(c.moveToFirst())name=c.getString(0);}name=name.replaceAll("[^\\p{L}\\p{N}_-]","_");if(name.length()>48)name=name.substring(0,48);return "Eventos/"+name+"_"+event+"/"+folder;}
  synchronized boolean exists(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM jobs WHERE id=?",new String[]{id})){return c.moveToFirst();}}
  synchronized void add(String id,File file,String name,String settings){add(id,file,name,settings,System.currentTimeMillis(),"","",file.length());}
  synchronized void add(String id,File file,String name,String settings,long capturedAt,String contentHash,String pHash,long fileSize){
@@ -56,25 +65,26 @@ final class Jobs extends SQLiteOpenHelper{
   addSource(id,file,name,settings,capturedAt,contentHash,pHash,fileSize,true);
  }
  private void addSource(String id,File file,String name,String settings,long capturedAt,String contentHash,String pHash,long fileSize,boolean imported){
+  String event;try{event=new org.json.JSONObject(settings).optString("localEventId",activeEvent());}catch(Exception e){event=activeEvent();}
   String burst=burstFor(capturedAt);
-  ContentValues v=new ContentValues();v.put("id",id);v.put("file",file.getAbsolutePath());v.put("name",name);v.put("album",new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.ROOT).format(new Date(capturedAt>0?capturedAt:System.currentTimeMillis())));v.put("settings",settings);v.put("state","original");v.put("content_hash",contentHash);v.put("phash",pHash);v.put("file_size",fileSize);v.put("captured_at",capturedAt);v.put("downloaded_at",System.currentTimeMillis());v.put("burst_id",burst);getWritableDatabase().insertOrThrow("jobs",null,v);
+  ContentValues v=new ContentValues();v.put("event_id",event);v.put("id",id);v.put("file",file.getAbsolutePath());v.put("name",name);v.put("album",new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.ROOT).format(new Date(capturedAt>0?capturedAt:System.currentTimeMillis())));v.put("settings",settings);v.put("state","original");v.put("content_hash",contentHash);v.put("phash",pHash);v.put("file_size",fileSize);v.put("captured_at",capturedAt);v.put("downloaded_at",System.currentTimeMillis());v.put("burst_id",burst);getWritableDatabase().insertOrThrow("jobs",null,v);
   history(id,capturedAt>0?capturedAt:System.currentTimeMillis(),imported?"Importada":"Capturada",imported?"Lida do cartão de memória USB":"Registrada pela câmera");
   history(id,System.currentTimeMillis(),"Baixada","Original recebido e preservado");
  }
  synchronized String burstFor(long capturedAt){
   if(capturedAt<=0)capturedAt=System.currentTimeMillis();
-  try(Cursor c=getReadableDatabase().rawQuery("SELECT burst_id,captured_at FROM jobs WHERE captured_at>0 ORDER BY captured_at DESC LIMIT 1",null)){
+  try(Cursor c=getReadableDatabase().rawQuery("SELECT burst_id,captured_at FROM jobs WHERE "+eventSql()+" AND captured_at>0 ORDER BY captured_at DESC LIMIT 1",null)){
    if(c.moveToFirst()){long prev=c.getLong(1);String b=c.getString(0);if(Math.abs(capturedAt-prev)<=2200&&b!=null&&!b.isEmpty())return b;}
   }
-  return "R"+capturedAt;
+  return activeEvent()+":R"+capturedAt;
  }
  synchronized String duplicateByContent(String hash){
   if(hash==null||hash.isEmpty())return "";
-  try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM jobs WHERE content_hash=? LIMIT 1",new String[]{hash})){return c.moveToFirst()?c.getString(0):"";}
+  try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM jobs WHERE "+eventSql()+" AND content_hash=? LIMIT 1",new String[]{hash})){return c.moveToFirst()?c.getString(0):"";}
  }
  synchronized String visualDuplicate(String id,String pHash,long size){
   if(pHash==null||pHash.length()!=16)return "";
-  try(Cursor c=getReadableDatabase().rawQuery("SELECT id,phash,file_size,burst_id FROM jobs WHERE id<>? AND phash IS NOT NULL AND phash<>'' ORDER BY downloaded_at DESC LIMIT 250",new String[]{id})){
+  try(Cursor c=getReadableDatabase().rawQuery("SELECT id,phash,file_size,burst_id FROM jobs WHERE event_id=(SELECT event_id FROM jobs WHERE id=?) AND id<>? AND phash IS NOT NULL AND phash<>'' ORDER BY downloaded_at DESC LIMIT 250",new String[]{id,id})){
    String myBurst=burstId(id);
    while(c.moveToNext()){
     String other=c.getString(0),h=c.getString(1),burst=c.getString(3);long os=c.getLong(2);
@@ -104,8 +114,8 @@ final class Jobs extends SQLiteOpenHelper{
  synchronized String[] next(){try(Cursor c=getReadableDatabase().rawQuery("SELECT id,file,name,settings FROM jobs WHERE state='ready' ORDER BY rowid LIMIT 1",null)){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1),c.getString(2),c.getString(3)};}}
  synchronized int pending(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE state NOT IN ('done','review')",null)){c.moveToFirst();return c.getInt(0);}}
  synchronized int processingCount(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE state IN ('original','ready','editing','originalError','error')",null)){c.moveToFirst();return c.getInt(0);}}
- synchronized int reviewCount(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE state='review'",null)){c.moveToFirst();return c.getInt(0);}}
- synchronized int doneCount(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE state='done'",null)){c.moveToFirst();return c.getInt(0);}}
+ synchronized int reviewCount(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE "+eventSql()+" AND state='review'",null)){c.moveToFirst();return c.getInt(0);}}
+ synchronized int doneCount(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM jobs WHERE "+eventSql()+" AND state='done'",null)){c.moveToFirst();return c.getInt(0);}}
  synchronized long lastDownloadedAt(){try(Cursor c=getReadableDatabase().rawQuery("SELECT COALESCE(MAX(downloaded_at),0) FROM jobs",null)){c.moveToFirst();return c.getLong(0);}}
  synchronized long lastEditedAt(){try(Cursor c=getReadableDatabase().rawQuery("SELECT COALESCE(MAX(edited_at),0) FROM jobs",null)){c.moveToFirst();return c.getLong(0);}}
  synchronized void clearEdited(String id){ContentValues v=new ContentValues();v.putNull("edited");getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
@@ -113,18 +123,19 @@ final class Jobs extends SQLiteOpenHelper{
  synchronized String[] originalPending(){try(Cursor c=getReadableDatabase().rawQuery("SELECT id,file,name FROM jobs WHERE state='original' ORDER BY rowid LIMIT 1",null)){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1),c.getString(2)};}}
  synchronized long maxRowId(){try(Cursor c=getReadableDatabase().rawQuery("SELECT COALESCE(MAX(rowid),0) FROM jobs",null)){c.moveToFirst();return c.getLong(0);}}
 
- synchronized String[] nextFotto(String galleryId,long after){
-  String sql="SELECT j.id,j.name,j.edited,j.rowid FROM jobs j LEFT JOIN fotto_uploads f ON f.job_id=j.id AND f.gallery_id=? WHERE j.state='done' AND j.edited IS NOT NULL AND j.rowid>? AND (f.state IS NULL OR (f.state='error' AND f.attempts<4)) ORDER BY j.rowid LIMIT 1";
+ synchronized String[] nextFotto(String galleryId,long after){return nextFotto(galleryId,after,activeEvent());}
+ synchronized String[] nextFotto(String galleryId,long after,String event){
+  String sql="SELECT j.id,j.name,j.edited,j.rowid FROM jobs j LEFT JOIN fotto_uploads f ON f.job_id=j.id AND f.gallery_id=? WHERE j."+"event_id="+android.database.DatabaseUtils.sqlEscapeString(event)+" AND j.state='done' AND j.edited IS NOT NULL AND j.rowid>? AND (f.state IS NULL OR (f.state='error' AND f.attempts<4)) ORDER BY j.rowid LIMIT 1";
   try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{galleryId,String.valueOf(after)})){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1).replaceFirst("(?i)\\.jpg$","_Editada.jpg"),c.getString(2),String.valueOf(c.getLong(3))};}
  }
- synchronized int fottoPending(String galleryId){if(galleryId==null||galleryId.isEmpty())return 0;String sql="SELECT COUNT(*) FROM jobs j LEFT JOIN fotto_uploads f ON f.job_id=j.id AND f.gallery_id=? WHERE j.state='done' AND j.edited IS NOT NULL AND (f.state IS NULL OR f.state<>'confirmed')";try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{galleryId})){c.moveToFirst();return c.getInt(0);}}
+ synchronized int fottoPending(String galleryId){if(galleryId==null||galleryId.isEmpty())return 0;String sql="SELECT COUNT(*) FROM jobs j LEFT JOIN fotto_uploads f ON f.job_id=j.id AND f.gallery_id=? WHERE j."+eventSql()+" AND j.state='done' AND j.edited IS NOT NULL AND (f.state IS NULL OR f.state<>'confirmed')";try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{galleryId})){c.moveToFirst();return c.getInt(0);}}
  synchronized void fottoSet(String jobId,String galleryId,String state,String mediaId,String error,boolean increment){int attempts=0;try(Cursor c=getReadableDatabase().rawQuery("SELECT attempts FROM fotto_uploads WHERE job_id=? AND gallery_id=?",new String[]{jobId,galleryId})){if(c.moveToFirst())attempts=c.getInt(0);}if(increment)attempts++;ContentValues v=new ContentValues();v.put("job_id",jobId);v.put("gallery_id",galleryId);v.put("state",state);v.put("media_id",mediaId==null?"":mediaId);v.put("error",error==null?"":error);v.put("attempts",attempts);v.put("updated",System.currentTimeMillis());getWritableDatabase().insertWithOnConflict("fotto_uploads",null,v,SQLiteDatabase.CONFLICT_REPLACE);}
  synchronized String[] fottoState(String jobId,String galleryId){try(Cursor c=getReadableDatabase().rawQuery("SELECT state,media_id,error,updated FROM fotto_uploads WHERE job_id=? AND gallery_id=?",new String[]{jobId,galleryId})){if(!c.moveToFirst())return new String[]{"","","","0"};return new String[]{c.getString(0),c.getString(1),c.getString(2),String.valueOf(c.getLong(3))};}}
  synchronized ArrayList<String[]> fottoNeedsConfirmation(String galleryId){ArrayList<String[]> out=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT f.job_id,j.name,f.media_id FROM fotto_uploads f JOIN jobs j ON j.id=f.job_id WHERE f.gallery_id=? AND f.state IN ('uploaded','unconfirmed') ORDER BY f.updated LIMIT 500",new String[]{galleryId})){while(c.moveToNext())out.add(new String[]{c.getString(0),c.getString(1).replaceFirst("(?i)\\.jpg$","_Editada.jpg"),c.getString(2)});}return out;}
  synchronized void fottoRecover(String galleryId){ContentValues v=new ContentValues();v.put("state","error");v.put("error","Envio interrompido antes da confirmação.");v.put("updated",System.currentTimeMillis());getWritableDatabase().update("fotto_uploads",v,"gallery_id=? AND state='uploading'",new String[]{galleryId});ContentValues accepted=new ContentValues();accepted.put("state","uploaded");accepted.put("error","Aguardando confirmação no evento.");accepted.put("updated",System.currentTimeMillis());getWritableDatabase().update("fotto_uploads",accepted,"gallery_id=? AND state='unconfirmed' AND media_id IS NOT NULL AND media_id<>''",new String[]{galleryId});}
  synchronized void fottoRetry(String galleryId){ContentValues v=new ContentValues();v.put("attempts",0);v.put("state","error");getWritableDatabase().update("fotto_uploads",v,"gallery_id=? AND state='error'",new String[]{galleryId});}
 
- synchronized int fottoUploadPending(String galleryId,long after){if(galleryId==null||galleryId.isEmpty())return 0;String sql="SELECT COUNT(*) FROM jobs j LEFT JOIN fotto_uploads f ON f.job_id=j.id AND f.gallery_id=? WHERE j.state='done' AND j.edited IS NOT NULL AND j.rowid>? AND (f.state IS NULL OR (f.state='error' AND f.attempts<4))";try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{galleryId,String.valueOf(after)})){c.moveToFirst();return c.getInt(0);}}
+ synchronized int fottoUploadPending(String galleryId,long after){if(galleryId==null||galleryId.isEmpty())return 0;String sql="SELECT COUNT(*) FROM jobs j LEFT JOIN fotto_uploads f ON f.job_id=j.id AND f.gallery_id=? WHERE j."+eventSql()+" AND j.state='done' AND j.edited IS NOT NULL AND j.rowid>? AND (f.state IS NULL OR (f.state='error' AND f.attempts<4))";try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{galleryId,String.valueOf(after)})){c.moveToFirst();return c.getInt(0);}}
  synchronized int fottoErrorCount(String galleryId){if(galleryId==null||galleryId.isEmpty())return 0;try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM fotto_uploads WHERE gallery_id=? AND state='error'",new String[]{galleryId})){c.moveToFirst();return c.getInt(0);}}
  synchronized long fottoLastStateAt(String galleryId){if(galleryId==null||galleryId.isEmpty())return 0;try(Cursor c=getReadableDatabase().rawQuery("SELECT COALESCE(MAX(updated),0) FROM fotto_uploads WHERE gallery_id=?",new String[]{galleryId})){c.moveToFirst();return c.getLong(0);}}
  synchronized int fottoAccepted(String galleryId){if(galleryId==null||galleryId.isEmpty())return 0;try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM fotto_uploads WHERE gallery_id=? AND state IN ('uploaded','unconfirmed','confirmed')",new String[]{galleryId})){c.moveToFirst();return c.getInt(0);}}
@@ -145,6 +156,7 @@ final class Jobs extends SQLiteOpenHelper{
  void overwrite(File source,String rawUri)throws IOException{if(rawUri==null||rawUri.isEmpty())throw new IOException("Destino editado indisponível.");ContentResolver r=context.getContentResolver();try(InputStream input=new FileInputStream(source);OutputStream output=r.openOutputStream(Uri.parse(rawUri),"wt")){if(output==null)throw new IOException("Não foi possível regravar a foto editada.");copy(input,output);}}
 
  Uri save(File source,String folder,String name,String id,String column)throws IOException{
+  folder=outputFolder(id,folder);
   String tree=context.getSharedPreferences("hisho",0).getString("exportTreeUri","");
   if(!tree.isEmpty())return saveTree(source,Uri.parse(tree),folder,name,id,column);
   return saveMediaStore(source,folder,name,id,column);
@@ -152,7 +164,7 @@ final class Jobs extends SQLiteOpenHelper{
  Uri saveTree(File source,Uri tree,String folder,String name,String id,String column)throws IOException{
   ContentResolver r=context.getContentResolver();Uri root;
   try{String rootId=DocumentsContract.getTreeDocumentId(tree);root=DocumentsContract.buildDocumentUriUsingTree(tree,rootId);}catch(Exception e){throw new IOException("Pasta de exportação inválida. Escolha a pasta novamente.",e);}
-  Uri dir=findChild(r,root,folder,true);if(dir==null)throw new IOException("Não foi possível criar a pasta "+folder+" no destino escolhido.");
+  Uri dir=root;for(String segment:folder.split("/"))dir=findChild(r,dir,segment,true);if(dir==null)throw new IOException("Não foi possível criar a pasta "+folder+" no destino escolhido.");
   Uri uri=null;
   try{uri=DocumentsContract.createDocument(r,dir,RawPreview.isRaw(name)?"application/octet-stream":"image/jpeg",name);}catch(Exception e){throw new IOException("Não foi possível criar "+name+" na pasta escolhida.",e);}
   if(uri==null)throw new IOException("Não foi possível criar o arquivo na pasta escolhida.");
@@ -174,8 +186,8 @@ final class Jobs extends SQLiteOpenHelper{
  }
 
  synchronized void setAlbum(String id,String album,String source){ContentValues v=new ContentValues();v.put("album",album);v.put("source_name",source);getWritableDatabase().update("jobs",v,"id=?",new String[]{id});}
- synchronized ArrayList<String> albums(){ArrayList<String> list=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT album FROM jobs ORDER BY album",null)){while(c.moveToNext())list.add(c.getString(0));}return list;}
- String onlineManifest()throws Exception{org.json.JSONObject root=new org.json.JSONObject();root.put("schemaVersion",1);root.put("generatedAt",System.currentTimeMillis());org.json.JSONArray photos=new org.json.JSONArray();try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,album,source_name,state,captured_at,downloaded_at,edited_at,raw_original,edited FROM jobs ORDER BY rowid",null)){while(c.moveToNext()){org.json.JSONObject item=new org.json.JSONObject();item.put("id",c.getString(0));item.put("name",c.getString(1));item.put("album",c.getString(2));item.put("sourceName",c.getString(3));item.put("state",c.getString(4));item.put("capturedAt",c.getLong(5));item.put("importedAt",c.getLong(6));item.put("editedAt",c.getLong(7));item.put("hasRaw",!c.isNull(8));item.put("hasEdited",!c.isNull(9));photos.put(item);}}root.put("photos",photos);return root.toString(2);}
+ synchronized ArrayList<String> albums(){ArrayList<String> list=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT album FROM jobs WHERE "+eventSql()+" ORDER BY album",null)){while(c.moveToNext())list.add(c.getString(0));}return list;}
+ String onlineManifest()throws Exception{org.json.JSONObject root=new org.json.JSONObject();root.put("schemaVersion",2);root.put("eventId",activeEvent());root.put("eventName",eventName());root.put("generatedAt",System.currentTimeMillis());org.json.JSONArray photos=new org.json.JSONArray();try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,album,source_name,state,captured_at,downloaded_at,edited_at,raw_original,edited FROM jobs WHERE "+eventSql()+" ORDER BY rowid",null)){while(c.moveToNext()){org.json.JSONObject item=new org.json.JSONObject();item.put("id",c.getString(0));item.put("name",c.getString(1));item.put("album",c.getString(2));item.put("sourceName",c.getString(3));item.put("state",c.getString(4));item.put("capturedAt",c.getLong(5));item.put("importedAt",c.getLong(6));item.put("editedAt",c.getLong(7));item.put("hasRaw",!c.isNull(8));item.put("hasEdited",!c.isNull(9));photos.put(item);}}root.put("photos",photos);return root.toString(2);}
  synchronized void deletePhoto(String id)throws IOException{
   String file,original,edited,state,raw;try(Cursor c=getReadableDatabase().rawQuery("SELECT file,original,edited,state,raw_original FROM jobs WHERE id=?",new String[]{id})){if(!c.moveToFirst())return;file=c.getString(0);original=c.getString(1);edited=c.getString(2);state=c.getString(3);raw=c.getString(4);}
   if("editing".equals(state)||"ready".equals(state)||"original".equals(state))throw new IOException("Foto ainda está na fila de processamento.");
@@ -189,16 +201,8 @@ final class Jobs extends SQLiteOpenHelper{
  void deletePhotoUri(String raw)throws IOException{Uri uri=Uri.parse(raw);try{if(DocumentsContract.isDocumentUri(context,uri)){if(!DocumentsContract.deleteDocument(context.getContentResolver(),uri))throw new IOException("Não foi possível excluir arquivo.");}else context.getContentResolver().delete(uri,null,null);}catch(FileNotFoundException alreadyDeleted){}catch(Exception e){throw new IOException("Falha ao excluir cópia: "+e.getMessage(),e);}}
 
  int clearEditedFolder()throws IOException{
-  int deleted=0;
-  String tree=context.getSharedPreferences("hisho",0).getString("exportTreeUri","");
-  if(!tree.isEmpty())deleted=clearTreeFolder(Uri.parse(tree),"Editadas");
-  else deleted=clearMediaStoreFolder("Editadas");
-
-  // As cópias editadas foram removidas. Preservamos originais, histórico e notas.
-  // A Galeria volta a exibir o original para fotos cuja saída editada foi limpa.
-  ContentValues v=new ContentValues();v.putNull("edited");
-  getWritableDatabase().update("jobs",v,"state<>'review'",null);
-  return deleted;
+  ArrayList<String[]> rows=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT id,edited FROM jobs WHERE "+eventSql()+" AND state<>'review' AND edited IS NOT NULL",null)){while(c.moveToNext())rows.add(new String[]{c.getString(0),c.getString(1)});}int deleted=0;
+  for(String[] row:rows){deletePhotoUri(row[1]);clearEdited(row[0]);deleted++;}return deleted;
  }
 
  int clearTreeFolder(Uri tree,String folder)throws IOException{
