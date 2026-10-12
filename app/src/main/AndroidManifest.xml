@@ -13,7 +13,8 @@
  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
  <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
  <uses-permission android:name="android.permission.VIBRATE"/>
- <application android:icon="@drawable/ic_lumo" android:label="LUMO" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:supportsRtl="true">
+ <application android:name="com.hisho.tether.LumoApplication" android:icon="@drawable/ic_lumo" android:label="LUMO" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:supportsRtl="true">
+  <activity android:name="com.hisho.tether.DemoActivationActivity" android:exported="false"/>
   <activity android:name=".FottoLoginActivity" android:exported="false"/>
   <activity android:name=".FottoWebActivity" android:exported="false"/>
   <activity android:name=".ManualEditorActivity" android:exported="false"/>
