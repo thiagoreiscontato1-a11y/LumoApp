@@ -20,6 +20,7 @@ public class CaptureService extends Service{
   int type=hasCamera?ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE:0;
   if(Build.VERSION.SDK_INT>=35)type|=ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING;else type|=ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
   try{if(Build.VERSION.SDK_INT>=29)startForeground(1,notification(),type);else startForeground(1,notification());}catch(Exception e){status="Não foi possível iniciar serviço: "+e.getMessage();link.fail(status);getSharedPreferences("hisho",0).edit().putString("lastStatus",status).apply();stopSelf();return START_NOT_STICKY;}
+  if(hasCamera&&jobs.activeEvent().isEmpty()){status="Selecione um evento antes de conectar a câmera.";stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return START_NOT_STICKY;}
   wake.acquire(6*60*60*1000L);jobs.retry();
   String settings=intent.getStringExtra("settings");if(settings==null)settings="{}";final String config=settings;
   capturing=hasCamera;usbFinished=!hasCamera;finish=!hasCamera&&!"queue_import".equals(intent.getAction());
@@ -88,7 +89,7 @@ public class CaptureService extends Service{
   return live==null||live.trim().isEmpty()?fallback:live;
  }
  boolean downloadObject(Ptp ptp,int[] o,String serial,String settings,File spool,Set<String> seen,boolean retro)throws Exception{
-  String key=o[0]+":"+o[1];Ptp.Info info=ptp.info(o[1]);String id=hash(serial+":"+o[0]+":"+info.name+":"+info.date+":"+info.size);
+  String key=o[0]+":"+o[1];Ptp.Info info=ptp.info(o[1]);String id=hash(jobs.activeEvent()+":"+serial+":"+o[0]+":"+info.name+":"+info.date+":"+info.size);
   if(jobs.exists(id)){seen.add(key);return false;}
   if(getFilesDir().getUsableSpace()<info.size*3L+64*1024*1024)throw new IOException("Pouco espaço livre. Libere armazenamento e reconecte.");
   File temp=new File(spool,id+".part"),saved=new File(spool,id+".jpg");long t=SystemClock.elapsedRealtime();
