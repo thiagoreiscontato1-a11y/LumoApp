@@ -1,0 +1,205 @@
+import Foundation
+import ImageCaptureCore
+import Network
+
+/// Comandos PTP brutos pela sessão USB do ImageCaptureCore (Canon R8/SL2 via cabo).
+/// O ImageCaptureCore cuida da sessão PTP e do número da transação.
+final class ICCPTPTransport: PTPTransport {
+    let camera: ICCameraDevice
+
+    init(camera: ICCameraDevice) { self.camera = camera }
+
+    func execute(_ code: UInt16, _ params: [UInt32]) async throws -> Data {
+        let command = PTPContainer.command(code, transaction: 0, params: params)
+        return try await withCheckedThrowingContinuation { continuation in
+            camera.requestSendPTPCommand(command, outData: nil) { data, response, error in
+                if let error {
+                    continuation.resume(throwing: PTPError.transport("USB/PTP: \(error.localizedDescription)"))
+                    return
+                }
+                do {
+                    let result = try PTPContainer.responseCode(response)
+                    guard result == PTPCode.ok else { throw PTPError.response(result) }
+                    continuation.resume(returning: data)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
+/// PTP/IP pela rede Wi-Fi da câmera (porta de `WifiPtp.java`).
+final class WiFiPTPTransport: PTPTransport {
+    let host: String
+    let guid: UUID
+    private var command: NWConnection?
+    private var event: NWConnection?
+    private var transaction: UInt32 = 0
+    private var sessionOpen = false
+    private let queue = DispatchQueue(label: "lumo.wifi.ptp")
+    private(set) var broken = false
+
+    init(host: String, guid: UUID) {
+        self.host = host
+        self.guid = guid
+    }
+
+    private func connect() async throws -> NWConnection {
+        let tcp = NWProtocolTCP.Options()
+        tcp.noDelay = true
+        tcp.connectionTimeout = 6
+        let params = NWParameters(tls: nil, tcp: tcp)
+        params.requiredInterfaceType = .wifi
+        let c = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: PTPIP.port)!, using: params)
+        return try await withCheckedThrowingContinuation { continuation in
+            let once = ResumeOnce()
+            c.stateUpdateHandler = { state in
+                guard !once.done else { return }
+                switch state {
+                case .ready:
+                    once.done = true
+                    continuation.resume(returning: c)
+                case .failed(let error), .waiting(let error):
+                    once.done = true
+                    c.cancel()
+                    continuation.resume(throwing: PTPError.transport("Wi-Fi: câmera não encontrada em \(self.host) (\(error.localizedDescription)). Conecte o iPhone ao Wi-Fi da câmera."))
+                case .cancelled:
+                    once.done = true
+                    continuation.resume(throwing: PTPError.transport("Conexão Wi-Fi cancelada."))
+                default:
+                    break
+                }
+            }
+            c.start(queue: queue)
+        }
+    }
+
+    private func send(_ c: NWConnection, _ data: Data) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            c.send(content: data, completion: .contentProcessed { error in
+                if let error { continuation.resume(throwing: PTPError.transport("Wi-Fi: \(error.localizedDescription)")) }
+                else { continuation.resume() }
+            })
+        }
+    }
+
+    private func read(_ c: NWConnection, _ count: Int) async throws -> Data {
+        if count == 0 { return Data() }
+        var out = Data()
+        out.reserveCapacity(count)
+        while out.count < count {
+            let chunk: Data = try await withCheckedThrowingContinuation { continuation in
+                c.receive(minimumIncompleteLength: 1, maximumLength: min(count - out.count, 1 << 20)) { data, _, complete, error in
+                    if let error { continuation.resume(throwing: PTPError.transport("Wi-Fi: \(error.localizedDescription)")); return }
+                    if let data, !data.isEmpty { continuation.resume(returning: data); return }
+                    continuation.resume(throwing: PTPError.transport(complete ? "Conexão Wi-Fi encerrada pela câmera." : "Wi-Fi sem dados."))
+                }
+            }
+            out.append(chunk)
+        }
+        return out
+    }
+
+    private func readPacket(_ c: NWConnection) async throws -> (type: UInt32, body: Data) {
+        let h = try PTPIP.header(try await read(c, 8))
+        return (h.type, try await read(c, h.bodyLength))
+    }
+
+    /// Handshake PTP/IP (comando + eventos) e OpenSession.
+    func open() async throws {
+        do {
+            let c = try await connect()
+            command = c
+            try await send(c, PTPIP.initCommandRequest(guid: guid))
+            let ack = try await readPacket(c)
+            if ack.type == PTPIP.PacketType.initFail.rawValue { throw PTPError.transport("Pareamento recusado. Autorize LUMO na câmera.") }
+            guard ack.type == PTPIP.PacketType.initCommandAck.rawValue, ack.body.count >= 24, ack.body.count <= 1024 else {
+                throw PTPError.transport("A câmera não aceitou PTP/IP. Confira o modo Wi-Fi.")
+            }
+            var r = ByteReader(ack.body)
+            let connectionNumber = try r.u32()
+            let e = try await connect()
+            event = e
+            try await send(e, PTPIP.initEventRequest(connectionNumber: connectionNumber))
+            let eack = try await readPacket(e)
+            guard eack.type == PTPIP.PacketType.initEventAck.rawValue, eack.body.isEmpty else {
+                throw PTPError.transport("Canal de eventos Wi-Fi não confirmado.")
+            }
+            startEventReader(e)
+            do {
+                _ = try await execute(PTPCode.openSession, [1])
+            } catch let error as PTPError where error.responseCode == PTPCode.sessionAlreadyOpen {}
+            sessionOpen = true
+        } catch {
+            close()
+            throw error
+        }
+    }
+
+    /// O canal de eventos só precisa responder aos probes da câmera.
+    private func startEventReader(_ e: NWConnection) {
+        Task { [weak self] in
+            while let self, !self.broken {
+                do {
+                    let p = try await self.readPacket(e)
+                    if p.type == PTPIP.PacketType.probeRequest.rawValue {
+                        try await self.send(e, PTPIP.packet(PTPIP.PacketType.probeResponse.rawValue))
+                    }
+                } catch {
+                    if self.event != nil { self.broken = true }
+                    return
+                }
+            }
+        }
+    }
+
+    func execute(_ code: UInt16, _ params: [UInt32]) async throws -> Data {
+        guard let c = command, !broken else { throw PTPError.transport("Conexão Wi-Fi interrompida.") }
+        let tx = sessionOpen ? nextTransaction() : 0
+        do {
+            try await send(c, PTPIP.operationRequest(code, transaction: tx, params: params))
+            var assembler = PTPIP.ResponseAssembler(transaction: tx)
+            for _ in 0..<200_000 {
+                let p = try await readPacket(c)
+                switch try assembler.consume(type: p.type, body: p.body) {
+                case .needMore: continue
+                case .replyProbe: try await send(c, PTPIP.packet(PTPIP.PacketType.probeResponse.rawValue))
+                case .done(let result, let data):
+                    guard result == PTPCode.ok else { throw PTPError.response(result) }
+                    return data
+                }
+            }
+            throw PTPError.protocolViolation("Excesso de pacotes Wi-Fi.")
+        } catch let e as PTPError where e.responseCode != nil {
+            throw e
+        } catch {
+            broken = true
+            throw error
+        }
+    }
+
+    private func nextTransaction() -> UInt32 {
+        transaction &+= 1
+        if transaction == 0 { transaction = 1 }
+        return transaction
+    }
+
+    func closeSession() async {
+        if sessionOpen, !broken { _ = try? await execute(PTPCode.closeSession, []) }
+        sessionOpen = false
+    }
+
+    func close() {
+        let c = command, e = event
+        command = nil
+        event = nil
+        c?.cancel()
+        e?.cancel()
+    }
+}
+
+/// Garante que a continuação de conexão seja retomada uma única vez.
+private final class ResumeOnce: @unchecked Sendable {
+    var done = false
+}

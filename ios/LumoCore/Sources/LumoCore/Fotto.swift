@@ -419,6 +419,8 @@ public final class FottoClient {
         let response: Data
         do {
             response = try await call("POST", path, body: try FottoParsing.createMediaBody(name: name, size: size))
+        } catch FottoError.sessionExpired {
+            throw FottoError.sessionExpired
         } catch {
             throw FottoError.invalidResponse("CREATE_MEDIA_ARRAY · \(name) · \(size) bytes · \(error.localizedDescription)")
         }
