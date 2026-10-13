@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DeliveryView: View {
     @EnvironmentObject private var model: AppModel

@@ -141,7 +141,7 @@ struct FottoWebView: UIViewRepresentable {
                 for p in priority { for (k, v) in o where k.lowercased() == p { collect(v, into: &out) } }
                 for (k, v) in o {
                     let low = k.lowercased()
-                    if ["api", "key", "token", "session", "auth"].contains(where: low.contains) || v is [String: Any] || v is [Any] {
+                    if ["api", "key", "token", "session", "auth"].contains(where: { low.contains($0) }) || v is [String: Any] || v is [Any] {
                         collect(v, into: &out)
                     }
                 }

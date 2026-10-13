@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct CaptureView: View {
     @EnvironmentObject private var model: AppModel

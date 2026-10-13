@@ -9,6 +9,13 @@ final class CaptureController: NSObject, ObservableObject {
         case idle, searching, connecting, connected, busy
         case failed(String)
 
+        var keepsScreenOn: Bool {
+            switch self {
+            case .connected, .busy, .connecting: return true
+            default: return false
+            }
+        }
+
         var label: String {
             switch self {
             case .idle: return "DESCONECTADA"

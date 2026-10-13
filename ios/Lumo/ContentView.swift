@@ -5,6 +5,10 @@ struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var capture: CaptureController
 
+    private var showingMessage: Binding<Bool> {
+        Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HeaderView()
@@ -22,14 +26,14 @@ struct ContentView: View {
                     .tabItem { Label("Ajustes", systemImage: "slider.horizontal.3") }
             }
         }
-        .alert("Lumo", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+        .alert("Lumo", isPresented: showingMessage) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.message ?? "")
         }
         .onChange(of: capture.phase) { _, phase in
             // Mantém a tela ligada enquanto a câmera estiver conectada.
-            UIApplication.shared.isIdleTimerDisabled = phase == .connected || phase == .busy || phase == .connecting
+            UIApplication.shared.isIdleTimerDisabled = phase.keepsScreenOn
         }
     }
 }
