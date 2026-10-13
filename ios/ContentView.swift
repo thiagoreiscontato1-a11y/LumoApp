@@ -49,6 +49,7 @@ struct ContentView: View {
                                 let protocols = accessory.protocolStrings.joined(separator: ", ")
                                 return "\(accessory.name) — \(accessory.manufacturer) — protocolos: \(protocols)"
                             }.joined(separator: "\n")
+                        }
                     }
                     Text(usbDiagnostic).font(.caption)
                 }
