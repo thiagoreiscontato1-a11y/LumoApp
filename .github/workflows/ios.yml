@@ -1,0 +1,26 @@
+name: Lumo iOS
+
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    name: Testes do núcleo (LumoCore)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Versões
+        run: xcodebuild -version && swift --version
+      - name: swift test
+        run: swift test --package-path ios/LumoCore
