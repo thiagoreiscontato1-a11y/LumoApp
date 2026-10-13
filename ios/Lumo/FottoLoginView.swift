@@ -86,7 +86,7 @@ struct FottoWebView: UIViewRepresentable {
         return JSON.stringify(r);}catch(e){return '{}';}})();
         """
 
-        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             if let url = action.request.url { captureURL(url) }
             decisionHandler(.allow)
         }

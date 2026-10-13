@@ -1,3 +1,11 @@
+# LUMO iOS 0.2.0 (em desenvolvimento)
+
+A versão para iPhone/iPad fica em [`ios/`](ios/README.md): captura Canon por USB (ImageCaptureCore + PTP) e Wi-Fi,
+edição automática/preset/manual, curadoria, Revisão e entrega direta ao Fotto — portados do Android.
+O workflow **Lumo iOS** compila o app em macOS, roda os testes do núcleo e publica um `.ipa` sem assinatura.
+
+---
+
 # LUMO 0.15.21 — Busca de eventos antigos do Fotto
 
 Corrige o carregamento de eventos na aba Entrega, mantendo os recursos da 0.15.20.

@@ -171,6 +171,7 @@ final class CaptureController: NSObject, ObservableObject {
         ui {
             self.loop = nil
             self.wifi = nil
+            if self.camera == nil { self.mode = nil }
             if case .failed = self.phase {} else { self.phase = self.camera == nil ? .idle : self.phase }
         }
     }
