@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import CoreImage
 import UIKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var eventName = ""
@@ -12,6 +13,8 @@ struct ContentView: View {
     @State private var contrast = 1.0
     @State private var saturation = 1.0
     @State private var exportURL: URL?
+    @State private var showCameraFiles = false
+    @State private var cameraImportStatus = "Nenhuma foto importada por Arquivos."
     var body: some View {
         NavigationStack {
             Form {
@@ -25,6 +28,12 @@ struct ContentView: View {
                         }
                     }
                     ForEach(events, id: \.self) { Text($0) }
+                }
+                Section("Canon via USB — teste de acesso") {
+                    Text("Teste inicial: abra Arquivos e verifique se o iPhone disponibiliza as imagens da câmera conectada. Isto NÃO detecta a câmera diretamente nem ativa captura automática.")
+                        .font(.footnote)
+                    Button("Procurar fotos da câmera em Arquivos") { showCameraFiles = true }
+                    Text(cameraImportStatus).font(.caption)
                 }
                 Section("Foto") {
                     PhotosPicker("Importar foto", selection: $photoItem, matching: .images)
@@ -52,6 +61,27 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Lumo")
+            .fileImporter(isPresented: $showCameraFiles, allowedContentTypes: [.image, .jpeg, .png, .rawImage], allowsMultipleSelection: false) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    let accessed = url.startAccessingSecurityScopedResource()
+                    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                    do {
+                        let data = try Data(contentsOf: url)
+                        if let image = UIImage(data: data) {
+                            photo = image
+                            cameraImportStatus = "Imagem importada de Arquivos: \(url.lastPathComponent)"
+                        } else {
+                            cameraImportStatus = "Arquivo selecionado, mas formato não suportado na prévia."
+                        }
+                    } catch {
+                        cameraImportStatus = "Não foi possível ler o arquivo: \(error.localizedDescription)"
+                    }
+                case .failure(let error):
+                    cameraImportStatus = "Acesso a Arquivos falhou: \(error.localizedDescription)"
+                }
+            }
             .onChange(of: photoItem) { _, item in
                 Task {
                     if let data = try? await item?.loadTransferable(type: Data.self) {
