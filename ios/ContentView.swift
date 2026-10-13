@@ -3,6 +3,7 @@ import PhotosUI
 import CoreImage
 import UIKit
 import UniformTypeIdentifiers
+import ExternalAccessory
 
 struct ContentView: View {
     @State private var eventName = ""
@@ -15,6 +16,7 @@ struct ContentView: View {
     @State private var exportURL: URL?
     @State private var showCameraFiles = false
     @State private var cameraImportStatus = "Nenhuma foto importada por Arquivos."
+    @State private var usbDiagnostic = "Diagnóstico ainda não executado."
     var body: some View {
         NavigationStack {
             Form {
@@ -34,6 +36,21 @@ struct ContentView: View {
                         .font(.footnote)
                     Button("Procurar fotos da câmera em Arquivos") { showCameraFiles = true }
                     Text(cameraImportStatus).font(.caption)
+                }
+                Section("Diagnóstico USB — acessórios") {
+                    Text("Verifica somente acessórios expostos pelo ExternalAccessory. Câmeras USB/PTP podem não aparecer nesta lista, mesmo reconhecidas pelo app Fotos.")
+                        .font(.footnote)
+                    Button("Verificar acessórios disponíveis") {
+                        let accessories = EAAccessoryManager.shared().connectedAccessories
+                        if accessories.isEmpty {
+                            usbDiagnostic = "Nenhum acessório ExternalAccessory encontrado. Isto NÃO confirma ausência da Canon no USB."
+                        } else {
+                            usbDiagnostic = accessories.map { accessory in
+                                "\\(accessory.name) — \\(accessory.manufacturer) — protocolos: \\(accessory.protocolStrings.joined(separator: ", "))"
+                            }.joined(separator: "\\n")
+                        }
+                    }
+                    Text(usbDiagnostic).font(.caption)
                 }
                 Section("Foto") {
                     PhotosPicker("Importar foto", selection: $photoItem, matching: .images)
