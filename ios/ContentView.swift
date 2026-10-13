@@ -46,9 +46,9 @@ struct ContentView: View {
                             usbDiagnostic = "Nenhum acessório ExternalAccessory encontrado. Isto NÃO confirma ausência da Canon no USB."
                         } else {
                             usbDiagnostic = accessories.map { accessory in
-                                "\\(accessory.name) — \\(accessory.manufacturer) — protocolos: \\(accessory.protocolStrings.joined(separator: ", "))"
-                            }.joined(separator: "\\n")
-                        }
+                                let protocols = accessory.protocolStrings.joined(separator: ", ")
+                                return "\(accessory.name) — \(accessory.manufacturer) — protocolos: \(protocols)"
+                            }.joined(separator: "\n")
                     }
                     Text(usbDiagnostic).font(.caption)
                 }
