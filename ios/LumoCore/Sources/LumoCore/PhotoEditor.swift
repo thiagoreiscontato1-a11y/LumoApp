@@ -2,7 +2,7 @@ import Foundation
 
 /// Controles manuais/automáticos no mesmo intervalo do Lightroom/Android
 /// (exposição em EV de -5 a 5; demais de -100 a 100).
-public struct EditControls: Codable, Equatable {
+public struct EditControls: Codable, Hashable {
     public var exposure: Double = 0
     public var contrast: Double = 0
     public var highlights: Double = 0
@@ -43,7 +43,7 @@ public struct EditControls: Codable, Equatable {
 }
 
 /// Opções de edição por foto (equivalente ao JSON `settings` do Android).
-public struct EditOptions: Codable, Equatable {
+public struct EditOptions: Codable, Hashable {
     public var auto: Bool = true
     public var autoStrength: Double = 1
     /// Ajustes Camera Raw do XMP (chaves como `Exposure2012`).

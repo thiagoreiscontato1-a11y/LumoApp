@@ -20,6 +20,12 @@ public struct LumoEvent: Codable, Identifiable, Hashable {
     public var folderName: String { EventLibrary.safeName(name, fallback: "Evento") + "_" + id }
 }
 
+public enum EventLibraryError: LocalizedError {
+    case emptyName
+
+    public var errorDescription: String? { "Informe o nome do evento." }
+}
+
 public enum PhotoStage: String, Codable {
     /// Original salvo, aguardando edição.
     case received
@@ -131,7 +137,7 @@ public final class EventLibrary: @unchecked Sendable {
     @discardableResult
     public func createEvent(named name: String) throws -> LumoEvent {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw CocoaError(.validationMissingMandatoryProperty) }
+        guard !trimmed.isEmpty else { throw EventLibraryError.emptyName }
         lock.lock(); defer { lock.unlock() }
         var list = loadEvents()
         let event = LumoEvent(name: trimmed)
