@@ -90,3 +90,14 @@ jobs:
       - name: Log de compilação em caso de erro
         if: failure()
         run: grep -E 'error:' build-sim.log build-device.log | head -80 || true
+      - name: Capturas reduzidas no log (para revisão remota)
+        if: always()
+        run: |
+          mkdir -p small
+          for f in screenshots/*.png; do
+            n=$(basename "$f" .png)
+            sips -Z 900 "$f" --out "small/$n.jpg" -s format jpeg -s formatOptions 55 >/dev/null
+            echo "=====BEGIN $n====="
+            base64 -i "small/$n.jpg" | fold -w 4000
+            echo "=====END $n====="
+          done
