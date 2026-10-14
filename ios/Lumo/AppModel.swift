@@ -39,6 +39,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var fottoLoading = false
     @Published private(set) var uploading = false
     @Published private(set) var importing = false
+    /// Modo de demonstração: foto a abrir no visualizador.
+    @Published var demoOpenPhoto: String?
 
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

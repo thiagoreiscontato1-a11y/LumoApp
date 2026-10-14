@@ -61,6 +61,7 @@ struct ContentView: View {
                 UIApplication.shared.isIdleTimerDisabled = model.settings.eventMode || phase.keepsScreenOn
                 if case .failed = phase, old != phase { Haptics.error() }
             }
+            .onChange(of: model.demoOpenPhoto) { _, id in if let id { sheet = .photo(id) } }
             .onChange(of: model.photos.count) { old, new in
                 if new > old { Haptics.arrived() }
             }

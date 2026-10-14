@@ -40,7 +40,11 @@ enum DemoMode {
             model.createEvent(name)
         }
         model.capture.demoConnected(camera: "Canon EOS R8")
-        guard !arguments.contains("-LumoNoPhotos"), model.photos.count < scenes.count else { return }
+        guard !arguments.contains("-LumoNoPhotos") else { return }
+        if model.photos.count >= scenes.count {
+            if arguments.contains("-LumoViewer") || arguments.contains("-LumoEditor") { model.demoOpenPhoto = model.latest?.id }
+            return
+        }
         for (i, scene) in scenes.enumerated() {
             guard let data = render(scene, seed: i) else { continue }
             let incoming = IncomingPhoto(data: data, originalName: String(format: "IMG_%04d.JPG", 4810 + i),
@@ -48,6 +52,10 @@ enum DemoMode {
                                          source: .usb, sourceKey: "demo:\(i)")
             if await model.ingest(incoming) { model.capture.demoReceived() }
         }
+        // Duas favoritas, para a galeria mostrar o filtro e as estrelas.
+        let favorites = Set(model.recent.prefix(4).enumerated().filter { $0.offset % 2 == 1 }.map { $0.element.id })
+        if model.photos.filter(\.favorite).isEmpty { model.toggleFavorite(favorites) }
+        if arguments.contains("-LumoViewer") || arguments.contains("-LumoEditor") { model.demoOpenPhoto = model.latest?.id }
     }
 
     struct Scene {

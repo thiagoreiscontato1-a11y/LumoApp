@@ -61,6 +61,8 @@ jobs:
           shoot 4-galeria 10 -LumoSheet gallery
           shoot 5-camera 8 -LumoSheet camera
           shoot 6-deitado 12 -LumoLandscape
+          shoot 7-visualizador 14 -LumoViewer
+          shoot 8-editor 16 -LumoEditor
           ls -l screenshots
       - name: Disponibilizar capturas de tela
         uses: actions/upload-artifact@v4

@@ -279,6 +279,7 @@ struct PhotoViewer: View {
             Button("Excluir original e editada", role: .destructive) { deleteCurrent() }
         }
         .onChange(of: current) { _, _ in Haptics.tap() }
+        .onAppear { if DemoMode.arguments.contains("-LumoEditor") { editing = photo } }
     }
 
     struct InfoID: Identifiable { let id: String }
