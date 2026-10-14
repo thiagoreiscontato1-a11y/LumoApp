@@ -5,7 +5,7 @@ import UIKit
 /// Estado do app: evento atual, fotos, ajustes, câmera e entrega Fotto.
 @MainActor
 final class AppModel: ObservableObject {
-    static let version = "0.2.1"
+    static let version = "0.3.0"
 
     let library: EventLibrary
     let pipeline: PhotoPipeline
@@ -66,6 +66,19 @@ final class AppModel: ObservableObject {
     }
 
     // MARK: Contadores
+
+    /// Fotos da mais recente para a mais antiga (ordem de chegada).
+    var recent: [PhotoRecord] { photos.sorted { $0.receivedAt > $1.receivedAt } }
+    var latest: PhotoRecord? { photos.max { $0.receivedAt < $1.receivedAt } }
+
+    /// Arquivo a exibir: o original enquanto edita (ou se a edição falhou), senão o editado.
+    func displayURL(_ photo: PhotoRecord) -> URL? {
+        guard let event = currentEvent else { return nil }
+        return photo.stage == .received || photo.stage == .failed
+            ? library.originalURL(photo, in: event) : library.editedURL(photo, in: event)
+    }
+
+    func photoCount(_ event: LumoEvent) -> Int { library.photos(in: event).count }
 
     var approved: [PhotoRecord] { photos.filter { $0.stage == .approved }.sorted { $0.capturedAt > $1.capturedAt } }
     var underReview: [PhotoRecord] { photos.filter { $0.stage == .review || $0.stage == .failed }.sorted { $0.capturedAt > $1.capturedAt } }

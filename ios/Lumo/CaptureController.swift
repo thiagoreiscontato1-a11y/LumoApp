@@ -68,7 +68,20 @@ final class CaptureController: NSObject, ObservableObject {
         browser.browsedDeviceTypeMask = .camera
     }
 
-    var isRunning: Bool { loop != nil || camera?.hasOpenSession == true }
+    var isRunning: Bool { demo || loop != nil || camera?.hasOpenSession == true }
+
+    /// Somente para o modo de demonstração (capturas de tela no simulador).
+    private var demo = false
+
+    func demoConnected(camera name: String) {
+        demo = true
+        activeCamera = name
+        mode = .usb
+        phase = .connected
+        status = "Conexão confirmada · aguardando fotos"
+    }
+
+    func demoReceived() { received += 1 }
 
     // MARK: Registro
 
@@ -169,6 +182,12 @@ final class CaptureController: NSObject, ObservableObject {
 
     func stop() {
         wantsUSB = false
+        if demo {
+            demo = false
+            phase = .idle
+            mode = nil
+            return
+        }
         if let loop {
             // O laço devolve a câmera ao modo normal e então fecha a sessão USB.
             loop.cancel()

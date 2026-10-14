@@ -65,7 +65,10 @@ struct DeliveryView: View {
                     Section("Situação") { Text(model.fottoStatus).font(.callout) }
                 }
             }
+            .lumoScreen()
             .navigationTitle("Entrega")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { DoneButton() } }
             .sheet(isPresented: $showLogin) {
                 FottoLoginView(client: model.client) { model.connectFotto($0) }
             }
@@ -118,6 +121,7 @@ struct DeliveryView: View {
                 }
             }
             .searchable(text: $search, prompt: "Buscar por nome ou ID")
+            .lumoScreen()
             .navigationTitle("Evento Fotto")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -195,7 +199,10 @@ struct SettingsView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
+            .lumoScreen()
             .navigationTitle("Ajustes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { DoneButton() } }
             .fileImporter(isPresented: $importingPreset, allowedContentTypes: [.xml, .data], allowsMultipleSelection: false) { result in
                 if case .success(let urls) = result, let url = urls.first { model.importPreset(from: url) }
             }

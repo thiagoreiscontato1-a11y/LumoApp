@@ -9,6 +9,9 @@ struct LumoApp: App {
             ContentView()
                 .environmentObject(model)
                 .environmentObject(model.capture)
+                .preferredColorScheme(.dark)
+                .tint(Lumo.cyan)
+                .task { await DemoMode.startIfRequested(model) }
         }
     }
 }

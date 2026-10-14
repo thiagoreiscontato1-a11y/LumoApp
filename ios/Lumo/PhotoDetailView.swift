@@ -13,9 +13,8 @@ struct PhotoDetailView: View {
             let edited = model.library.editedURL(photo, in: event)
             List {
                 Section {
-                    PhotoThumb(url: photo.stage == .failed ? model.library.originalURL(photo, in: event) : edited, maxEdge: 1600)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, minHeight: 240)
+                    PhotoImage(url: model.displayURL(photo) ?? edited, maxEdge: 2000)
+                        .frame(maxWidth: .infinity, minHeight: 300)
                         .listRowInsets(EdgeInsets())
                 }
                 Section("Curadoria") {
@@ -49,6 +48,7 @@ struct PhotoDetailView: View {
                     LabeledContent("Tamanho", value: ByteCountFormatter.string(fromByteCount: Int64(photo.size), countStyle: .file))
                 }
             }
+            .lumoScreen()
             .navigationTitle(photo.baseName)
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $editing) { ManualEditorView(photo: photo) }
@@ -102,6 +102,7 @@ struct ManualEditorView: View {
                     Button("Zerar ajustes", role: .destructive) { controls = EditControls() }
                 }
             }
+            .lumoScreen()
             .navigationTitle("Editor manual")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
