@@ -1,0 +1,113 @@
+name: Lumo iOS
+
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  core-tests:
+    name: Testes do núcleo (LumoCore)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Versões
+        run: xcodebuild -version && swift --version
+      - name: swift test
+        run: swift test --package-path ios/LumoCore
+
+  app-build:
+    name: Compilar app iOS
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Versões
+        run: xcodebuild -version
+      - name: Compilar para o simulador
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/Lumo.xcodeproj -scheme Lumo -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO build | tee build-sim.log | grep -E 'error:|warning: .*Lumo|BUILD' || true
+          grep -q 'BUILD SUCCEEDED' build-sim.log
+      - name: Capturas de tela (simulador, modo demonstração)
+        run: |
+          set -x
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; c=[x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone 16 Pro') and 'Max' not in x['name']]; print(c[0])")
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time 21:41 --batteryState discharged --batteryLevel 82 --cellularBars 4 --wifiBars 3 || true
+          xcrun simctl install "$UDID" build/sim/Build/Products/Debug-iphonesimulator/Lumo.app
+          mkdir -p screenshots
+          shoot() {
+            name=$1; wait=$2; shift 2
+            xcrun simctl terminate "$UDID" com.lumo.app.ios || true
+            xcrun simctl launch "$UDID" com.lumo.app.ios -LumoDemo "$@"
+            sleep "$wait"
+            xcrun simctl io "$UDID" screenshot "screenshots/$name.png"
+          }
+          shoot 1-pronto 10 -LumoNoPhotos
+          shoot 2-ao-vivo 75
+          shoot 3-revisao 10 -LumoSheet review
+          shoot 4-galeria 10 -LumoSheet gallery
+          shoot 5-camera 8 -LumoSheet camera
+          shoot 6-deitado 12 -LumoLandscape
+          shoot 7-visualizador 14 -LumoViewer
+          shoot 8-editor 16 -LumoEditor
+          ls -l screenshots
+      - name: Disponibilizar capturas de tela
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumo-iOS-screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn
+      - name: Compilar para iPhone (sem assinatura)
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/Lumo.xcodeproj -scheme Lumo -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tee build-device.log | grep -E 'error:|BUILD' || true
+          grep -q 'BUILD SUCCEEDED' build-device.log
+      - name: Gerar IPA sem assinatura
+        run: |
+          mkdir -p Payload
+          cp -R build/device/Build/Products/Release-iphoneos/Lumo.app Payload/
+          zip -qry Lumo-iOS-unsigned.ipa Payload
+          ls -lh Lumo-iOS-unsigned.ipa
+      - name: Disponibilizar IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumo-iOS-unsigned
+          path: Lumo-iOS-unsigned.ipa
+          if-no-files-found: error
+      - name: Publicar no release lumo-latest (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view lumo-latest >/dev/null 2>&1 || gh release create lumo-latest --prerelease --title "Lumo · última versão" --notes "Builds automáticos da main: Lumo.apk (Android, assinado com a chave de teste) e Lumo-iOS-unsigned.ipa (instalar com Sideloadly/AltStore)."
+          gh release upload lumo-latest Lumo-iOS-unsigned.ipa --clobber
+      - name: Log de compilação em caso de erro
+        if: failure()
+        run: grep -E 'error:' build-sim.log build-device.log | head -80 || true
+      - name: Publicar capturas na branch ci/ios-screenshots
+        if: github.event_name == 'push'
+        run: |
+          set -e
+          dir=$(mktemp -d)
+          cp screenshots/*.png "$dir/"
+          cd "$dir"
+          git init -q
+          git checkout -q -b ci/ios-screenshots
+          git add -A
+          git -c user.name="github-actions" -c user.email="actions@github.com" commit -q -m "Capturas iOS de ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci/ios-screenshots

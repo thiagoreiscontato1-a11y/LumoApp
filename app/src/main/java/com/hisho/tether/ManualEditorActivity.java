@@ -45,7 +45,7 @@ public class ManualEditorActivity extends Activity{
   AlertDialog.Builder b=new AlertDialog.Builder(this).setTitle((step+1)+"/5 · "+titles[step]).setMessage(notes[step]).setPositiveButton(step==4?"Concluir":"Próximo",(d,n)->{if(step<4)showEditorTour(step+1);}).setNegativeButton("Sair",null);if(step>0)b.setNeutralButton("Voltar",(d,n)->showEditorTour(step-1));b.show();
  }
  int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
- void palette(){darkMode=getSharedPreferences("hisho",0).getBoolean("darkMode",false);if(darkMode){BG=0xff0d1015;CARD=0xff151a21;CARD2=0xff1c222b;LINE=0xff2a313b;TEXT=0xfff1f4f8;MUTED=0xff97a2b1;}else{BG=0xfff5f7fa;CARD=0xffffffff;CARD2=0xfff9fbfd;LINE=0xffe3e8ef;TEXT=0xff101722;MUTED=0xff6f7d91;}BLUE=0xff0b7cff;GREEN=0xff20b46a;WARN=0xffff9f43;}
+ void palette(){darkMode=true;BG=LumoTheme.BG;CARD=LumoTheme.SURFACE;CARD2=LumoTheme.SURFACE_STRONG;LINE=LumoTheme.LINE;TEXT=LumoTheme.TEXT;MUTED=LumoTheme.SECONDARY;BLUE=LumoTheme.BLUE;GREEN=LumoTheme.OK;WARN=LumoTheme.WARN;}
  GradientDrawable shape(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(dp(r));return d;}
  GradientDrawable border(int c,int r){GradientDrawable d=shape(c,r);d.setStroke(dp(1),LINE);return d;}
  TextView text(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);t.setTypeface(Typeface.create(bold?"sans-serif-medium":"sans-serif",0));return t;}
@@ -56,7 +56,7 @@ public class ManualEditorActivity extends Activity{
  void primary(Button b){b.setTextColor(Color.WHITE);b.setBackground(shape(BLUE,11));}
 
  @Override public void onCreate(Bundle state){
-  darkMode=getSharedPreferences("hisho",0).getBoolean("darkMode",false);setTheme(darkMode?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);super.onCreate(state);palette();jobs=new Jobs(this);
+  darkMode=true;setTheme(android.R.style.Theme_Material_NoActionBar);super.onCreate(state);palette();jobs=new Jobs(this);
   focusId=getIntent().getStringExtra("focusId");pasteOnOpen=getIntent().getBooleanExtra("pasteOnOpen",false);String packed=getIntent().getStringExtra("jobIds");if(packed!=null)for(String id:packed.split(","))if(!id.trim().isEmpty()&&!targets.contains(id.trim()))targets.add(id.trim());if(focusId==null)focusId="";if(!focusId.isEmpty()&&!targets.contains(focusId))targets.add(0,focusId);if(focusId.isEmpty()&&!targets.isEmpty())focusId=targets.get(0);
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(CARD);getWindow().getDecorView().setSystemUiVisibility(darkMode?0:(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));
 

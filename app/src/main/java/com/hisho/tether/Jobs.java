@@ -17,6 +17,13 @@ final class Jobs extends SQLiteOpenHelper{
   d.execSQL("CREATE TABLE jobs (id TEXT PRIMARY KEY, file TEXT NOT NULL, name TEXT NOT NULL, settings TEXT NOT NULL, original TEXT, edited TEXT, state TEXT NOT NULL, error TEXT, score INTEGER NOT NULL DEFAULT 0, quality_note TEXT, content_hash TEXT, phash TEXT, file_size INTEGER NOT NULL DEFAULT 0, captured_at INTEGER NOT NULL DEFAULT 0, downloaded_at INTEGER NOT NULL DEFAULT 0, edited_at INTEGER NOT NULL DEFAULT 0, burst_id TEXT, duplicate_of TEXT, semantic_note TEXT, album TEXT NOT NULL DEFAULT 'Sem álbum', raw_original TEXT, source_name TEXT, event_id TEXT NOT NULL DEFAULT '')");
   createFotto(d);createHistory(d);createEvents(d);
  }
+ /** Favoritos ficam numa tabela própria, criada sem mudar a versão do banco. */
+ @Override public void onOpen(SQLiteDatabase d){super.onOpen(d);if(!d.isReadOnly())d.execSQL("CREATE TABLE IF NOT EXISTS favorites (id TEXT PRIMARY KEY)");}
+ synchronized boolean isFavorite(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM favorites WHERE id=?",new String[]{id})){return c.moveToFirst();}catch(Exception e){return false;}}
+ synchronized boolean toggleFavorite(String id){boolean now=!isFavorite(id);if(now)getWritableDatabase().execSQL("INSERT OR IGNORE INTO favorites(id) VALUES(?)",new Object[]{id});else getWritableDatabase().execSQL("DELETE FROM favorites WHERE id=?",new Object[]{id});return now;}
+ synchronized void setFavorite(String id,boolean on){if(on)getWritableDatabase().execSQL("INSERT OR IGNORE INTO favorites(id) VALUES(?)",new Object[]{id});else getWritableDatabase().execSQL("DELETE FROM favorites WHERE id=?",new Object[]{id});}
+ /** id, nome, uri exibida (editada ou original), estado, nota e motivo da curadoria. */
+ synchronized String[] viewerRow(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT id,COALESCE(source_name,name),COALESCE(edited,original),state,score,COALESCE(quality_note,error,'') FROM jobs WHERE id=?",new String[]{id})){if(!c.moveToFirst())return null;return new String[]{c.getString(0),c.getString(1),c.getString(2),c.getString(3),String.valueOf(c.getInt(4)),c.getString(5)};}}
  public void onUpgrade(SQLiteDatabase d,int a,int b){
   if(a<8){d.execSQL("ALTER TABLE jobs ADD COLUMN event_id TEXT NOT NULL DEFAULT ''");createEvents(d);}
   if(a<7){d.execSQL("ALTER TABLE jobs ADD COLUMN album TEXT NOT NULL DEFAULT 'Sem álbum'");d.execSQL("ALTER TABLE jobs ADD COLUMN raw_original TEXT");d.execSQL("ALTER TABLE jobs ADD COLUMN source_name TEXT");}

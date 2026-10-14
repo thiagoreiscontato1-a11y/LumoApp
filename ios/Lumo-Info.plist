@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>O Lumo acessa a câmera fotográfica conectada por USB para receber as fotos durante o evento.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>O Lumo importa fotos da sua biblioteca para editar e entregar.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>O Lumo pode salvar fotos editadas na sua biblioteca.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>O Lumo conecta à câmera pelo Wi-Fi (PTP/IP) para receber as fotos.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+</dict>
+</plist>
