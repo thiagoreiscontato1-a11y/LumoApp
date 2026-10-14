@@ -5,7 +5,7 @@ import UIKit
 /// Estado do app: evento atual, fotos, ajustes, câmera e entrega Fotto.
 @MainActor
 final class AppModel: ObservableObject {
-    static let version = "0.2.0"
+    static let version = "0.2.1"
 
     let library: EventLibrary
     let pipeline: PhotoPipeline

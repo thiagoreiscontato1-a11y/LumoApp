@@ -72,10 +72,21 @@ struct CaptureView: View {
                 }
                 .disabled(model.currentEvent == nil)
                 if !capture.log.isEmpty {
-                    Section("Registro") {
+                    Section {
+                        HStack {
+                            Button {
+                                UIPasteboard.general.string = capture.logText
+                                model.message = "Registro copiado. Cole na conversa para análise."
+                            } label: { Label("Copiar registro", systemImage: "doc.on.doc") }
+                            Spacer()
+                            ShareLink(item: capture.logText) { Label("Enviar", systemImage: "square.and.arrow.up") }
+                        }
+                        .buttonStyle(.borderless)
                         ForEach(Array(capture.log.prefix(60).enumerated()), id: \.offset) { _, line in
                             Text(line).font(.caption.monospaced())
                         }
+                    } header: {
+                        Text("Registro")
                     }
                 }
             }

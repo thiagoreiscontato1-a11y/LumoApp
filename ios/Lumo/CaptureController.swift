@@ -54,6 +54,13 @@ final class CaptureController: NSObject, ObservableObject {
     private var wifi: WiFiPTPTransport?
     private var catalogSeen = Set<String>()
     private var wantsUSB = false
+    /// O iOS terminou de ler o índice do cartão (deviceDidBecomeReady).
+    private var catalogReady = false
+    /// Comandos PTP diretos já falharam uma vez nesta conexão.
+    private var ptpFailures = 0
+    private var progressTimer: Timer?
+    private var sessionOpenedAt: Date?
+    private var slowHintShown = false
 
     override init() {
         super.init()
@@ -121,7 +128,12 @@ final class CaptureController: NSObject, ObservableObject {
             self.activeCamera = device.name ?? "Câmera"
             self.mode = .usb
         }
+        catalogReady = false
+        ptpFailures = 0
+        slowHintShown = false
         note("Abrindo sessão PTP com \(device.name ?? "a câmera")…")
+        let ids = String(device.usbVendorID, radix: 16) + ":" + String(device.usbProductID, radix: 16)
+        note("USB \(ids) · recursos: " + device.capabilities.joined(separator: ", "), status: false)
         device.requestOpenSession()
     }
 
@@ -183,7 +195,9 @@ final class CaptureController: NSObject, ObservableObject {
 
     // MARK: Laço de captura (porta do CaptureService)
 
-    private func runLoop(session: CanonPTPSession, label: String, source: PhotoSource) async {
+    /// Devolve `false` se a abertura (modo remoto + leitura do índice) falhou.
+    @discardableResult
+    private func runLoop(session: CanonPTPSession, label: String, source: PhotoSource) async -> Bool {
         var seen = Set<CanonPTPSession.ObjectRef>()
         var backlog: [CanonPTPSession.ObjectRef] = []
         do {
@@ -205,7 +219,7 @@ final class CaptureController: NSObject, ObservableObject {
         } catch {
             fail("Abertura falhou: \(error.localizedDescription)")
             await session.close()
-            return
+            return false
         }
 
         var transientErrors = 0
@@ -246,6 +260,7 @@ final class CaptureController: NSObject, ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
         }
         await session.close()
+        return true
     }
 
     private func download(_ o: CanonPTPSession.ObjectRef, session: CanonPTPSession, label: String, source: PhotoSource, retro: Bool) async throws -> Bool {
@@ -365,6 +380,7 @@ extension CaptureController: ICDeviceBrowserDelegate {
     }
 
     private func cameraGone(_ message: String) {
+        stopProgress()
         loop?.cancel()
         camera = nil
         catalogQueue.removeAll()
@@ -376,43 +392,95 @@ extension CaptureController: ICDeviceBrowserDelegate {
 
 extension CaptureController: ICCameraDeviceDelegate {
     func device(_ device: ICDevice, didOpenSessionWithError error: Error?) {
-        if let error {
-            ui {
+        ui {
+            if let error {
                 self.camera = nil
                 self.fail("Não foi possível abrir a câmera: \(error.localizedDescription)")
+                return
             }
-        } else {
-            note("Sessão aberta · lendo o cartão…")
+            guard let cam = device as? ICCameraDevice, self.camera === cam else { return }
+            self.note("Sessão aberta · lendo o cartão…")
+            self.sessionOpenedAt = Date()
+            self.startProgress(cam)
+            // Não espera o iOS terminar de catalogar o cartão inteiro (pode demorar muito
+            // com milhares de fotos): tenta os comandos Canon diretos imediatamente.
+            self.startPTP(cam)
         }
     }
 
     func deviceDidBecomeReady(withCompleteContentCatalog device: ICCameraDevice) {
         ui {
-            guard self.camera === device, self.loop == nil else { return }
-            let transport = ICCPTPTransport(camera: device)
-            let label = "usb:\(device.usbVendorID):\(device.usbProductID):\(device.name ?? "")"
-            self.loop = Task { [weak self] in
-                guard let self else { return }
-                let session = CanonPTPSession(transport: transport)
-                // Verifica se o iOS aceita comandos PTP brutos para esta câmera.
-                do {
-                    _ = try await session.jpegObjects()
-                } catch {
-                    self.note("PTP direto indisponível (\(error.localizedDescription)).", status: false)
-                    self.ui { self.startCatalogMode(device) }
-                    self.ui { self.loop = nil }
+            guard self.camera === device else { return }
+            self.catalogReady = true
+            self.stopProgress()
+            self.note("iOS terminou de ler o cartão · \(device.mediaFiles?.count ?? 0) arquivo(s).", status: false)
+            guard self.loop == nil, self.mode != .catalog else { return }
+            if self.ptpFailures >= 2 { self.startCatalogMode(device) } else { self.startPTP(device) }
+        }
+    }
+
+    /// Tenta o caminho principal (comandos Canon diretos). Na segunda falha usa o catálogo.
+    private func startPTP(_ device: ICCameraDevice) {
+        guard loop == nil, camera === device else { return }
+        let transport = ICCPTPTransport(camera: device)
+        transport.trace = { [weak self] line in self?.note(line, status: false) }
+        let label = "usb:\(device.usbVendorID):\(device.usbProductID):\(device.name ?? "")"
+        loop = Task { [weak self] in
+            guard let self else { return }
+            let session = CanonPTPSession(transport: transport)
+            var opened = false
+            do {
+                // Verifica se o iOS aceita comandos PTP diretos para esta câmera.
+                _ = try await session.jpegObjects()
+                opened = await self.runLoop(session: session, label: label, source: .usb)
+            } catch {
+                self.note("PTP direto indisponível (\(error.localizedDescription)).", status: false)
+            }
+            self.ui {
+                self.loop = nil
+                if opened {
+                    if !self.wantsUSB { device.requestCloseSession() }
+                    self.finishLoop()
                     return
                 }
-                await self.runLoop(session: session, label: label, source: .usb)
-                self.ui { if !self.wantsUSB { device.requestCloseSession() } }
-                self.finishLoop()
+                guard self.camera === device, self.wantsUSB else { self.finishLoop(); return }
+                self.ptpFailures += 1
+                if self.catalogReady {
+                    self.set(.connecting)
+                    if self.ptpFailures >= 2 { self.startCatalogMode(device) } else { self.startPTP(device) }
+                } else {
+                    self.set(.connecting)
+                    self.note("Aguardando o iOS terminar de ler o cartão para tentar de novo…")
+                }
             }
         }
+    }
+
+    /// Mostra o progresso da leitura do cartão e dicas se demorar.
+    private func startProgress(_ device: ICCameraDevice) {
+        stopProgress()
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self, self.camera === device, !self.catalogReady else { return }
+            let count = device.mediaFiles?.count ?? 0
+            if self.loop == nil || self.phase == .connecting {
+                self.status = "Sessão aberta · iOS lendo o cartão \(device.contentCatalogPercentCompleted)% (\(count) arquivo(s))"
+            }
+            if !self.slowHintShown, let opened = self.sessionOpenedAt, Date().timeIntervalSince(opened) > 60, self.phase != .connected {
+                self.slowHintShown = true
+                self.note("Está demorando. Confira: Wi-Fi/Bluetooth da câmera DESLIGADOS (a Canon bloqueia o USB com Wi-Fi ativo), desligamento automático desativado, cabo de dados e cartão com poucas fotos. Se continuar, toque em Copiar registro e envie.", status: false)
+            }
+        }
+    }
+
+    private func stopProgress() {
+        progressTimer?.invalidate()
+        progressTimer = nil
     }
 
     func device(_ device: ICDevice, didCloseSessionWithError error: Error?) {
         ui {
             if self.camera === device {
+                self.stopProgress()
                 self.loop?.cancel()
                 self.camera = nil
                 if case .failed = self.phase {} else { self.phase = .idle }
@@ -443,5 +511,11 @@ extension CaptureController: ICCameraDeviceDelegate {
     func cameraDeviceDidRemoveAccessRestriction(_ device: ICDevice) {}
     func cameraDeviceDidEnableAccessRestriction(_ device: ICDevice) {
         note("A câmera bloqueou o acesso (cartão protegido ou modo incompatível).")
+    }
+
+    /// Texto do registro em ordem cronológica, para copiar ou compartilhar.
+    var logText: String {
+        (["Lumo iOS \(AppModel.version) · \(activeCamera) · \(mode?.rawValue ?? "-") · \(phase.label)"] + log.reversed())
+            .joined(separator: "\n")
     }
 }

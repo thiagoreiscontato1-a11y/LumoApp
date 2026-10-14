@@ -3,28 +3,71 @@ import ImageCaptureCore
 import Network
 
 /// Comandos PTP brutos pela sessão USB do ImageCaptureCore (Canon R8/SL2 via cabo).
-/// O ImageCaptureCore cuida da sessão PTP e do número da transação.
+/// Cada comando leva um número de transação próprio (o 0 só vale para OpenSession e algumas
+/// Canon mais antigas não respondem a ele) e tem tempo limite, para nunca travar a captura.
 final class ICCPTPTransport: PTPTransport {
     let camera: ICCameraDevice
+    /// Registro de diagnóstico: primeiros comandos, comandos lentos e falhas.
+    var trace: ((String) -> Void)?
+    private var transaction: UInt32 = 0
+    private var traced = 0
+    private let lock = NSLock()
 
     init(camera: ICCameraDevice) { self.camera = camera }
 
+    static func timeout(for code: UInt16) -> TimeInterval { code == PTPCode.getObject ? 180 : 20 }
+
+    private func nextTransaction() -> UInt32 {
+        lock.lock(); defer { lock.unlock() }
+        transaction &+= 1
+        if transaction == 0 { transaction = 1 }
+        return transaction
+    }
+
+    private func shouldTrace() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        traced += 1
+        return traced <= 20
+    }
+
     func execute(_ code: UInt16, _ params: [UInt32]) async throws -> Data {
-        let command = PTPContainer.command(code, transaction: 0, params: params)
-        return try await withCheckedThrowingContinuation { continuation in
+        let tx = nextTransaction()
+        let command = PTPContainer.command(code, transaction: tx, params: params)
+        let limit = Self.timeout(for: code)
+        let started = Date()
+        let once = ResumeOnce()
+        let opName = String(format: "0x%04X", code)
+        let result: Result<Data, Error> = await withCheckedContinuation { continuation in
+            DispatchQueue.global().asyncAfter(deadline: .now() + limit) {
+                guard once.claim() else { return }
+                continuation.resume(returning: .failure(PTPError.transport("A câmera não respondeu ao comando \(opName) em \(Int(limit)) s.")))
+            }
             camera.requestSendPTPCommand(command, outData: nil) { data, response, error in
+                guard once.claim() else { return }
                 if let error {
-                    continuation.resume(throwing: PTPError.transport("USB/PTP: \(error.localizedDescription)"))
+                    continuation.resume(returning: .failure(PTPError.transport("USB/PTP \(opName): \(error.localizedDescription)")))
                     return
                 }
                 do {
-                    let result = try PTPContainer.responseCode(response)
-                    guard result == PTPCode.ok else { throw PTPError.response(result) }
-                    continuation.resume(returning: data)
+                    let code = try PTPContainer.responseCode(response)
+                    guard code == PTPCode.ok else { throw PTPError.response(code) }
+                    continuation.resume(returning: .success(data))
                 } catch {
-                    continuation.resume(throwing: error)
+                    continuation.resume(returning: .failure(error))
                 }
             }
+        }
+        let elapsed = Date().timeIntervalSince(started)
+        let first = shouldTrace()
+        switch result {
+        case .success(let data):
+            if first || elapsed > 3 {
+                trace?(String(format: "PTP %@ tx %u · OK · %d bytes · %.2f s", opName, tx, data.count, elapsed))
+            }
+            return data
+        case .failure(let error):
+            trace?(String(format: "PTP %@ tx %u · falhou em %.2f s · ", opName, tx, elapsed) + error.localizedDescription)
+            throw error
         }
     }
 }
@@ -199,7 +242,16 @@ final class WiFiPTPTransport: PTPTransport {
     }
 }
 
-/// Garante que a continuação de conexão seja retomada uma única vez.
+/// Garante que uma continuação seja retomada uma única vez.
 private final class ResumeOnce: @unchecked Sendable {
     var done = false
+    private let lock = NSLock()
+
+    /// `true` somente para o primeiro chamador.
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if done { return false }
+        done = true
+        return true
+    }
 }

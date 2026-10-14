@@ -1,4 +1,11 @@
-# Lumo iOS 0.2.0
+# Lumo iOS 0.2.1
+
+**0.2.1 — compatibilidade USB com Canon mais antigas (SL2):** comandos PTP com número de transação próprio
+(antes iam com 0, que a R8 aceita mas outras Canon podem ignorar), tempo limite em todos os comandos, tentativa
+direta logo ao abrir a sessão (sem esperar o iOS catalogar o cartão inteiro), progresso da leitura do cartão,
+segunda tentativa e modo catálogo como último recurso, e botões **Copiar registro / Enviar** na aba Captura.
+Testado em campo: R8 funcionando na 0.2.0; SL2 aguardando teste da 0.2.1.
+
 
 Versão para iPhone/iPad do fluxo do Lumo Android:
 **Evento → Captura → Edição automática → Curadoria → Galeria/Revisão → Entrega Fotto.**
@@ -48,6 +55,14 @@ API Fotto (incluindo paginação) e armazenamento por evento. O mesmo código é
    da câmera, informe o IP e toque em **Conectar**. Autorize LUMO no visor da câmera.
 4. Fotografe. As fotos chegam, são editadas e vão para **Galeria** (aprovadas) ou **Revisão**.
 5. Em **Entrega**, conecte o Fotto, escolha o evento de destino e ative o envio automático.
+
+## Se a câmera não conectar (ex.: SL2)
+
+- Desligue Wi-Fi e Bluetooth da câmera: a Canon bloqueia o USB enquanto o Wi-Fi está ativo.
+- Desative o desligamento automático da câmera.
+- Use um cabo de dados (não só de carga) e, se possível, um cartão com menos fotos no primeiro teste.
+- Na aba Captura, toque em **Copiar registro** e envie o texto: ele mostra o ID USB, os recursos que o iOS
+  expõe e o tempo de cada comando PTP.
 
 ## Limitações conhecidas (precisam de teste no aparelho)
 
