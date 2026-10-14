@@ -270,7 +270,7 @@ public struct URLSessionFottoHTTP: FottoHTTP {
 /// Cliente da API Fotto: lista eventos, cria mídia, envia direto ao S3 e confirma.
 public final class FottoClient {
     public static let base = "https://api.fotto.com.br/api"
-    public static let userAgent = "Lumo/0.2.0 iOS"
+    public static let userAgent = "Lumo/0.4.0 iOS"
 
     public var credential: FottoCredential?
     let http: FottoHTTP

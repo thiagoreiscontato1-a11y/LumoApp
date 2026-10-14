@@ -1,8 +1,14 @@
-# LUMO iOS 0.2.0 (em desenvolvimento)
+# LUMO — Android 0.16.0 e iOS 0.4.0
 
-A versão para iPhone/iPad fica em [`ios/`](ios/README.md): captura Canon por USB (ImageCaptureCore + PTP) e Wi-Fi,
-edição automática/preset/manual, curadoria, Revisão e entrega direta ao Fotto — portados do Android.
-O workflow **Lumo iOS** compila o app em macOS, roda os testes do núcleo e publica um `.ipa` sem assinatura.
+**Downloads:** release [`lumo-latest`](https://github.com/thiagoreiscontato1-a11y/LumoApp/releases/tag/lumo-latest) — `Lumo.apk` (Android) e
+`Lumo-iOS-unsigned.ipa` (iPhone, instalar com Sideloadly/AltStore), gerados automaticamente a cada atualização da `main`.
+
+**Android 0.16.0 — mesma interface do iPhone:** tema sempre escuro, tela ao vivo (última foto em destaque, tira das recentes,
+números Fotos/Revisão/Fotto, botão principal e menu +), visualizador próprio com deslizar, zoom, favoritar, editar, aprovar,
+enviar, compartilhar e excluir; galeria com filtros (favoritas, aprovadas, revisão, não enviadas, enviadas) e favoritos.
+
+**iOS:** veja [`ios/README.md`](ios/README.md). Os workflows **Lumo Android** e **Lumo iOS** testam, compilam e publicam capturas de tela
+do modo demonstração nas branches `ci/android-screenshots` e `ci/ios-screenshots`.
 
 ---
 

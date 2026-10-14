@@ -1,28 +1,35 @@
-# Lumo iOS 0.2.1
-
-**0.2.1 — compatibilidade USB com Canon mais antigas (SL2):** comandos PTP com número de transação próprio
-(antes iam com 0, que a R8 aceita mas outras Canon podem ignorar), tempo limite em todos os comandos, tentativa
-direta logo ao abrir a sessão (sem esperar o iOS catalogar o cartão inteiro), progresso da leitura do cartão,
-segunda tentativa e modo catálogo como último recurso, e botões **Copiar registro / Enviar** na aba Captura.
-Testado em campo: R8 funcionando na 0.2.0; SL2 aguardando teste da 0.2.1.
-
+# Lumo iOS 0.4.0
 
 Versão para iPhone/iPad do fluxo do Lumo Android:
 **Evento → Captura → Edição automática → Curadoria → Galeria/Revisão → Entrega Fotto.**
 
+**Downloads da main:** release [`lumo-latest`](https://github.com/thiagoreiscontato1-a11y/LumoApp/releases/tag/lumo-latest)
+(`Lumo-iOS-unsigned.ipa` e `Lumo.apk`), atualizado a cada merge.
+
+## Interface (0.3.0+)
+
+Tela única **ao vivo**, sempre escura: última foto em destaque com estado e nota, tira das recentes, três números
+(Fotos, Revisão, Fotto) e um botão principal. Eventos, câmera, revisão, galeria, entrega e ajustes abrem como painéis.
+Funciona deitado (iPhone no suporte da câmera), vibra quando chega foto e mostra faixa vermelha se a câmera cair.
+
 ## O que já funciona no código
 
-| Área | iOS 0.2.0 | Origem no Android |
+| Área | iOS | Origem no Android |
 | --- | --- | --- |
-| Eventos locais | Criar/escolher evento; pastas `Eventos/<nome>_<id>/Originais`, `Editadas`, `Sob Revisao` | 0.15.28 |
-| Câmera USB | ImageCaptureCore + comandos PTP Canon (modo remoto, eventos, leitura do cartão a cada 0,8 s, retroativo em segundo plano, retry de `DeviceBusy`) | `Ptp.java`, `CaptureService.java` |
-| Câmera USB (alternativa) | Se o iOS recusar PTP direto, usa o catálogo do ImageCaptureCore e baixa as fotos novas | — |
-| Câmera Wi-Fi | PTP/IP (porta 15740) com handshake e canal de eventos | `WifiPtp.java`, `PtpIpWire.java` |
-| Importação | App Fotos (vários) e app Arquivos / leitor de cartão USB (percorre subpastas, só JPEG) | 0.15.16 |
-| Edição | Automático (com intensidade), preset Lightroom `.xmp` e editor manual — mesmos algoritmos do Android, pixel a pixel | `PhotoEditor.java` |
-| Curadoria | Nitidez, exposição, contraste, clipping, enquadramento, duplicatas exatas (SHA-256) e visuais (dHash); nota 1–10 | `Curator.java`, `SmartCurator.java` (sem a parte semântica) |
-| Entrega Fotto | Login pela página oficial, lista completa de eventos com busca, ID manual, envio direto (criar mídia → PUT assinado), confirmação em lote, encerrar envio | `FottoApi.java`, `FottoSync.java` |
-| Arquivos | As pastas aparecem no app Arquivos em **No meu iPhone › Lumo** | — |
+| Eventos locais | Pastas `Eventos/<nome>_<id>/Originais`, `Editadas`, `Sob Revisao`, `RAW` | 0.15.28 |
+| Câmera USB | ImageCaptureCore + comandos PTP Canon (modo remoto, leitura a cada 0,8 s, retroativo, `DeviceBusy`, tempo limite) | `Ptp.java`, `CaptureService.java` |
+| Câmera USB (alternativa) | Catálogo do ImageCaptureCore quando o iOS recusa PTP direto | — |
+| Câmera Wi-Fi | PTP/IP (porta 15740) | `WifiPtp.java`, `PtpIpWire.java` |
+| Importação | App Fotos e Arquivos/leitor de cartão (subpastas); RAW revelado pelo iOS quando não há JPEG par | 0.15.16, `RawPreview.java` |
+| Edição | Automático, preset `.xmp` (do evento ou por foto) e editor com **prévia ao vivo** e antes/depois; copiar/colar ajustes | `PhotoEditor.java`, `ManualEditorActivity.java` |
+| Curadoria | Técnica + duplicatas + **pessoas (Vision)**: rosto cortado/encoberto, olhos fechados, rosto virado | `Curator.java`, `SmartCurator.java`, `SemanticCurator.java` |
+| Galeria | Filtros (todas, favoritas, aprovadas, revisão, não enviadas, enviadas), **favoritos**, seleção múltipla, visualizador com **deslizar e zoom** | (novo, também no Android 0.16.0) |
+| Modo evento | Tela sempre ligada, alarme de desconexão que toca no silencioso, perfis de trabalho | `EventAlert`, `DisconnectAlert`, `WorkProfiles` |
+| Saúde | Câmera, edição, falhas, revisão, Fotto, última foto, bateria, armazenamento | painel Saúde |
+| Entrega Fotto | Login oficial, lista completa com busca, ID manual, envio direto, confirmação em lote | `FottoApi.java`, `FottoSync.java` |
+| Outros | Manifesto da galeria online, tour inicial, link do painel Fotto | — |
+
+Não portado: licença/modo demonstração de distribuição do Android e o Fotto Web embutido (o envio direto substitui).
 
 ## Compilar e instalar
 
