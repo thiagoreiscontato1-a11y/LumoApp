@@ -20,3 +20,6 @@ shot 5-visualizador 12
 start --ei lumoPage 3
 shot 6-entrega 10
 ls -l screenshots
+echo "===== LOGCAT (erros do app) ====="
+adb logcat -d -b crash | tail -120
+adb logcat -d | grep -E "FATAL|AndroidRuntime|LUMO|hisho" | tail -120
