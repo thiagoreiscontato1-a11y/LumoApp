@@ -264,3 +264,32 @@ final class EventLibraryTests: XCTestCase {
         XCTAssertEqual(reopened.photos(in: event).first?.upload, .confirmed)
     }
 }
+
+final class PhotoRecordCompatibilityTests: XCTestCase {
+    func testDecodesRecordsFromOlderVersions() throws {
+        let old = #"[{"id":"a","eventID":"e","source":"usb","originalName":"IMG.JPG","baseName":"IMG_a","capturedAt":"2026-10-13T20:00:00Z","receivedAt":"2026-10-13T20:00:01Z","size":10,"sha256":"x","perceptualHash":"","stage":"approved","score":8,"reason":"ok","duplicateOf":"","presetName":"","upload":"none","fottoGalleryID":"","fottoMediaID":"","uploadError":""}]"#
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        let list = try d.decode([PhotoRecord].self, from: Data(old.utf8))
+        XCTAssertEqual(list.first?.favorite, false)
+        XCTAssertNil(list.first?.customPreset)
+        XCTAssertEqual(list.first?.stage, .approved)
+    }
+
+    func testRemoveDeletesFilesAndRecords() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lumo-rm-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let lib = EventLibrary(root: root)
+        let event = try lib.createEvent(named: "Teste")
+        var p = PhotoRecord(id: "p1", eventID: event.id, source: .files, originalName: "A.JPG", baseName: "A_p1",
+                            capturedAt: Date(), size: 1, sha256: "s")
+        p.stage = .approved
+        try Data([1]).write(to: lib.originalURL(p, in: event))
+        try Data([2]).write(to: lib.editedURL(p, in: event))
+        try lib.save(p, in: event)
+        try lib.remove(ids: ["p1"], in: event)
+        XCTAssertTrue(lib.photos(in: event).isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: lib.originalURL(p, in: event).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: lib.editedURL(p, in: event).path))
+    }
+}

@@ -228,23 +228,34 @@ final class AppModel: ObservableObject {
 
     // MARK: Edição e revisão
 
-    func reprocess(_ photo: PhotoRecord, manual: EditControls?) async {
+    /// Ajustes de edição para uma foto: os do evento, com o preset próprio da foto se houver.
+    func options(for photo: PhotoRecord) -> EditOptions {
+        var o = settings.editOptions(presets: presets)
+        if let custom = photo.customPreset {
+            o.presetName = custom
+            o.preset = custom.isEmpty ? nil : presets.preset(named: custom)
+        }
+        return o
+    }
+
+    /// Salva ajustes manuais e/ou preset próprio e reedita a partir do original.
+    func reprocess(_ photo: PhotoRecord, manual: EditControls?, customPreset: String?? = nil) async {
         guard let event = currentEvent else { return }
-        var p = photo
+        var p = library.photo(id: photo.id, in: event) ?? photo
         p.manual = manual
+        if let customPreset { p.customPreset = customPreset }
         processing += 1
         defer { processing -= 1 }
-        _ = await pipeline.reprocess(p, event: event, options: settings.editOptions(presets: presets))
+        _ = await pipeline.reprocess(p, event: event, options: options(for: p))
     }
 
     /// Reedita todas as fotos do evento com os ajustes atuais (ex.: depois de trocar o preset).
     func reprocessAll() async {
         guard let event = currentEvent else { return }
-        let options = settings.editOptions(presets: presets)
         processing += 1
         defer { processing -= 1 }
-        for p in library.photos(in: event) where !(p.upload == .uploaded || p.upload == .confirmed) {
-            _ = await pipeline.reprocess(p, event: event, options: options)
+        for p in library.photos(in: event) where !p.isSent {
+            _ = await pipeline.reprocess(p, event: event, options: options(for: p))
         }
         message = "Fotos reeditadas com os ajustes atuais."
     }
@@ -257,15 +268,74 @@ final class AppModel: ObservableObject {
         } catch { message = error.localizedDescription }
     }
 
+    func approve(ids: Set<String>) async {
+        for p in photos where ids.contains(p.id) && p.stage == .review { await approve(p) }
+    }
+
     func sendToReview(_ photo: PhotoRecord) async {
         guard let event = currentEvent else { return }
         do { _ = try await pipeline.sendToReview(photo, event: event) } catch { message = error.localizedDescription }
     }
 
+    func toggleFavorite(_ ids: Set<String>) {
+        guard let event = currentEvent else { return }
+        let targets = photos.filter { ids.contains($0.id) }
+        // Se alguma não é favorita, favorita todas; senão, desfavorita.
+        let value = targets.contains { !$0.favorite }
+        for var p in targets {
+            p.favorite = value
+            try? library.save(p, in: event)
+            apply(p)
+        }
+        Haptics.tap()
+    }
+
+    func delete(_ ids: Set<String>) {
+        guard let event = currentEvent, !ids.isEmpty else { return }
+        do {
+            try library.remove(ids: ids, in: event)
+            reloadPhotos()
+            message = "\(ids.count) foto(s) excluída(s) do evento."
+        } catch {
+            message = "Falha ao excluir: \(error.localizedDescription)"
+        }
+    }
+
+    func editedURLs(_ ids: Set<String>) -> [URL] {
+        recent.filter { ids.contains($0.id) && $0.stage != .failed }.compactMap { displayURL($0) }
+    }
+
+    func originalURLs(_ ids: Set<String>) -> [URL] {
+        guard let event = currentEvent else { return [] }
+        return recent.filter { ids.contains($0.id) }.map { library.originalURL($0, in: event) }
+    }
+
+    // MARK: Copiar/colar ajustes
+
+    struct Adjustments {
+        var manual: EditControls?
+        var customPreset: String?
+    }
+
+    @Published private(set) var clipboard: Adjustments?
+
+    func copyAdjustments(from photo: PhotoRecord) {
+        clipboard = Adjustments(manual: photo.manual, customPreset: photo.customPreset)
+        message = "Ajustes copiados. Selecione fotos na galeria e toque em Colar."
+    }
+
+    func pasteAdjustments(to ids: Set<String>) async {
+        guard let clip = clipboard else { return }
+        for p in photos where ids.contains(p.id) && !p.isSent {
+            await reprocess(p, manual: clip.manual, customPreset: .some(clip.customPreset))
+        }
+        message = "Ajustes colados em \(ids.count) foto(s)."
+    }
+
     func baseControls(for photo: PhotoRecord) -> EditControls {
         guard let event = currentEvent,
               let image = try? ImageBridge.decode(url: library.originalURL(photo, in: event), maxEdge: 720) else { return .zero }
-        return PhotoEditor.baseControls(image.pixels, options: settings.editOptions(presets: presets))
+        return PhotoEditor.baseControls(image.pixels, options: options(for: photo))
     }
 
     // MARK: Presets

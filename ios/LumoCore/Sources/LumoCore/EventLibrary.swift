@@ -66,6 +66,11 @@ public struct PhotoRecord: Codable, Identifiable, Hashable {
     public var fottoGalleryID: String = ""
     public var fottoMediaID: String = ""
     public var uploadError: String = ""
+    public var favorite = false
+    /// Preset escolhido só para esta foto: `nil` usa o do evento, `""` desliga o preset.
+    public var customPreset: String?
+    /// Arquivo RAW original guardado em `RAW` (o JPEG de trabalho fica em Originais).
+    public var rawFileName: String?
 
     public init(id: String, eventID: String, source: PhotoSource, originalName: String, baseName: String,
                 capturedAt: Date, receivedAt: Date = Date(), size: Int, sha256: String) {
@@ -73,6 +78,36 @@ public struct PhotoRecord: Codable, Identifiable, Hashable {
         self.baseName = baseName; self.capturedAt = capturedAt; self.receivedAt = receivedAt
         self.size = size; self.sha256 = sha256
     }
+
+    /// Leitura tolerante: campos adicionados em versões novas têm valor padrão quando ausentes.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        eventID = try c.decode(String.self, forKey: .eventID)
+        source = try c.decode(PhotoSource.self, forKey: .source)
+        originalName = try c.decode(String.self, forKey: .originalName)
+        baseName = try c.decode(String.self, forKey: .baseName)
+        capturedAt = try c.decode(Date.self, forKey: .capturedAt)
+        receivedAt = try c.decodeIfPresent(Date.self, forKey: .receivedAt) ?? capturedAt
+        size = try c.decodeIfPresent(Int.self, forKey: .size) ?? 0
+        sha256 = try c.decodeIfPresent(String.self, forKey: .sha256) ?? ""
+        perceptualHash = try c.decodeIfPresent(String.self, forKey: .perceptualHash) ?? ""
+        stage = try c.decodeIfPresent(PhotoStage.self, forKey: .stage) ?? .received
+        score = try c.decodeIfPresent(Int.self, forKey: .score) ?? 0
+        reason = try c.decodeIfPresent(String.self, forKey: .reason) ?? ""
+        duplicateOf = try c.decodeIfPresent(String.self, forKey: .duplicateOf) ?? ""
+        presetName = try c.decodeIfPresent(String.self, forKey: .presetName) ?? ""
+        manual = try c.decodeIfPresent(EditControls.self, forKey: .manual)
+        upload = try c.decodeIfPresent(UploadStage.self, forKey: .upload) ?? .none
+        fottoGalleryID = try c.decodeIfPresent(String.self, forKey: .fottoGalleryID) ?? ""
+        fottoMediaID = try c.decodeIfPresent(String.self, forKey: .fottoMediaID) ?? ""
+        uploadError = try c.decodeIfPresent(String.self, forKey: .uploadError) ?? ""
+        favorite = try c.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
+        customPreset = try c.decodeIfPresent(String.self, forKey: .customPreset)
+        rawFileName = try c.decodeIfPresent(String.self, forKey: .rawFileName)
+    }
+
+    public var isSent: Bool { upload == .uploaded || upload == .confirmed }
 
     public var originalFileName: String { baseName + ".jpg" }
     public var editedFileName: String { baseName + (stage == .review ? "_REVISAO.jpg" : "_Editada.jpg") }
@@ -86,6 +121,7 @@ public final class EventLibrary: @unchecked Sendable {
     public static let originals = "Originais"
     public static let edited = "Editadas"
     public static let review = "Sob Revisao"
+    public static let raw = "RAW"
 
     public let root: URL
     private let lock = NSLock()
@@ -187,6 +223,24 @@ public final class EventLibrary: @unchecked Sendable {
         var list = loadPhotos(event)
         if let i = list.firstIndex(where: { $0.id == photo.id }) { list[i] = photo } else { list.append(photo) }
         try FileManager.default.createDirectory(at: eventFolder(event), withIntermediateDirectories: true)
+        try encoder.encode(list).write(to: indexURL(event), options: .atomic)
+        cache[event.id] = list
+    }
+
+    /// Remove fotos do índice e apaga seus arquivos (original, RAW e editado).
+    public func remove(ids: Set<String>, in event: LumoEvent) throws {
+        lock.lock(); defer { lock.unlock() }
+        var list = loadPhotos(event)
+        let fm = FileManager.default
+        for p in list where ids.contains(p.id) {
+            try? fm.removeItem(at: folder(event, Self.originals).appendingPathComponent(p.originalFileName))
+            if let raw = p.rawFileName { try? fm.removeItem(at: folder(event, Self.raw).appendingPathComponent(raw)) }
+            for sub in [Self.edited, Self.review] {
+                try? fm.removeItem(at: folder(event, sub).appendingPathComponent(p.baseName + "_Editada.jpg"))
+                try? fm.removeItem(at: folder(event, sub).appendingPathComponent(p.baseName + "_REVISAO.jpg"))
+            }
+        }
+        list.removeAll { ids.contains($0.id) }
         try encoder.encode(list).write(to: indexURL(event), options: .atomic)
         cache[event.id] = list
     }

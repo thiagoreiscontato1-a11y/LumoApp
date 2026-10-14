@@ -51,7 +51,7 @@ struct PhotoDetailView: View {
             .lumoScreen()
             .navigationTitle(photo.baseName)
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $editing) { ManualEditorView(photo: photo) }
+            .fullScreenCover(isPresented: $editing) { LiveEditor(photo: photo) }
         } else {
             ContentUnavailableView("Foto indisponível", systemImage: "photo")
         }
@@ -65,77 +65,6 @@ struct PhotoDetailView: View {
         case .uploaded: return "Enviada · aguardando confirmação"
         case .confirmed: return "Confirmada no Fotto"
         case .failed: return "Falhou"
-        }
-    }
-}
-
-struct ManualEditorView: View {
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    let photo: PhotoRecord
-    @State private var controls = EditControls()
-    @State private var base = EditControls()
-    @State private var saving = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Text("Os valores somam-se ao automático e ao preset (\(model.settings.presetName.isEmpty ? "sem preset" : model.settings.presetName)). Ponto de partida estimado: exposição \(base.exposure, specifier: "%+.2f") EV, temperatura \(base.temperature, specifier: "%+.0f").")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("Luz") {
-                    slider("Exposição", \.exposure, -2...2, step: 0.05, format: "%+.2f EV")
-                    slider("Contraste", \.contrast, -100...100)
-                    slider("Realces", \.highlights, -100...100)
-                    slider("Sombras", \.shadows, -100...100)
-                    slider("Brancos", \.whites, -100...100)
-                    slider("Pretos", \.blacks, -100...100)
-                }
-                Section("Cor") {
-                    slider("Temperatura", \.temperature, -100...100)
-                    slider("Matiz", \.tint, -100...100)
-                    slider("Vibração", \.vibrance, -100...100)
-                    slider("Saturação", \.saturation, -100...100)
-                }
-                Section {
-                    Button("Zerar ajustes", role: .destructive) { controls = EditControls() }
-                }
-            }
-            .lumoScreen()
-            .navigationTitle("Editor manual")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    if saving { ProgressView() } else {
-                        Button("Aplicar") {
-                            saving = true
-                            Task {
-                                await model.reprocess(photo, manual: controls.isNeutral ? nil : controls)
-                                saving = false
-                                dismiss()
-                            }
-                        }
-                    }
-                }
-            }
-            .onAppear {
-                controls = photo.manual ?? EditControls()
-                base = model.baseControls(for: photo)
-            }
-        }
-    }
-
-    func slider(_ title: String, _ key: WritableKeyPath<EditControls, Double>, _ range: ClosedRange<Double>,
-                step: Double = 1, format: String = "%+.0f") -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(String(format: format, controls[keyPath: key])).monospacedDigit().foregroundStyle(.secondary)
-            }
-            Slider(value: Binding(get: { controls[keyPath: key] }, set: { controls[keyPath: key] = $0 }), in: range, step: step)
         }
     }
 }

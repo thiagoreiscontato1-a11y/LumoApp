@@ -25,14 +25,27 @@ struct ContentView: View {
         Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })
     }
 
+    /// Fotos abrem no visualizador em tela cheia; o resto em painéis.
+    private var panelBinding: Binding<LumoSheet?> {
+        Binding(get: { if case .photo = sheet { return nil }; return sheet }, set: { sheet = $0 })
+    }
+
+    private var viewerBinding: Binding<ViewerContext?> {
+        Binding(get: {
+            if case .photo(let id) = sheet { return ViewerContext(ids: model.recent.map(\.id), start: id) }
+            return nil
+        }, set: { if $0 == nil { sheet = nil } })
+    }
+
     var body: some View {
         LiveView(sheet: $sheet)
             .background(Lumo.background.ignoresSafeArea())
-            .sheet(item: $sheet) { sheet in
+            .sheet(item: panelBinding) { sheet in
                 sheetContent(sheet)
                     .presentationDragIndicator(.visible)
                     .presentationBackground(Lumo.background)
             }
+            .fullScreenCover(item: viewerBinding) { ctx in PhotoViewer(ids: ctx.ids, start: ctx.start) }
             .alert("Lumo", isPresented: showingMessage) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -64,11 +77,8 @@ struct ContentView: View {
         case .gallery: GallerySheet()
         case .delivery: DeliveryView()
         case .settings: SettingsView()
-        case .photo(let id):
-            NavigationStack {
-                PhotoDetailView(photoID: id)
-                    .toolbar { ToolbarItem(placement: .topBarTrailing) { DoneButton() } }
-            }
+        case .photo:
+            EmptyView()
         }
     }
 }
