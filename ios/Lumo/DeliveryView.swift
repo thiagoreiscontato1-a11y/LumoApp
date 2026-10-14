@@ -138,10 +138,28 @@ struct DeliveryView: View {
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var importingPreset = false
+    @State private var showTour = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Toggle(isOn: Binding(get: { model.settings.eventMode }, set: { model.setEventMode($0) })) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Modo evento").fontWeight(.semibold)
+                            Text("Tela sempre ligada, retroativo, curadoria e alarme de desconexão").font(.caption).foregroundStyle(Lumo.secondary)
+                        }
+                    }
+                    Toggle("Alarme se a câmera desconectar", isOn: $model.settings.disconnectAlarm)
+                    Button("Testar alarme") { Alerts.playAlarm() }
+                    Picker("Perfil de trabalho", selection: Binding(get: { model.settings.workProfile }, set: { model.applyProfile($0) })) {
+                        ForEach(LumoSettings.profiles, id: \.self) { Text($0).tag($0) }
+                    }
+                } header: {
+                    Text("Evento")
+                } footer: {
+                    Text("O alarme toca três bipes mesmo com o iPhone no silencioso. Perfis ajustam rigor da curadoria e intensidade do automático.")
+                }
                 Section("Edição automática") {
                     Toggle("Automático (exposição, contraste, balanço)", isOn: $model.settings.autoEnabled)
                     if model.settings.autoEnabled {
@@ -193,12 +211,22 @@ struct SettingsView: View {
                 } footer: {
                     Text("Aplica o preset e os ajustes atuais às fotos que ainda não foram enviadas.")
                 }
+                Section("Evento atual") {
+                    if let url = model.manifestURL() {
+                        ShareLink(item: url) { Label("Exportar manifesto da galeria online", systemImage: "doc.text") }
+                    }
+                    Link(destination: URL(string: "https://fotto.alboompro.com")!) {
+                        Label("Abrir painel do Fotto (web)", systemImage: "safari")
+                    }
+                }
                 Section {
+                    Button { showTour = true } label: { Label("Ver o tour do Lumo", systemImage: "questionmark.circle") }
                     LabeledContent("Versão", value: AppModel.version)
                     Text("As pastas Originais, Editadas e Sob Revisao de cada evento aparecem no app Arquivos em “No meu iPhone › Lumo”.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
+            .fullScreenCover(isPresented: $showTour) { TourView() }
             .lumoScreen()
             .navigationTitle("Ajustes")
             .navigationBarTitleDisplayMode(.inline)

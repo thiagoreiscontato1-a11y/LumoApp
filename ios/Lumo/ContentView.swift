@@ -20,6 +20,7 @@ struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var capture: CaptureController
     @State private var sheet: LumoSheet?
+    @State private var showTour = false
 
     private var showingMessage: Binding<Bool> {
         Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })
@@ -46,6 +47,10 @@ struct ContentView: View {
                     .presentationBackground(Lumo.background)
             }
             .fullScreenCover(item: viewerBinding) { ctx in PhotoViewer(ids: ctx.ids, start: ctx.start) }
+            .fullScreenCover(isPresented: $showTour, onDismiss: {
+                model.settings.tourSeen = true
+                if model.events.isEmpty { sheet = .events }
+            }) { TourView() }
             .alert("Lumo", isPresented: showingMessage) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -53,7 +58,7 @@ struct ContentView: View {
             }
             .onChange(of: capture.phase) { old, phase in
                 // Mantém a tela ligada enquanto a câmera estiver conectada.
-                UIApplication.shared.isIdleTimerDisabled = phase.keepsScreenOn
+                UIApplication.shared.isIdleTimerDisabled = model.settings.eventMode || phase.keepsScreenOn
                 if case .failed = phase, old != phase { Haptics.error() }
             }
             .onChange(of: model.photos.count) { old, new in
@@ -63,7 +68,9 @@ struct ContentView: View {
                 if new > old { Haptics.warning() }
             }
             .onAppear {
-                if model.events.isEmpty && !DemoMode.enabled { sheet = .events }
+                UIApplication.shared.isIdleTimerDisabled = model.settings.eventMode
+                if !model.settings.tourSeen && !DemoMode.enabled { showTour = true }
+                else if model.events.isEmpty && !DemoMode.enabled { sheet = .events }
                 if let start = DemoMode.initialSheet { sheet = start }
             }
     }

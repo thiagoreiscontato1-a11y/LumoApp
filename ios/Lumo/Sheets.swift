@@ -172,6 +172,7 @@ struct CameraSheet: View {
                 } footer: {
                     Text("USB: Wi-Fi e Bluetooth da câmera desligados, desligamento automático desativado, cabo de dados.")
                 }
+                HealthSection()
                 Section {
                     HStack {
                         TextField("IP da câmera", text: $model.settings.wifiHost)
@@ -278,6 +279,40 @@ struct ReviewCard: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Saúde do fluxo (equivalente ao painel "Saúde" do Android).
+struct HealthSection: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var capture: CaptureController
+
+    var body: some View {
+        let h = model.health()
+        Section("Saúde do fluxo") {
+            row("Câmera", capture.phase == .connected ? "OK · \(capture.activeCamera)" : capture.phase.short, ok: capture.phase == .connected)
+            row("Edição", model.processing + model.pendingEdit == 0 ? "OK" : "Processando · \(model.processing + model.pendingEdit)", ok: true)
+            row("Falhas de edição", h.failedEdits == 0 ? "Nenhuma" : "\(h.failedEdits)", ok: h.failedEdits == 0)
+            row("Revisão", model.underReview.isEmpty ? "OK" : "\(model.underReview.count) foto(s)", ok: model.underReview.isEmpty)
+            row("Fotto", fotto, ok: model.failedUploads == 0 && model.fottoConnected)
+            row("Última foto", h.lastPhoto, ok: true)
+            row("Bateria", h.battery, ok: true)
+            row("Armazenamento", h.storage, ok: true)
+        }
+    }
+
+    var fotto: String {
+        guard model.fottoConnected else { return "Não conectado" }
+        guard model.currentEvent?.fottoGallery != nil else { return "Sem evento de destino" }
+        return "\(model.confirmedCount) confirmada(s) · \(model.pendingUploads) na fila" + (model.failedUploads > 0 ? " · \(model.failedUploads) falha(s)" : "")
+    }
+
+    private func row(_ title: String, _ value: String, ok: Bool) -> some View {
+        LabeledContent {
+            Text(value).foregroundStyle(ok ? Lumo.secondary : Lumo.warn).multilineTextAlignment(.trailing)
+        } label: {
+            Text(title)
         }
     }
 }

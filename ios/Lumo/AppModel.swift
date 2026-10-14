@@ -20,6 +20,12 @@ final class AppModel: ObservableObject {
         didSet {
             settings.save()
             capture.backfillEnabled = settings.backfill
+        capture.onDisconnect = { [weak self] message in
+            Task { @MainActor in
+                guard let self, self.settings.disconnectAlarm || self.settings.eventMode else { return }
+                Alerts.disconnect(message)
+            }
+        }
         }
     }
     @Published private(set) var presets = PresetStore.load()
@@ -32,6 +38,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var fottoListingWarning = ""
     @Published private(set) var fottoLoading = false
     @Published private(set) var uploading = false
+    @Published private(set) var importing = false
 
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -98,6 +105,70 @@ final class AppModel: ObservableObject {
     var pendingUploads: Int {
         guard let event = currentEvent, let g = event.fottoGallery else { return 0 }
         return library.pendingUploads(in: event, galleryID: g.id).count
+    }
+
+    // MARK: Modo evento e perfis
+
+    func setEventMode(_ on: Bool) {
+        guard requireEventNoticeIfNeeded(on) else { return }
+        settings.eventMode = on
+        if on {
+            settings.backfill = true
+            settings.curation = true
+            settings.disconnectAlarm = true
+            if fottoConnected && currentEvent?.fottoGallery != nil { settings.fottoAuto = true }
+            Alerts.requestNotificationPermission()
+            message = "Modo evento ativo: tela sempre ligada, retroativo, curadoria e alarme de desconexão."
+        }
+        UIApplication.shared.isIdleTimerDisabled = on
+    }
+
+    private func requireEventNoticeIfNeeded(_ on: Bool) -> Bool {
+        if on && currentEvent == nil { message = "Crie ou escolha um evento antes de ativar o modo evento."; return false }
+        return true
+    }
+
+    func applyProfile(_ name: String) {
+        settings.apply(profile: name)
+        message = "Perfil “\(name)” aplicado: rigor e intensidade ajustados para as próximas fotos."
+    }
+
+    // MARK: Saúde do fluxo
+
+    struct Health {
+        var battery: String
+        var storage: String
+        var lastPhoto: String
+        var failedEdits: Int
+    }
+
+    func health() -> Health {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let level = UIDevice.current.batteryLevel
+        let battery = level < 0 ? "—" : "\(Int(level * 100))%" + (UIDevice.current.batteryState == .charging ? " · carregando" : "")
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let free = (try? docs.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage) ?? nil
+        let storage = free.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) + " livres" } ?? "—"
+        let last = latest.map { $0.receivedAt.formatted(.relative(presentation: .named)) } ?? "nenhuma"
+        return Health(battery: battery, storage: storage, lastPhoto: last, failedEdits: photos.filter { $0.stage == .failed }.count)
+    }
+
+    /// Manifesto JSON para a futura galeria online (mesmo propósito do Android).
+    func manifestURL() -> URL? {
+        guard let event = currentEvent else { return nil }
+        let list = library.photos(in: event).map { p -> [String: Any] in
+            ["id": p.id, "album": event.name, "originalName": p.originalName,
+             "capturedAt": Int64(p.capturedAt.timeIntervalSince1970 * 1000), "receivedAt": Int64(p.receivedAt.timeIntervalSince1970 * 1000),
+             "state": p.stage.rawValue, "score": p.score, "favorite": p.favorite, "hasRaw": p.rawFileName != nil,
+             "hasEdited": p.stage == .approved || p.stage == .review, "fotto": p.upload.rawValue]
+        }
+        let root: [String: Any] = ["version": 1, "app": "Lumo iOS \(Self.version)",
+                                   "exportedAt": Int64(Date().timeIntervalSince1970 * 1000),
+                                   "event": ["id": event.id, "name": event.name], "photos": list]
+        guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("lumo-gallery-manifest.json")
+        try? data.write(to: url, options: .atomic)
+        return url
     }
 
     var busy: Bool { capture.isRunning || processing > 0 || uploading }
@@ -178,18 +249,26 @@ final class AppModel: ObservableObject {
     }
 
     /// Arquivos ou pastas (leitor de cartão USB pelo app Arquivos). Percorre subpastas, só JPEG.
+    /// Arquivos ou pastas (leitor de cartão pelo app Arquivos). Percorre subpastas.
+    /// JPEG é importado direto; RAW só quando não há JPEG com o mesmo nome (RAW+JPEG),
+    /// e então é revelado pelo iOS e guardado na pasta RAW do evento.
     func importFiles(_ urls: [URL]) async {
         guard currentEvent != nil else { message = "Crie ou escolha um evento antes de importar."; return }
-        var files: [URL] = []
-        var raw = 0
+        var jpegs: [URL] = []
+        var raws: [URL] = []
         var scoped: [URL] = []
         for url in urls {
             if url.startAccessingSecurityScopedResource() { scoped.append(url) }
-            collectJPEGs(url, into: &files, raw: &raw)
+            collectPhotos(url, jpegs: &jpegs, raws: &raws)
         }
         defer { scoped.forEach { $0.stopAccessingSecurityScopedResource() } }
+        let stems = Set(jpegs.map { $0.deletingPathExtension().path.lowercased() })
+        let rawOnly = raws.filter { !stems.contains($0.deletingPathExtension().path.lowercased()) }
+        let pairedRaw = raws.count - rawOnly.count
         var added = 0, duplicates = 0
-        for file in files.sorted(by: { $0.path < $1.path }) {
+        importing = true
+        defer { importing = false }
+        for file in (jpegs + rawOnly).sorted(by: { $0.path < $1.path }) {
             guard let data = try? Data(contentsOf: file) else { continue }
             let size = data.count
             let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
@@ -201,28 +280,26 @@ final class AppModel: ObservableObject {
             }
         }
         var text = "\(added) foto(s) importada(s)"
+        if !rawOnly.isEmpty { text += " (\(rawOnly.count) RAW revelada(s) pelo iOS)" }
         if duplicates > 0 { text += " · \(duplicates) já existente(s)" }
-        if raw > 0 { text += " · \(raw) RAW ignorado(s) (esta versão edita apenas JPEG)" }
+        if pairedRaw > 0 { text += " · \(pairedRaw) RAW com JPEG par: usado o JPEG" }
         message = text
     }
 
-    private func collectJPEGs(_ url: URL, into files: inout [URL], raw: inout Int) {
+    private func collectPhotos(_ url: URL, jpegs: inout [URL], raws: inout [URL]) {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { return }
-        if !isDir.boolValue {
-            classify(url, &files, &raw)
-            return
+        var found: [URL] = []
+        if isDir.boolValue {
+            guard let walker = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey],
+                                                              options: [.skipsHiddenFiles]) else { return }
+            for case let f as URL in walker { found.append(f) }
+        } else {
+            found = [url]
         }
-        guard let walker = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey],
-                                                          options: [.skipsHiddenFiles]) else { return }
-        for case let f as URL in walker { classify(f, &files, &raw) }
-    }
-
-    private func classify(_ f: URL, _ files: inout [URL], _ raw: inout Int) {
-        switch f.pathExtension.lowercased() {
-        case "jpg", "jpeg": files.append(f)
-        case "cr2", "cr3", "crw", "nef", "arw", "raf", "dng", "orf", "rw2": raw += 1
-        default: break
+        for f in found {
+            let ext = f.pathExtension.lowercased()
+            if ext == "jpg" || ext == "jpeg" { jpegs.append(f) } else if RawFormat.extensions.contains(ext) { raws.append(f) }
         }
     }
 

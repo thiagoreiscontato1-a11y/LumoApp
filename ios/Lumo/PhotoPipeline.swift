@@ -35,6 +35,8 @@ actor PhotoPipeline {
     func ingest(_ incoming: IncomingPhoto, event: LumoEvent, options: EditOptions) throws -> IngestResult {
         let id = EventLibrary.photoID(eventID: event.id, sourceKey: incoming.sourceKey)
         if library.contains(id: id, in: event) { return .duplicate("Foto já recebida · \(incoming.originalName)") }
+        // RAW (CR2/CR3/DNG…): o iOS revela pelo ImageIO; o arquivo RAW fica guardado em `RAW`.
+        let isRaw = RawFormat.isRaw(incoming.originalName)
         let jpeg = try ImageBridge.jpegData(from: incoming.data)
         let sha = PhotoHash.sha256Hex(jpeg)
         if let dup = library.duplicate(sha256: sha, in: event) {
@@ -45,6 +47,13 @@ actor PhotoPipeline {
                                  baseName: EventLibrary.baseName(originalName: incoming.originalName, id: id),
                                  capturedAt: captured, size: jpeg.count, sha256: sha)
         record.presetName = options.presetName
+        if isRaw {
+            let rawName = record.baseName + "." + (incoming.originalName as NSString).pathExtension.uppercased()
+            let rawURL = library.folder(event, EventLibrary.raw).appendingPathComponent(rawName)
+            try FileManager.default.createDirectory(at: rawURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try incoming.data.write(to: rawURL, options: .atomic)
+            record.rawFileName = rawName
+        }
         let originalURL = library.originalURL(record, in: event)
         try FileManager.default.createDirectory(at: originalURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try jpeg.write(to: originalURL, options: .atomic)
@@ -85,12 +94,22 @@ actor PhotoPipeline {
             record.duplicateOf = dup?.id ?? ""
             var score = quality.score - (dup == nil ? 0 : 3)
             score = max(1, min(10, score))
+            // Pessoas: rosto cortado, encoberto, olhos fechados (Vision).
+            var semantic = SemanticCurator.Result()
+            if let cg = try? ImageBridge.cgImage(small) {
+                semantic = SemanticCurator.analyze(cg, sensitivity: options.curationSensitivity)
+            }
+            score = max(1, min(10, score - semantic.penalty))
             var reasons: [String] = []
             if quality.review { reasons.append(quality.reason) }
+            if !semantic.note.isEmpty { reasons.append(semantic.note) }
             if dup != nil { reasons.append("Possível duplicata de outra foto") }
-            let review = options.curation && (quality.review || (dup != nil && options.curationSensitivity > 0))
+            var review = options.curation && (quality.review || semantic.review || (dup != nil && options.curationSensitivity > 0))
+            // Uma aprovação manual vale até o fotógrafo mudar de ideia.
+            if input.stage == .approved && input.reason.hasPrefix("Aprovada manualmente") { review = false }
             record.score = score
-            record.reason = reasons.isEmpty ? "Aprovada · nota \(score)/10" : reasons.joined(separator: " · ")
+            record.reason = !review && input.reason.hasPrefix("Aprovada manualmente") ? input.reason
+                : reasons.isEmpty ? "Aprovada · nota \(score)/10" : reasons.joined(separator: " · ")
             if !options.curation { record.reason += " · Curadoria desligada: nota informativa" }
             record.stage = review ? .review : .approved
             record.presetName = options.presetName
@@ -144,4 +163,10 @@ actor PhotoPipeline {
     }
 
     private func notify(_ record: PhotoRecord) { onChange?(record) }
+}
+
+enum RawFormat {
+    static let extensions: Set<String> = ["cr2", "cr3", "crw", "dng", "nef", "nrw", "arw", "raf", "rw2", "orf", "pef", "srw"]
+
+    static func isRaw(_ name: String) -> Bool { extensions.contains((name as NSString).pathExtension.lowercased()) }
 }

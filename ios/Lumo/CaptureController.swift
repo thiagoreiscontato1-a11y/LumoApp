@@ -208,9 +208,16 @@ final class CaptureController: NSObject, ObservableObject {
     }
 
     private func fail(_ message: String) {
-        set(.failed(message))
+        ui {
+            let wasLive = self.phase == .connected || self.phase == .busy
+            self.phase = .failed(message)
+            if wasLive { self.onDisconnect?(message) }
+        }
         note(message)
     }
+
+    /// Chamado quando uma câmera que estava conectada cai (alarme do modo evento).
+    var onDisconnect: ((String) -> Void)?
 
     // MARK: Laço de captura (porta do CaptureService)
 
@@ -400,6 +407,7 @@ extension CaptureController: ICDeviceBrowserDelegate {
 
     private func cameraGone(_ message: String) {
         stopProgress()
+        if wantsUSB && (phase == .connected || phase == .busy) { onDisconnect?(message) }
         loop?.cancel()
         camera = nil
         catalogQueue.removeAll()
