@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   core-tests:
@@ -90,14 +90,15 @@ jobs:
       - name: Log de compilação em caso de erro
         if: failure()
         run: grep -E 'error:' build-sim.log build-device.log | head -80 || true
-      - name: Capturas reduzidas no log (para revisão remota)
-        if: always()
+      - name: Publicar capturas na branch ci/ios-screenshots
+        if: github.event_name == 'push'
         run: |
-          mkdir -p small
-          for f in screenshots/*.png; do
-            n=$(basename "$f" .png)
-            sips -Z 900 "$f" --out "small/$n.jpg" -s format jpeg -s formatOptions 55 >/dev/null
-            echo "=====BEGIN $n====="
-            base64 -i "small/$n.jpg" | fold -w 4000
-            echo "=====END $n====="
-          done
+          set -e
+          dir=$(mktemp -d)
+          cp screenshots/*.png "$dir/"
+          cd "$dir"
+          git init -q
+          git checkout -q -b ci/ios-screenshots
+          git add -A
+          git -c user.name="github-actions" -c user.email="actions@github.com" commit -q -m "Capturas iOS de ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci/ios-screenshots
