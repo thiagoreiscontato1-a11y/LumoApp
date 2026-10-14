@@ -92,13 +92,13 @@ enum DemoMode {
             }
             // Confete nítido (dá textura para a curadoria).
             if !scene.dark {
-                for _ in 0..<160 {
+                for _ in 0..<750 {
                     let hue = CGFloat(rng.next(0, 1))
-                    UIColor(hue: hue, saturation: 0.55, brightness: 1, alpha: 0.9).setFill()
+                    UIColor(hue: hue, saturation: 0.6, brightness: rng.next(0, 1) > 0.5 ? 1 : 0.35, alpha: 1).setFill()
                     cg.saveGState()
                     cg.translateBy(x: rng.next(0, Double(size.width)), y: rng.next(0, Double(size.height)))
                     cg.rotate(by: rng.next(0, .pi))
-                    cg.fill(CGRect(x: -7, y: -3, width: 14, height: 6))
+                    cg.fill(CGRect(x: -11, y: -4, width: 22, height: 8))
                     cg.restoreGState()
                 }
             }

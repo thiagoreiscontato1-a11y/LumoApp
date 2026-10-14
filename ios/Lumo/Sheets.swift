@@ -316,8 +316,10 @@ struct GallerySheet: View {
                         ForEach(items) { photo in
                             NavigationLink(value: photo.id) {
                                 if let url = model.displayURL(photo) {
-                                    PhotoThumb(url: url)
+                                    Color.clear
                                         .aspectRatio(1, contentMode: .fit)
+                                        .overlay { PhotoThumb(url: url) }
+                                        .clipped()
                                         .overlay(alignment: .topTrailing) { StatusDot(photo: photo).padding(6) }
                                 }
                             }

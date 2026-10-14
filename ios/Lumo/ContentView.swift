@@ -134,6 +134,7 @@ struct TopBar: View {
                             .font(.system(compact ? .headline : .title3, design: .rounded).weight(.bold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                         Image(systemName: "chevron.down")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(Lumo.secondary)
@@ -149,7 +150,7 @@ struct TopBar: View {
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
                 }
-                .padding(.leading, 6).padding(.trailing, 12).padding(.vertical, 6)
+                .padding(.leading, 4).padding(.trailing, 10).padding(.vertical, 5)
                 .background(capture.phase.color.opacity(0.14), in: Capsule())
                 .overlay(Capsule().stroke(capture.phase.color.opacity(0.35), lineWidth: 1))
             }
