@@ -87,6 +87,13 @@ jobs:
           name: Lumo-iOS-unsigned
           path: Lumo-iOS-unsigned.ipa
           if-no-files-found: error
+      - name: Publicar no release lumo-latest (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view lumo-latest >/dev/null 2>&1 || gh release create lumo-latest --prerelease --title "Lumo · última versão" --notes "Builds automáticos da main: Lumo.apk (Android, assinado com a chave de teste) e Lumo-iOS-unsigned.ipa (instalar com Sideloadly/AltStore)."
+          gh release upload lumo-latest Lumo-iOS-unsigned.ipa --clobber
       - name: Log de compilação em caso de erro
         if: failure()
         run: grep -E 'error:' build-sim.log build-device.log | head -80 || true
