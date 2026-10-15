@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// Renderiza a prévia do editor fora da thread principal: a base (automático + preset)
-/// é calculada uma vez; cada movimento de controle aplica só o ajuste manual.
+/// Renderiza a prévia do editor fora da thread principal: a foto é decodificada uma vez e cada
+/// movimento de controle renderiza automático + preset + ajuste manual de uma vez, como o
+/// Lightroom; renderizações antigas são canceladas.
 @MainActor
 final class EditorEngine: ObservableObject {
     @Published private(set) var before: UIImage?
@@ -10,54 +11,50 @@ final class EditorEngine: ObservableObject {
     @Published private(set) var loading = true
     @Published private(set) var suggested = EditControls()
 
-    private var original: PixelImage?
-    private var base: PixelImage?
+    private var source: Develop.Source?
+    private var options = EditOptions()
+    private var manual = EditControls()
     private var renderTask: Task<Void, Never>?
-    private var baseTask: Task<Void, Never>?
+    private var loadTask: Task<Void, Never>?
     static let previewEdge = 1280
 
     func load(url: URL, options: EditOptions, manual: EditControls) {
         loading = true
-        baseTask?.cancel()
-        baseTask = Task {
+        var o = options
+        o.manual = nil
+        self.options = o
+        self.manual = manual
+        loadTask?.cancel()
+        loadTask = Task {
             let decoded = await Task.detached(priority: .userInitiated) { try? ImageBridge.decode(url: url, maxEdge: Self.previewEdge) }.value
             guard let decoded, !Task.isCancelled else { loading = false; return }
-            original = decoded
+            let source = Develop.Source(decoded)
+            self.source = source
             before = Self.image(decoded)
-            suggested = PhotoEditor.baseControls(decoded.downsampled(maxEdge: 480).pixels, options: options)
-            rebase(options: options, manual: manual)
-        }
-    }
-
-    /// Recalcula a base quando o preset muda.
-    func rebase(options: EditOptions, manual: EditControls) {
-        guard let original else { return }
-        loading = true
-        baseTask?.cancel()
-        baseTask = Task {
-            var opts = options
-            opts.manual = nil
-            let result = await Task.detached(priority: .userInitiated) { () -> PixelImage in
-                var img = original
-                PhotoEditor.edit(&img, options: opts)
-                return img
-            }.value
-            guard !Task.isCancelled else { return }
-            base = result
+            suggested = PhotoEditor.autoValues(source, options: self.options) + PhotoEditor.presetControls(self.options.preset)
             loading = false
-            render(manual)
+            render(self.manual)
         }
     }
 
-    /// Aplica os controles manuais sobre a base; renderizações antigas são canceladas.
+    /// Troca o preset (ou as opções do evento) e renderiza de novo.
+    func rebase(options: EditOptions, manual: EditControls) {
+        var o = options
+        o.manual = nil
+        self.options = o
+        render(manual)
+    }
+
+    /// Renderiza a prévia com o ajuste manual atual.
     func render(_ manual: EditControls) {
-        guard let base else { return }
+        self.manual = manual
+        guard let source else { return }
+        var o = options
+        o.manual = manual.isNeutral ? nil : manual
         renderTask?.cancel()
         renderTask = Task {
             let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                var px = base
-                PhotoEditor.applyManual(&px.pixels, manual)
-                return Self.image(px)
+                Self.image(PhotoEditor.render(source, options: o))
             }.value
             guard !Task.isCancelled, let image else { return }
             rendered = image
