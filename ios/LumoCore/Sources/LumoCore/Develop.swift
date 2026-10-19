@@ -3,9 +3,11 @@ import Dispatch
 
 /// Motor de revelação do Lumo. Modela o pipeline do Lightroom/Camera Raw (Process Version 2012+)
 /// aplicado a JPEG, na mesma ordem do Lightroom:
-/// calibração → balanço de branco → exposição → dehaze → tons locais (realces, sombras, claridade,
-/// textura) → curva de tons (contraste, brancos, pretos) → curva paramétrica e de pontos →
-/// vibração/saturação → HSL ou mistura P&B → color grading → nitidez → vinheta → granulação.
+/// balanço de branco → exposição → dehaze → tons locais (realces, sombras, claridade, textura) e
+/// brancos, com recuperação do que estourou → curva de tons (contraste, pretos) → curva paramétrica
+/// e de pontos → vibração/saturação → calibração e HSL (em HSV no ProPhoto) ou mistura P&B →
+/// color grading → nitidez → vinheta → granulação. Constantes ajustadas comparando com
+/// exportações reais do Lightroom (foto original + .xmp + resultado do Lightroom).
 /// Ajustes zerados devolvem a foto idêntica. Porta linha a linha de `Develop.java` (Android):
 /// a mesma foto com o mesmo preset sai igual nas duas plataformas.
 public enum Develop {
@@ -210,14 +212,6 @@ public enum Develop {
         if mn < 0 { t = min(t, y / (y - mn)) }
         r = clamp01(y + (r - y) * t); g = clamp01(y + (g - y) * t); b = clamp01(y + (b - y) * t)
     }
-    /// Gira a cor em torno do eixo neutro (sentido vermelho → amarelo → verde).
-    @inline(__always) static func rotate(_ r: inout Double, _ g: inout Double, _ b: inout Double, _ degrees: Double) {
-        let mean = (r + g + b) / 3, cr = r - mean, cg = g - mean, cb = b - mean
-        let a = degrees * 0.017453292519943295, ca = cos(a), sa = sin(a) / 3.0.squareRoot()
-        r = mean + cr * ca + (cb - cg) * sa
-        g = mean + cg * ca + (cr - cb) * sa
-        b = mean + cb * ca + (cg - cr) * sa
-    }
     /// Faixa HSL de uma matiz e peso da faixa seguinte (cada cor tem um platô em volta do centro).
     @inline(__always) static func band(_ h: Double) -> Int {
         for k in 0..<7 where h < centers[k + 1] { return k }
@@ -228,33 +222,39 @@ public enum Develop {
         return smooth(0.2, 0.8, (h - c0) / (c1 - c0))
     }
 
-    /// Matriz de calibração: gira e satura os primários e mantém o branco neutro.
-    static func calibration(_ s: Settings) -> [Double]? {
-        if s.redHue == 0 && s.redSat == 0 && s.greenHue == 0 && s.greenSat == 0 && s.blueHue == 0 && s.blueSat == 0 { return nil }
-        let hues = [s.redHue, s.greenHue, s.blueHue], sats = [s.redSat, s.greenSat, s.blueSat]
-        var m = [Double](repeating: 0, count: 9)
-        for j in 0..<3 {
-            var r = j == 0 ? 1.0 : 0, g = j == 1 ? 1.0 : 0, b = j == 2 ? 1.0 : 0
-            rotate(&r, &g, &b, hues[j] * 0.3)
-            let f = max(0, 1 + sats[j] / 100 * 0.75), mean = 1 / 3.0, c = [r, g, b]
-            for i in 0..<3 { m[i * 3 + j] = mean + (c[i] - mean) * f }
-        }
-        for i in 0..<3 {
-            let sum = m[i * 3] + m[i * 3 + 1] + m[i * 3 + 2]
-            for j in 0..<3 { m[i * 3 + j] /= sum }
-        }
-        return m
+    /// sRGB linear ↔ ProPhoto linear (D50, linhas normalizadas para o branco continuar branco).
+    /// O Lightroom mede as faixas de HSL e a calibração nesse espaço: nele a pele cai em Laranja
+    /// (não em Vermelho) e um amarelo-ocre fica perto do centro do Amarelo.
+    static let toPP: [Double] = [0.5293, 0.3301, 0.1406, 0.098390, 0.873413, 0.028197, 0.0169, 0.1177, 0.8654]
+    static let fromPP: [Double] = invert(toPP)
+    static func invert(_ m: [Double]) -> [Double] {
+        let a = m[0], b = m[1], c = m[2], d = m[3], e = m[4], f = m[5], g = m[6], h = m[7], i = m[8]
+        let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+        return [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det, (f * g - d * i) / det, (a * i - c * g) / det,
+                (c * d - a * f) / det, (d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det]
+    }
+    /// Gama 1.8 do ProPhoto, por tabela.
+    static let ppEncodeTable: [Double] = (0...tableSize).map { pow(Double($0) / Double(tableSize), 1 / 1.8) }
+    static let ppDecodeTable: [Double] = (0...tableSize).map { pow(Double($0) / Double(tableSize), 1.8) }
+    @inline(__always) static func ppDecode(_ v: Double) -> Double { v > 1 ? pow(v, 1.8) : table(ppDecodeTable, v) }
+    /// HSV → RGB.
+    @inline(__always) static func hsv(_ h: Double, _ s: Double, _ v: Double) -> (Double, Double, Double) {
+        let k = h / 60, ch = v * s, x = ch * (1 - abs(k.truncatingRemainder(dividingBy: 2) - 1)), m = v - ch, i = min(5, Int(k))
+        let r = i == 0 || i == 5 ? ch : i == 1 || i == 4 ? x : 0
+        let g = i == 1 || i == 2 ? ch : i == 0 || i == 3 ? x : 0
+        let b = i == 3 || i == 4 ? ch : i == 2 || i == 5 ? x : 0
+        return (r + m, g + m, b + m)
     }
 
-    /// Curva de tons global (contraste, brancos, pretos) sobre a luminância em sRGB.
+    /// Curva de tons global (contraste e pretos) sobre a luminância em sRGB. Os brancos atuam antes,
+    /// em luz linear, junto da recuperação de realces.
     static func toneTable(_ s: Settings) -> [Double]? {
-        if s.contrast == 0 && s.whites == 0 && s.blacks == 0 { return nil }
-        let c = s.contrast / 100, w = s.whites / 100, k = s.blacks / 100, g = c >= 0 ? 1 + 0.8 * c : 1 / (1 - 0.8 * c), p = 0.5
+        if s.contrast == 0 && s.blacks == 0 { return nil }
+        let c = s.contrast / 100, k = s.blacks / 100, g = c >= 0 ? 1 + 0.8 * c : 1 / (1 - 0.8 * c), p = 0.5
         var t = [Double](repeating: 0, count: 1025)
         for i in 0...1024 {
             var l = Double(i) / 1024
             if c != 0 { l = l < p ? p * pow(l / p, g) : 1 - (1 - p) * pow((1 - l) / (1 - p), g) }
-            if w != 0 { l = l * (1 + 0.25 * w * l * l) }
             if k != 0 { var u = 1 - l; u = u * (1 - (k > 0 ? 0.18 : 0.30) * k * u * u); l = 1 - u }
             t[i] = clamp01(l)
         }
@@ -528,19 +528,22 @@ public enum Develop {
     /// Constantes de uma renderização e o pipeline por pixel.
     final class Plan {
         let src: Source, s: Settings, w: Int
-        let cal: [Double]?, tone: [Double]?, curves: [[Double]]?
+        let tone: [Double]?, curves: [[Double]]?, calHue: [Double], calSat: [Double]
         let tS: (Double, Double, Double), tM: (Double, Double, Double), tH: (Double, Double, Double), tG: (Double, Double, Double), tShadow: (Double, Double, Double)
-        let gr: Double, gg: Double, gb: Double, expo: Double, knee = 0.6, rollPower: Double
-        let dehaze: Double, sh: Double, hl: Double, clarity: Double, texture: Double, sat: Double, vib: Double
+        let gr: Double, gg: Double, gb: Double, expo: Double, knee = 0.6, top: Double, rollPower: Double
+        let dehaze: Double, sh: Double, hl: Double, whites: Double, clarity: Double, texture: Double, sat: Double, vib: Double
         let mid: Double, width: Double, amount: Double, limitValue: Double, mask: Double
-        let local: Bool, tonal: Bool, hsl: Bool, mixing: Bool, grade: Bool, color: Bool, sharpen: Bool, identity: Bool
+        let local: Bool, tonal: Bool, hsl: Bool, calib: Bool, mixing: Bool, grade: Bool, color: Bool, sharpen: Bool, identity: Bool
         let logY: [Float]?, toneF: Field?, clarityF: Field?, textureF: Field?, hazeF: Field?
         let fx: Effects
         let pixels: [UInt32]
 
         init(_ src: Source, _ s: Settings) {
             self.src = src; self.s = s; w = src.width; pixels = src.image.pixels
-            cal = calibration(s)
+            // Calibração: gira e satura as cores em volta de cada primário (faixas largas de 120°).
+            calHue = [s.redHue * 0.4, s.greenHue * 0.4, s.blueHue * 0.4]
+            calSat = [s.redSat / 100, s.greenSat / 100, s.blueSat / 100]
+            calib = s.redHue != 0 || s.redSat != 0 || s.greenHue != 0 || s.greenSat != 0 || s.blueHue != 0 || s.blueSat != 0
             // Temperatura/matiz incrementais (JPEG): ganhos por canal que preservam o brilho.
             let t = s.temperature / 100, ti = s.tint / 100, e = pow(2, s.exposure)
             var r = e, g = e, b = e
@@ -548,11 +551,14 @@ public enum Develop {
                 let r0 = pow(2, 0.5 * t + 0.12 * ti), g0 = pow(2, 0.04 * t - 0.42 * ti), b0 = pow(2, -0.76 * t + 0.12 * ti), norm = luma(r0, g0, b0)
                 r = r0 * e / norm; g = g0 * e / norm; b = b0 * e / norm
             }
-            expo = e; gr = r; gg = g; gb = b; rollPower = e > 1 ? (e - 0.6) / (1 - 0.6) : 1
-            dehaze = s.dehaze / 100; sh = s.shadows / 100; hl = s.highlights / 100; clarity = s.clarity / 100; texture = s.texture / 100
+            dehaze = s.dehaze / 100; sh = s.shadows / 100; hl = s.highlights / 100; whites = s.whites / 100
+            clarity = s.clarity / 100; texture = s.texture / 100
+            // Como no Lightroom, o que a exposição estourou volta comprimido para dentro do branco
+            // (brancos negativos baixam esse teto), sem virar cinza.
+            expo = e; gr = r; gg = g; gb = b; top = e * exp2v(whites < 0 ? whites * 0.62 : 0); rollPower = top > 1 ? (top - 0.6) / (1 - 0.6) : 1
             local = sh != 0 || hl != 0 || clarity != 0 || texture != 0
             tone = toneTable(s); curves = curveTables(s)
-            tonal = rollPower > 1 || local || tone != nil
+            tonal = rollPower > 1 || local || whites != 0 || tone != nil
             sat = s.saturation / 100; vib = s.vibrance / 100
             var anyHsl = false, anyMix = false
             for i in 0..<8 {
@@ -566,10 +572,10 @@ public enum Develop {
             tH = tint(s.highlightHue, s.highlightSat / 100 * 0.3); tG = tint(s.globalHue, s.globalSat / 100 * 0.3)
             mid = 0.5 - 0.3 * s.balance / 100; width = 0.1 + 0.6 * s.blending / 100
             tShadow = tint(s.shadowTint > 0 ? 300 : 120, abs(s.shadowTint) / 100 * 0.1)
-            color = sat != 0 || vib != 0 || hsl || s.grayscale || grade
+            color = sat != 0 || vib != 0 || hsl || calib || s.grayscale || grade
             sharpen = s.sharpness > 0; amount = s.sharpness / 100 * 1.2; limitValue = 0.03 + 0.3 * s.sharpenDetail / 100; mask = s.sharpenMasking / 100 * 0.05
             fx = Effects(s, src.width, src.height)
-            identity = cal == nil && gr == 1 && gg == 1 && gb == 1 && dehaze == 0 && !tonal && curves == nil && !color && !sharpen && !fx.active
+            identity = !calib && gr == 1 && gg == 1 && gb == 1 && dehaze == 0 && !tonal && curves == nil && !color && !sharpen && !fx.active
             logY = local && !identity ? src.logY() : nil
             toneF = (sh != 0 || hl != 0) && !identity ? src.field(Source.tone) : nil
             clarityF = clarity != 0 && !identity ? src.field(Source.clarity) : nil
@@ -590,11 +596,7 @@ public enum Develop {
 
         @inline(__always) func pixel(_ v: UInt32, _ i: Int, _ x: Int, _ y: Int) -> UInt32 {
             var r = lin[Int((v >> 16) & 255)], g = lin[Int((v >> 8) & 255)], b = lin[Int(v & 255)]
-            // Perfil (calibração), balanço de branco e exposição em luz linear.
-            if let cal {
-                let rr = cal[0] * r + cal[1] * g + cal[2] * b, g2 = cal[3] * r + cal[4] * g + cal[5] * b, b2 = cal[6] * r + cal[7] * g + cal[8] * b
-                r = max(0, rr); g = max(0, g2); b = max(0, b2)
-            }
+            // Balanço de branco e exposição em luz linear.
             r *= gr; g *= gg; b *= gb
             // Dehaze: modelo de névoa atmosférica com canal escuro borrado.
             if dehaze > 0, let hazeF {
@@ -605,24 +607,25 @@ public enum Develop {
                 r += (0.85 - r) * k; g += (0.85 - g) * k; b += (0.85 - b) * k
             }
             if tonal {
-                let lum = luma(r, g, b)
-                var yt = lum
-                // Exposição positiva comprime os realces suavemente em vez de estourar.
-                if rollPower > 1 && yt > knee {
-                    let q = (yt - knee) / (expo - knee)
-                    yt = q >= 1 ? 1 : knee + (1 - knee) * (1 - pow(1 - q, rollPower))
-                }
+                let lum = luma(r, g, b), lp = encode(min(1, lum))
+                var yt = lum, ev = 0.0
                 if local, let logY {
-                    let ly = log2v(max(yt, 1e-6)), l0 = Double(logY[i]), lp = encode(min(1, yt))
-                    var ev = 0.0
+                    let ly = log2v(max(yt, 1e-6)), l0 = Double(logY[i])
                     if let toneF {
                         let base = ly - soft(l0 - toneF.at(x, y, l0), 1), bl = encode(min(1, exp2v(base)))
-                        if sh != 0 { ev += sh * (sh > 0 ? 1.35 : 1) * (1 - smooth(0.2, 0.7, bl)) * (0.55 + 0.45 * smooth(0, 0.15, bl)) }
-                        if hl != 0 { ev += hl * (hl < 0 ? 1.25 : 0.9) * smooth(0.4, 0.9, bl) }
+                        if sh != 0 { ev += sh * (sh > 0 ? 1.35 : 1) * (1 - smooth(0.13, 0.45, bl)) * (0.55 + 0.45 * smooth(0, 0.15, bl)) }
+                        // Realces poupam o que já está quase branco: a recuperação fica com a compressão abaixo.
+                        if hl != 0 { ev += hl * (hl < 0 ? 0.75 : 0.9) * smooth(0.4, 0.9, bl) * (1 - smooth(0.85, 1, lp)) }
                     }
                     if let clarityF { ev += clarity * 0.65 * soft(l0 - clarityF.at(x, y, l0), 1.5) * 4 * lp * (1 - lp) }
                     if let textureF { ev += texture * 0.6 * soft(l0 - textureF.at(x, y, l0), 1) * (1 - smooth(0.85, 1, lp)) }
-                    if ev != 0 { yt *= exp2v(ev) }
+                }
+                if whites != 0 { ev += whites * 0.62 * smooth(0.3, 1, lp) }
+                if ev != 0 { yt *= exp2v(ev) }
+                // O que passou do branco é comprimido suavemente em vez de estourar.
+                if rollPower > 1 && yt > knee {
+                    let q = (yt - knee) / (top - knee)
+                    yt = q >= 1 ? 1 : knee + (1 - knee) * (1 - pow(1 - q, rollPower))
                 }
                 if let tone { yt = decode(table(tone, encode(min(1, yt)))) }
                 if lum > 1e-9 { let k = yt / lum; r *= k; g *= k; b *= k } else { r = yt; g = yt; b = yt }
@@ -638,7 +641,7 @@ public enum Develop {
                     var f = 1 + sat
                     if vib > 0 {
                         let hh = hue(R, G, B, mx, mn), z = (hh - 25) / 20, skin = exp(-z * z)
-                        f *= 1 + vib * 0.9 * (1 - sv) * (1 - sv).squareRoot() * (1 - 0.6 * skin)
+                        f *= 1 + vib * 0.6 * (1 - sv).squareRoot() * (1 - 0.6 * skin)
                     } else if vib < 0 {
                         f *= 1 + vib * 0.8 * (0.3 + 0.7 * sv)
                     }
@@ -655,20 +658,40 @@ public enum Develop {
                     }
                     let v = clamp01(yg * exp2v(m * 0.8))
                     R = v; G = v; B = v
-                } else if hsl && chroma > 1e-6 {
-                    let hh = hue(R, G, B, mx, mn), k = band(hh), k2 = (k + 1) % 8, q = bandMix(hh, k)
-                    let dh = (s.hue[k] * (1 - q) + s.hue[k2] * q) * 0.3, ds = (s.sat[k] * (1 - q) + s.sat[k2] * q) / 100
-                    let dl = (s.lum[k] * (1 - q) + s.lum[k2] * q) / 100
-                    if dh != 0 { rotate(&R, &G, &B, dh) }
-                    if ds != 0 {
-                        let mean = (R + G + B) / 3, f = max(0, 1 + ds)
-                        R = mean + (R - mean) * f; G = mean + (G - mean) * f; B = mean + (B - mean) * f
+                } else if (hsl || calib) && chroma > 1e-6 {
+                    // Calibração e HSL em HSV no ProPhoto (gama 1.8), como o Lightroom: mudar a matiz não
+                    // preserva a luminância (um amarelo puxado para laranja escurece).
+                    let lr = decode(R), lg = decode(G), lb = decode(B), m = toPP
+                    let pr = table(ppEncodeTable, m[0] * lr + m[1] * lg + m[2] * lb)
+                    let pg = table(ppEncodeTable, m[3] * lr + m[4] * lg + m[5] * lb)
+                    let pb = table(ppEncodeTable, m[6] * lr + m[7] * lg + m[8] * lb)
+                    let pmax = max(pr, max(pg, pb)), pmin = min(pr, min(pg, pb))
+                    if pmax - pmin > 1e-6 {
+                        var hh = hue(pr, pg, pb, pmax, pmin), sv = (pmax - pmin) / pmax, val = pmax
+                        if calib {
+                            var ch = 0.0, cs = 0.0
+                            for j in 0..<3 {
+                                let d = abs((hh - 120 * Double(j) + 540).truncatingRemainder(dividingBy: 360) - 180), wgt = smooth(0, 1, 1 - d / 120)
+                                ch += wgt * calHue[j]; cs += wgt * calSat[j]
+                            }
+                            hh = ((hh + ch).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360)
+                            sv = clamp01(sv * max(0, 1 + cs))
+                        }
+                        if hsl {
+                            let k = band(hh), k2 = (k + 1) % 8, q = bandMix(hh, k)
+                            let dh = (s.hue[k] * (1 - q) + s.hue[k2] * q) * 0.43, dl = (s.lum[k] * (1 - q) + s.lum[k2] * q) / 100
+                            var ds = (s.sat[k] * (1 - q) + s.sat[k2] * q) / 100
+                            // Saturação −100 ainda zera a cor; valores pequenos atuam com metade da força.
+                            ds *= 0.5 + 0.5 * abs(ds)
+                            val *= exp2v(dl * 0.3 * smooth(0, 0.35, sv))
+                            hh = ((hh + dh).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360)
+                            sv = clamp01(sv * max(0, 1 + ds))
+                        }
+                        let c = hsv(hh, sv, val), a = ppDecode(c.0), b1 = ppDecode(c.1), b2 = ppDecode(c.2), n = fromPP
+                        var lr2 = n[0] * a + n[1] * b1 + n[2] * b2, lg2 = n[3] * a + n[4] * b1 + n[5] * b2, lb2 = n[6] * a + n[7] * b1 + n[8] * b2
+                        fit(&lr2, &lg2, &lb2, clamp01(luma(lr2, lg2, lb2)))
+                        R = encode(lr2); G = encode(lg2); B = encode(lb2)
                     }
-                    let fix = yg - luma(R, G, B)
-                    R += fix; G += fix; B += fix
-                    var target = yg
-                    if dl != 0 { let f = exp2v(dl * 0.6 * smooth(0, 0.35, chroma)); R *= f; G *= f; B *= f; target = yg * f }
-                    fit(&R, &G, &B, target)
                 }
                 if grade {
                     let l = luma(R, G, B), ws = 1 - smooth(mid - width, mid, l), wh = smooth(mid, mid + width, l), wm = 1 - ws - wh

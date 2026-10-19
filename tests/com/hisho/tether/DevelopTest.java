@@ -62,9 +62,9 @@ public class DevelopTest{
   int haze=one(0xffb0b4b8,preset("Dehaze",80));check(g(haze)<0xb4,"dehaze");
 
   // Vibração/saturação.
-  int muted=rgb(150,120,110);check(chroma(one(muted,preset("Saturation",-100)))<=1,"saturação -100 vira cinza");
-  check(chroma(one(muted,preset("Saturation",60)))>chroma(muted),"saturação +");
-  check(chroma(one(muted,preset("Vibrance",80)))>chroma(muted),"vibração +");
+  int dull=rgb(150,120,110);check(chroma(one(dull,preset("Saturation",-100)))<=1,"saturação -100 vira cinza");
+  check(chroma(one(dull,preset("Saturation",60)))>chroma(dull),"saturação +");
+  check(chroma(one(dull,preset("Vibrance",80)))>chroma(dull),"vibração +");
 
   // HSL: azul sem saturação, vermelho puxado para laranja, luminância do azul.
   int blue=rgb(40,80,200);check(chroma(one(blue,preset("SaturationAdjustmentBlue",-100)))<8,"HSL saturação azul");
@@ -84,7 +84,15 @@ public class DevelopTest{
   // Calibração: saturação do azul muda as cores, branco continua neutro.
   check(one(0xffffffff,preset("BlueSaturation",100,"RedHue",40))==0xffffffff,"calibração mantém branco");
   check(one(0xff808080,preset("BlueSaturation",100,"RedHue",40,"GreenSaturation",-50))==0xff808080,"calibração mantém cinza");
-  check(chroma(one(rgb(200,120,60),preset("BlueSaturation",100)))>chroma(rgb(200,120,60)),"calibração azul +");
+  int muted=rgb(90,110,160);check(chroma(one(muted,preset("BlueSaturation",100)))>chroma(muted)+10,"calibração azul +");
+  check(one(rgb(200,120,60),preset("BlueSaturation",-100))==one(rgb(200,120,60),new Develop.Settings()),"calibração azul não afeta laranja");
+  int leaf=rgb(60,160,60),teal=one(leaf,preset("GreenHue",100));check(b(teal)>b(leaf)+30,"calibração verde gira para o ciano");
+  // Preset real (calibração forte + HSL): pele e rosa não podem virar laranja.
+  Develop.Settings real=preset("RedHue",54,"RedSaturation",47,"GreenHue",53,"BlueHue",-61,"BlueSaturation",-70,"HueAdjustmentRed",-53,"HueAdjustmentOrange",13,"HueAdjustmentYellow",-63,"HueAdjustmentAqua",70);
+  int pink=one(rgb(251,112,152),real);check(b(pink)>g(pink)+20,"rosa continua rosa "+Integer.toHexString(pink));
+  int face=one(rgb(205,134,122),real);check(b(face)>70&&r(face)-b(face)<120,"pele não amarela "+Integer.toHexString(face));
+  // Exposição + realces/brancos negativos: a camisa branca continua branca, não cinza.
+  int shirt=one(rgb(235,225,249),preset("Exposure2012",.52,"Highlights2012",-100,"Whites2012",-25));check(g(shirt)>235,"branco recuperado "+Integer.toHexString(shirt));
 
   // Curvas: fade (preto em 30) e curva vermelha.
   int faded=one(0xff000000,preset("ToneCurvePV2012.0",0,"ToneCurvePV2012.1",30,"ToneCurvePV2012.2",255,"ToneCurvePV2012.3",255));check(Math.abs(g(faded)-30)<=1,"curva fade "+g(faded));

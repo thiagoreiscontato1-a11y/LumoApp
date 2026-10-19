@@ -137,6 +137,21 @@ final class EditorTests: XCTestCase {
         XCTAssertEqual(Double(faded & 255), 30, accuracy: 1)
     }
 
+    /// Calibração forte + HSL (preset real): pele e rosa não podem virar laranja, e exposição com
+    /// realces/brancos negativos mantém a camisa branca branca (como no Lightroom).
+    func testStrongCalibrationKeepsSkinAndWhites() {
+        let real: [String: Double] = ["RedHue": 54, "RedSaturation": 47, "GreenHue": 53, "BlueHue": -61, "BlueSaturation": -70,
+                                      "HueAdjustmentRed": -53, "HueAdjustmentOrange": 13, "HueAdjustmentYellow": -63, "HueAdjustmentAqua": 70]
+        let pink = one(packRGB(251 / 255, 112 / 255, 152 / 255), real)
+        XCTAssertGreaterThan(Int(pink & 255), Int((pink >> 8) & 255) + 20)
+        let face = one(packRGB(205 / 255, 134 / 255, 122 / 255), real)
+        XCTAssertGreaterThan(Int(face & 255), 70)
+        let leaf = packRGB(60 / 255, 160 / 255, 60 / 255), teal = one(leaf, ["GreenHue": 100])
+        XCTAssertGreaterThan(Int(teal & 255), Int(leaf & 255) + 30)
+        let shirt = one(packRGB(235 / 255, 225 / 255, 249 / 255), ["Exposure2012": 0.52, "Highlights2012": -100, "Whites2012": -25])
+        XCTAssertGreaterThan(Int((shirt >> 8) & 255), 235)
+    }
+
     func testVignetteDarkensCornersOnly() {
         let img = PixelImage(width: 80, height: 60, fill: 0xFF90_9090)
         let out = render(img, ["PostCropVignetteAmount": -60])
@@ -174,8 +189,8 @@ final class EditorTests: XCTestCase {
             "BlueSaturation": 25, "RedHue": 10, "ShadowTint": -5, "Sharpness": 40, "PostCropVignetteAmount": -21, "GrainAmount": 12,
         ]
         let out = render(img, preset).pixels
-        let android: [UInt32] = [0xFF3871AA, 0xFF3A73AD, 0xFF3F78B2, 0xFF447DB7, 0xFF467FBA, 0xFF4A82BE, 0xFF467E4F, 0xFF4D8856, 0xFF4E8957,
-                                 0xFFCCA385, 0xFFBF9679, 0xFFCDA486, 0xFF505356, 0xFF5D6062, 0xFF606265, 0xFF696B6E, 0xFF6C6E71, 0xFF696B6E]
+        let android: [UInt32] = [0xFF376BA6, 0xFF3A6DA9, 0xFF3E72AD, 0xFF4378B3, 0xFF457AB8, 0xFF487EBC, 0xFF27703C, 0xFF2D7A43, 0xFF2E7C44,
+                                 0xFFD3AA8E, 0xFFC69E82, 0xFFD6AD90, 0xFF474A4E, 0xFF515559, 0xFF54575A, 0xFF595C60, 0xFF5A5D60, 0xFF55585B]
         for (n, i) in stride(from: 0, to: out.count, by: 97).enumerated() {
             for shift: UInt32 in [16, 8, 0] {
                 let a = Int((out[i] >> shift) & 255), b = Int((android[n] >> shift) & 255)
@@ -183,7 +198,7 @@ final class EditorTests: XCTestCase {
             }
         }
         let sum = out.reduce(0) { $0 + Int(($1 >> 16) & 255) + Int(($1 >> 8) & 255) + Int($1 & 255) }
-        XCTAssertEqual(Double(sum), 682_614, accuracy: 682_614 * 0.001)
+        XCTAssertEqual(Double(sum), 700_788, accuracy: 700_788 * 0.001)
     }
 
     func testControlsSumIsLimited() {

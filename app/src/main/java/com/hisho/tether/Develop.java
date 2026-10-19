@@ -4,9 +4,11 @@ import org.xmlpull.v1.XmlPullParser;import java.io.IOException;import java.util.
 /**
  * Motor de revelação do Lumo. Modela o pipeline do Lightroom/Camera Raw (Process Version 2012+)
  * aplicado a JPEG, na mesma ordem do Lightroom:
- * calibração → balanço de branco → exposição → dehaze → tons locais (realces, sombras, claridade,
- * textura) → curva de tons (contraste, brancos, pretos) → curva paramétrica e de pontos →
- * vibração/saturação → HSL ou mistura P&B → color grading → nitidez → vinheta → granulação.
+ * balanço de branco → exposição → dehaze → tons locais (realces, sombras, claridade, textura) e
+ * brancos, com recuperação do que estourou → curva de tons (contraste, pretos) → curva paramétrica
+ * e de pontos → vibração/saturação → calibração e HSL (em HSV no ProPhoto) ou mistura P&B →
+ * color grading → nitidez → vinheta → granulação. Constantes ajustadas comparando com
+ * exportações reais do Lightroom (foto original + .xmp + resultado do Lightroom).
  * Ajustes zerados devolvem a foto idêntica. Não depende do Android (testável no desktop);
  * ios/LumoCore/Sources/LumoCore/Develop.swift é uma porta linha a linha.
  */
@@ -180,30 +182,40 @@ final class Develop{
   double t=1;if(max>1)t=Math.min(t,(1-y)/(max-y));if(min<0)t=Math.min(t,y/(y-min));
   for(int i=0;i<3;i++)c[i]=clamp01(y+(c[i]-y)*t);
  }
- /** Gira a cor em torno do eixo neutro (sentido vermelho → amarelo → verde). */
- static void rotate(double[] c,double degrees){
-  double mean=(c[0]+c[1]+c[2])/3,r=c[0]-mean,g=c[1]-mean,b=c[2]-mean,a=Math.toRadians(degrees),ca=Math.cos(a),sa=Math.sin(a)/Math.sqrt(3);
-  c[0]=mean+r*ca+(b-g)*sa;c[1]=mean+g*ca+(r-b)*sa;c[2]=mean+b*ca+(g-r)*sa;
- }
  /** Faixa HSL de uma matiz e peso da faixa seguinte (cada cor tem um platô em volta do centro). */
  static int band(double h){for(int k=0;k<7;k++)if(h<CENTERS[k+1])return k;return 7;}
  static double bandMix(double h,int k){double c0=CENTERS[k],c1=k==7?360:CENTERS[k+1];return smooth(.2,.8,(h-c0)/(c1-c0));}
 
- /** Matriz de calibração: gira e satura os primários e mantém o branco neutro. */
- static double[] calibration(Settings s){
-  if(s.redHue==0&&s.redSat==0&&s.greenHue==0&&s.greenSat==0&&s.blueHue==0&&s.blueSat==0)return null;
-  double[] hues={s.redHue,s.greenHue,s.blueHue},sats={s.redSat,s.greenSat,s.blueSat},m=new double[9],c=new double[3];
-  for(int j=0;j<3;j++){c[0]=c[1]=c[2]=0;c[j]=1;rotate(c,hues[j]*.3);double f=Math.max(0,1+sats[j]/100*.75),mean=1/3.;for(int i=0;i<3;i++)m[i*3+j]=mean+(c[i]-mean)*f;}
-  for(int i=0;i<3;i++){double sum=m[i*3]+m[i*3+1]+m[i*3+2];for(int j=0;j<3;j++)m[i*3+j]/=sum;}
-  return m;
+ /**
+  * sRGB linear ↔ ProPhoto linear (D50, linhas normalizadas para o branco continuar branco).
+  * O Lightroom mede as faixas de HSL e a calibração nesse espaço: nele a pele cai em Laranja
+  * (não em Vermelho) e um amarelo-ocre fica perto do centro do Amarelo.
+  */
+ static final double[] TO_PP={.5293,.3301,.1406,.098390,.873413,.028197,.0169,.1177,.8654};
+ static final double[] FROM_PP=invert(TO_PP);
+ static double[] invert(double[] m){
+  double a=m[0],b=m[1],c=m[2],d=m[3],e=m[4],f=m[5],g=m[6],h=m[7],i=m[8],det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);
+  return new double[]{(e*i-f*h)/det,(c*h-b*i)/det,(b*f-c*e)/det,(f*g-d*i)/det,(a*i-c*g)/det,(c*d-a*f)/det,(d*h-e*g)/det,(b*g-a*h)/det,(a*e-b*d)/det};
  }
- /** Curva de tons global (contraste, brancos, pretos) sobre a luminância em sRGB. */
+ /** Gama 1.8 do ProPhoto, por tabela. */
+ static final double[] PP_ENCODE=new double[TABLE+1],PP_DECODE=new double[TABLE+1];
+ static{for(int i=0;i<=TABLE;i++){PP_ENCODE[i]=Math.pow(i/(double)TABLE,1/1.8);PP_DECODE[i]=Math.pow(i/(double)TABLE,1.8);}}
+ static double ppDecode(double v){return v>1?Math.pow(v,1.8):table(PP_DECODE,v);}
+ /** HSV → RGB em {@code c}. */
+ static void hsv(double h,double s,double v,double[] c){
+  double k=h/60,ch=v*s,x=ch*(1-Math.abs(k%2-1)),m=v-ch;int i=Math.min(5,(int)k);
+  double r=i==0||i==5?ch:i==1||i==4?x:0,g=i==1||i==2?ch:i==0||i==3?x:0,b=i==3||i==4?ch:i==2||i==5?x:0;
+  c[0]=r+m;c[1]=g+m;c[2]=b+m;
+ }
+ /**
+  * Curva de tons global (contraste e pretos) sobre a luminância em sRGB. Os brancos atuam antes,
+  * em luz linear, junto da recuperação de realces.
+  */
  static double[] toneTable(Settings s){
-  if(s.contrast==0&&s.whites==0&&s.blacks==0)return null;
-  double c=s.contrast/100,w=s.whites/100,k=s.blacks/100,g=c>=0?1+.8*c:1/(1-.8*c),p=.5;double[] t=new double[1025];
+  if(s.contrast==0&&s.blacks==0)return null;
+  double c=s.contrast/100,k=s.blacks/100,g=c>=0?1+.8*c:1/(1-.8*c),p=.5;double[] t=new double[1025];
   for(int i=0;i<=1024;i++){double l=i/1024.;
    if(c!=0)l=l<p?p*Math.pow(l/p,g):1-(1-p)*Math.pow((1-l)/(1-p),g);
-   if(w!=0)l=l*(1+.25*w*l*l);
    if(k!=0){double u=1-l;u=u*(1-(k>0?.18:.30)*k*u*u);l=1-u;}
    t[i]=clamp01(l);}
   return t;
@@ -313,31 +325,35 @@ final class Develop{
  /** Constantes de uma renderização e o pipeline por pixel. */
  static final class Plan{
   final Source src;final Settings s;final int w;
-  final double[] cal,tone,tS,tM,tH,tG,tShadow;final double[][] curves;
-  final double gr,gg,gb,expo,knee=.6,rollPower,dehaze,sh,hl,clarity,texture,sat,vib,mid,width,amount,limit,mask;
-  final boolean local,tonal,hsl,mixing,grade,color,sharpen,identity;
+  final double[] tone,tS,tM,tH,tG,tShadow,calHue,calSat;final double[][] curves;
+  final double gr,gg,gb,expo,knee=.6,top,rollPower,dehaze,sh,hl,whites,clarity,texture,sat,vib,mid,width,amount,limit,mask;
+  final boolean local,tonal,hsl,calib,mixing,grade,color,sharpen,identity;
   final float[] logY;final Field toneF,clarityF,textureF,hazeF;final Effects fx;
   Plan(Source src,Settings s){
    this.src=src;this.s=s;w=src.w;
-   cal=calibration(s);
+   // Calibração: gira e satura as cores em volta de cada primário (faixas largas de 120°).
+   calHue=new double[]{s.redHue*.4,s.greenHue*.4,s.blueHue*.4};calSat=new double[]{s.redSat/100,s.greenSat/100,s.blueSat/100};
+   calib=s.redHue!=0||s.redSat!=0||s.greenHue!=0||s.greenSat!=0||s.blueHue!=0||s.blueSat!=0;
    // Temperatura/matiz incrementais (JPEG): ganhos por canal que preservam o brilho.
    double t=s.temperature/100,ti=s.tint/100,e=Math.pow(2,s.exposure),r=e,g=e,b=e;
    if(t!=0||ti!=0){double r0=Math.pow(2,.5*t+.12*ti),g0=Math.pow(2,.04*t-.42*ti),b0=Math.pow(2,-.76*t+.12*ti),norm=luma(r0,g0,b0);r=r0*e/norm;g=g0*e/norm;b=b0*e/norm;}
-   expo=e;gr=r;gg=g;gb=b;rollPower=e>1?(e-knee)/(1-knee):1;
-   dehaze=s.dehaze/100;sh=s.shadows/100;hl=s.highlights/100;clarity=s.clarity/100;texture=s.texture/100;
+   dehaze=s.dehaze/100;sh=s.shadows/100;hl=s.highlights/100;whites=s.whites/100;clarity=s.clarity/100;texture=s.texture/100;
+   // Como no Lightroom, o que a exposição estourou volta comprimido para dentro do branco
+   // (brancos negativos baixam esse teto), sem virar cinza.
+   expo=e;gr=r;gg=g;gb=b;top=e*exp2(whites<0?whites*.62:0);rollPower=top>1?(top-knee)/(1-knee):1;
    local=sh!=0||hl!=0||clarity!=0||texture!=0;
    tone=toneTable(s);curves=curveTables(s);
-   tonal=rollPower>1||local||tone!=null;
+   tonal=rollPower>1||local||whites!=0||tone!=null;
    sat=s.saturation/100;vib=s.vibrance/100;
    boolean anyHsl=false,anyMix=false;for(int i=0;i<8;i++){if(s.hue[i]!=0||s.sat[i]!=0||s.lum[i]!=0)anyHsl=true;if(s.mix[i]!=0)anyMix=true;}hsl=anyHsl;mixing=anyMix;
    grade=s.shadowSat!=0||s.midtoneSat!=0||s.highlightSat!=0||s.globalSat!=0||s.shadowLum!=0||s.midtoneLum!=0||s.highlightLum!=0||s.globalLum!=0||s.shadowTint!=0;
    tS=tint(s.shadowHue,s.shadowSat/100*.3);tM=tint(s.midtoneHue,s.midtoneSat/100*.3);tH=tint(s.highlightHue,s.highlightSat/100*.3);tG=tint(s.globalHue,s.globalSat/100*.3);
    mid=.5-.3*s.balance/100;width=.1+.6*s.blending/100;
    tShadow=tint(s.shadowTint>0?300:120,Math.abs(s.shadowTint)/100*.1);
-   color=sat!=0||vib!=0||hsl||s.grayscale||grade;
+   color=sat!=0||vib!=0||hsl||calib||s.grayscale||grade;
    sharpen=s.sharpness>0;amount=s.sharpness/100*1.2;limit=.03+.3*s.sharpenDetail/100;mask=s.sharpenMasking/100*.05;
    fx=new Effects(s,src.w,src.h);
-   identity=cal==null&&gr==1&&gg==1&&gb==1&&dehaze==0&&!tonal&&curves==null&&!color&&!sharpen&&!fx.active;
+   identity=!calib&&gr==1&&gg==1&&gb==1&&dehaze==0&&!tonal&&curves==null&&!color&&!sharpen&&!fx.active;
    logY=local&&!identity?src.logY():null;
    toneF=(sh!=0||hl!=0)&&!identity?src.field(Source.TONE):null;clarityF=clarity!=0&&!identity?src.field(Source.CLARITY):null;
    textureF=texture!=0&&!identity?src.field(Source.TEXTURE):null;hazeF=dehaze>0&&!identity?src.field(Source.HAZE):null;
@@ -348,25 +364,26 @@ final class Develop{
    for(int y=y0;y<y1;y++)for(int x=0;x<w;x++){
     int i=y*w+x,v=px[i];
     double r=LIN[(v>>16)&255],g=LIN[(v>>8)&255],b=LIN[v&255];
-    // Perfil (calibração), balanço de branco e exposição em luz linear.
-    if(cal!=null){double rr=cal[0]*r+cal[1]*g+cal[2]*b,g2=cal[3]*r+cal[4]*g+cal[5]*b,b2=cal[6]*r+cal[7]*g+cal[8]*b;r=Math.max(0,rr);g=Math.max(0,g2);b=Math.max(0,b2);}
+    // Balanço de branco e exposição em luz linear.
     r*=gr;g*=gg;b*=gb;
     // Dehaze: modelo de névoa atmosférica com canal escuro borrado.
     if(dehaze>0){double dark=Math.min(Math.min(r,Math.min(g,b)),hazeF.at(x,y,0)*expo),tr=Math.max(.15,1-.85*dehaze*Math.min(1,dark)),a=1-tr;r=(r-a)/tr;g=(g-a)/tr;b=(b-a)/tr;}
     else if(dehaze<0){double k=-dehaze*.45;r+=(.85-r)*k;g+=(.85-g)*k;b+=(.85-b)*k;}
     if(tonal){
-     double lum=luma(r,g,b),yt=lum;
-     // Exposição positiva comprime os realces suavemente em vez de estourar.
-     if(rollPower>1&&yt>knee){double q=(yt-knee)/(expo-knee);yt=q>=1?1:knee+(1-knee)*(1-Math.pow(1-q,rollPower));}
+     double lum=luma(r,g,b),yt=lum,ev=0,lp=encode(Math.min(1,yt));
      if(local){
-      double ly=log2(Math.max(yt,1e-6)),l0=logY[i],ev=0,lp=encode(Math.min(1,yt));
+      double ly=log2(Math.max(yt,1e-6)),l0=logY[i];
       if(toneF!=null){double base=ly-soft(l0-toneF.at(x,y,l0),1),bl=encode(Math.min(1,exp2(base)));
-       if(sh!=0)ev+=sh*(sh>0?1.35:1)*(1-smooth(.2,.7,bl))*(.55+.45*smooth(0,.15,bl));
-       if(hl!=0)ev+=hl*(hl<0?1.25:.9)*smooth(.4,.9,bl);}
+       if(sh!=0)ev+=sh*(sh>0?1.35:1)*(1-smooth(.13,.45,bl))*(.55+.45*smooth(0,.15,bl));
+       // Realces poupam o que já está quase branco: a recuperação fica com a compressão abaixo.
+       if(hl!=0)ev+=hl*(hl<0?.75:.9)*smooth(.4,.9,bl)*(1-smooth(.85,1,lp));}
       if(clarityF!=null)ev+=clarity*.65*soft(l0-clarityF.at(x,y,l0),1.5)*4*lp*(1-lp);
       if(textureF!=null)ev+=texture*.6*soft(l0-textureF.at(x,y,l0),1)*(1-smooth(.85,1,lp));
-      if(ev!=0)yt*=exp2(ev);
      }
+     if(whites!=0)ev+=whites*.62*smooth(.3,1,lp);
+     if(ev!=0)yt*=exp2(ev);
+     // O que passou do branco é comprimido suavemente em vez de estourar.
+     if(rollPower>1&&yt>knee){double q=(yt-knee)/(top-knee);yt=q>=1?1:knee+(1-knee)*(1-Math.pow(1-q,rollPower));}
      if(tone!=null)yt=decode(table(tone,encode(Math.min(1,yt))));
      if(lum>1e-9){double k=yt/lum;r*=k;g*=k;b*=k;}else r=g=b=yt;
     }
@@ -376,21 +393,36 @@ final class Develop{
     if(color){
      double yg=luma(R,G,B);
      if(sat!=0||vib!=0){double max=Math.max(R,Math.max(G,B)),min=Math.min(R,Math.min(G,B)),sv=max<=0?0:(max-min)/max,f=1+sat;
-      if(vib>0){double hh=hue(R,G,B,max,min),z=(hh-25)/20,skin=Math.exp(-z*z);f*=1+vib*.9*(1-sv)*Math.sqrt(1-sv)*(1-.6*skin);}else if(vib<0)f*=1+vib*.8*(.3+.7*sv);
+      if(vib>0){double hh=hue(R,G,B,max,min),z=(hh-25)/20,skin=Math.exp(-z*z);f*=1+vib*.6*Math.sqrt(1-sv)*(1-.6*skin);}else if(vib<0)f*=1+vib*.8*(.3+.7*sv);
       f=Math.max(0,f);c[0]=yg+(R-yg)*f;c[1]=yg+(G-yg)*f;c[2]=yg+(B-yg)*f;fit(c,yg);R=c[0];G=c[1];B=c[2];}
      double max=Math.max(R,Math.max(G,B)),min=Math.min(R,Math.min(G,B)),chroma=max-min;
      if(s.grayscale){
       double m=0;if(mixing&&chroma>1e-6){double hh=hue(R,G,B,max,min);int k=band(hh),k2=(k+1)%8;double q=bandMix(hh,k);m=(s.mix[k]*(1-q)+s.mix[k2]*q)/100*smooth(0,.35,chroma);}
       R=G=B=clamp01(yg*exp2(m*.8));
-     }else if(hsl&&chroma>1e-6){
-      double hh=hue(R,G,B,max,min);int k=band(hh),k2=(k+1)%8;double q=bandMix(hh,k);
-      double dh=(s.hue[k]*(1-q)+s.hue[k2]*q)*.3,ds=(s.sat[k]*(1-q)+s.sat[k2]*q)/100,dl=(s.lum[k]*(1-q)+s.lum[k2]*q)/100;
-      c[0]=R;c[1]=G;c[2]=B;
-      if(dh!=0)rotate(c,dh);
-      if(ds!=0){double mean=(c[0]+c[1]+c[2])/3,f=Math.max(0,1+ds);for(int j=0;j<3;j++)c[j]=mean+(c[j]-mean)*f;}
-      double fix=yg-luma(c[0],c[1],c[2]);for(int j=0;j<3;j++)c[j]+=fix;
-      double target=yg;if(dl!=0){double f=exp2(dl*.6*smooth(0,.35,chroma));for(int j=0;j<3;j++)c[j]*=f;target=yg*f;}
-      fit(c,target);R=c[0];G=c[1];B=c[2];
+     }else if((hsl||calib)&&chroma>1e-6){
+      // Calibração e HSL em HSV no ProPhoto (gama 1.8), como o Lightroom: mudar a matiz não
+      // preserva a luminância (um amarelo puxado para laranja escurece).
+      double lr=decode(R),lg=decode(G),lb=decode(B);
+      double pr=table(PP_ENCODE,TO_PP[0]*lr+TO_PP[1]*lg+TO_PP[2]*lb),pg=table(PP_ENCODE,TO_PP[3]*lr+TO_PP[4]*lg+TO_PP[5]*lb),pb=table(PP_ENCODE,TO_PP[6]*lr+TO_PP[7]*lg+TO_PP[8]*lb);
+      double pmax=Math.max(pr,Math.max(pg,pb)),pmin=Math.min(pr,Math.min(pg,pb));
+      if(pmax-pmin>1e-6){
+       double hh=hue(pr,pg,pb,pmax,pmin),sv=(pmax-pmin)/pmax,val=pmax;
+       if(calib){
+        double ch=0,cs=0;for(int j=0;j<3;j++){double d=Math.abs((hh-120*j+540)%360-180),wgt=smooth(0,1,1-d/120);ch+=wgt*calHue[j];cs+=wgt*calSat[j];}
+        hh=((hh+ch)%360+360)%360;sv=clamp01(sv*Math.max(0,1+cs));
+       }
+       if(hsl){
+        int k=band(hh),k2=(k+1)%8;double q=bandMix(hh,k);
+        double dh=(s.hue[k]*(1-q)+s.hue[k2]*q)*.43,ds=(s.sat[k]*(1-q)+s.sat[k2]*q)/100,dl=(s.lum[k]*(1-q)+s.lum[k2]*q)/100;
+        // Saturação −100 ainda zera a cor; valores pequenos atuam com metade da força.
+        ds*=.5+.5*Math.abs(ds);
+        val*=exp2(dl*.3*smooth(0,.35,sv));hh=((hh+dh)%360+360)%360;sv=clamp01(sv*Math.max(0,1+ds));
+       }
+       hsv(hh,sv,val,c);
+       double a=ppDecode(c[0]),b1=ppDecode(c[1]),b2=ppDecode(c[2]);
+       c[0]=FROM_PP[0]*a+FROM_PP[1]*b1+FROM_PP[2]*b2;c[1]=FROM_PP[3]*a+FROM_PP[4]*b1+FROM_PP[5]*b2;c[2]=FROM_PP[6]*a+FROM_PP[7]*b1+FROM_PP[8]*b2;
+       fit(c,clamp01(luma(c[0],c[1],c[2])));R=encode(c[0]);G=encode(c[1]);B=encode(c[2]);
+      }
      }
      if(grade){
       double l=luma(R,G,B),ws=1-smooth(mid-width,mid,l),wh=smooth(mid,mid+width,l),wm=1-ws-wh,edge=Math.min(1,Math.min(l,1-l)*12);
