@@ -201,6 +201,23 @@ final class EditorTests: XCTestCase {
         XCTAssertEqual(Double(sum), 700_788, accuracy: 700_788 * 0.001)
     }
 
+    /// Ajustes do editor (vinheta, HSL, nitidez…) substituem os valores do preset.
+    func testEditorExtrasOverridePreset() {
+        var o = EditOptions()
+        o.auto = false
+        o.preset = ["PostCropVignetteAmount": -60]
+        var vignetted = PixelImage(width: 80, height: 60, fill: 0xFF90_9090)
+        PhotoEditor.edit(&vignetted, options: o)
+        XCTAssertLessThan(Int(vignetted[0, 0] & 255), 0x90 - 20)
+        o.extra = ["PostCropVignetteAmount": 0]
+        var plain = PixelImage(width: 80, height: 60, fill: 0xFF90_9090)
+        PhotoEditor.edit(&plain, options: o)
+        XCTAssertEqual(plain[0, 0], 0xFF90_9090)
+        XCTAssertEqual(PhotoEditor.merged(["Texture": 10], ["Texture": 30])?["Texture"], 30)
+        XCTAssertEqual(Develop.value("SharpenDetail", in: nil), 25)
+        XCTAssertEqual(Develop.value("SharpenDetail", in: ["SharpenDetail": 40]), 40)
+    }
+
     func testControlsSumIsLimited() {
         var a = EditControls(); a.exposure = 4; a.contrast = 80
         let s = a + a

@@ -318,10 +318,12 @@ final class AppModel: ObservableObject {
     }
 
     /// Salva ajustes manuais e/ou preset próprio e reedita a partir do original.
-    func reprocess(_ photo: PhotoRecord, manual: EditControls?, customPreset: String?? = nil) async {
+    /// `extra` e `customPreset` nil mantêm o que a foto já tem.
+    func reprocess(_ photo: PhotoRecord, manual: EditControls?, extra: [String: Double]?? = nil, customPreset: String?? = nil) async {
         guard let event = currentEvent else { return }
         var p = library.photo(id: photo.id, in: event) ?? photo
         p.manual = manual
+        if let extra { p.extra = extra }
         if let customPreset { p.customPreset = customPreset }
         processing += 1
         defer { processing -= 1 }
@@ -393,20 +395,21 @@ final class AppModel: ObservableObject {
 
     struct Adjustments {
         var manual: EditControls?
+        var extra: [String: Double]?
         var customPreset: String?
     }
 
     @Published private(set) var clipboard: Adjustments?
 
     func copyAdjustments(from photo: PhotoRecord) {
-        clipboard = Adjustments(manual: photo.manual, customPreset: photo.customPreset)
+        clipboard = Adjustments(manual: photo.manual, extra: photo.extra, customPreset: photo.customPreset)
         message = "Ajustes copiados. Selecione fotos na galeria e toque em Colar."
     }
 
     func pasteAdjustments(to ids: Set<String>) async {
         guard let clip = clipboard else { return }
         for p in photos where ids.contains(p.id) && !p.isSent {
-            await reprocess(p, manual: clip.manual, customPreset: .some(clip.customPreset))
+            await reprocess(p, manual: clip.manual, extra: .some(clip.extra), customPreset: .some(clip.customPreset))
         }
         message = "Ajustes colados em \(ids.count) foto(s)."
     }

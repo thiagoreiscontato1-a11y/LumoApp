@@ -50,6 +50,9 @@ public struct EditOptions: Codable, Hashable {
     public var preset: [String: Double]?
     public var presetName: String = ""
     public var manual: EditControls?
+    /// Demais ajustes do editor (HSL, calibração, efeitos, detalhe) em chaves Camera Raw, com o
+    /// valor final de cada uma: substituem os do preset.
+    public var extra: [String: Double]?
     /// Maior lado do JPEG editado; 0 mantém o original.
     public var edge: Int = 2560
     public var curation: Bool = true
@@ -78,9 +81,15 @@ public enum PhotoEditor {
 
     /// Ajustes finais: preset completo com os básicos = automático + preset + delta manual.
     public static func settings(_ source: Develop.Source, options: EditOptions) -> Develop.Settings {
-        var s = Develop.Settings(options.preset)
+        var s = Develop.Settings(merged(options.preset, options.extra))
         s.basic = autoValues(source, options: options) + presetControls(options.preset) + (options.manual ?? .zero)
         return s
+    }
+
+    /// Preset com os ajustes extras do editor por cima.
+    public static func merged(_ preset: [String: Double]?, _ extra: [String: Double]?) -> [String: Double]? {
+        guard let extra, !extra.isEmpty else { return preset }
+        return (preset ?? [:]).merging(extra) { _, new in new }
     }
 
     /// Automático da foto, já escalado pela intensidade das opções (zero se desligado).

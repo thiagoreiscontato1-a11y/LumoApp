@@ -44,6 +44,14 @@ public enum Develop {
         return r
     }()
 
+    /// Valores padrão do Lightroom diferentes de zero (chave ausente no preset).
+    public static let defaults: [String: Double] = [
+        "ParametricShadowSplit": 25, "ParametricMidtoneSplit": 50, "ParametricHighlightSplit": 75, "SharpenRadius": 1, "SharpenDetail": 25,
+        "PostCropVignetteMidpoint": 50, "PostCropVignetteFeather": 50, "PostCropVignetteStyle": 1, "GrainSize": 25, "GrainFrequency": 50,
+    ]
+    /// Valor efetivo de uma chave Camera Raw no preset (padrão do Lightroom quando ausente).
+    public static func value(_ key: String, in preset: [String: Double]?) -> Double { preset?[key] ?? defaults[key] ?? 0 }
+
     // MARK: Ajustes
 
     /// Ajustes resolvidos, nas unidades do Lightroom. Ausente no preset = valor padrão do Lightroom.
