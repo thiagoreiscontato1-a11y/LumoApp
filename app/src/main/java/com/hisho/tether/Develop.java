@@ -293,10 +293,10 @@ final class Develop{
    return logY;
   }
   /** Raios relativos ao maior lado, para a prévia e a exportação ficarem iguais. */
-  double sigma(int kind){double edge=Math.max(w,h);return kind==TONE?edge/40:kind==CLARITY?edge/120:kind==TEXTURE?Math.max(.8,edge/600):edge/50;}
+  double sigma(int kind){double edge=Math.max(w,h);return kind==TONE?edge/40:kind==CLARITY?edge/50:kind==TEXTURE?Math.max(.8,edge/600):edge/50;}
   synchronized Field field(int kind){
    if(fields[kind]!=null)return fields[kind];
-   double sigma=sigma(kind),eps=kind==TONE?.25:kind==CLARITY?.12:0;int cell=Math.max(1,(int)(sigma/3)),gw=(w+cell-1)/cell,gh=(h+cell-1)/cell,cells=gw*gh;
+   double sigma=sigma(kind),eps=kind==TONE?.25:kind==CLARITY?4:0;int cell=Math.max(1,(int)(sigma/3)),gw=(w+cell-1)/cell,gh=(h+cell-1)/cell,cells=gw*gh;
    float[] mean=new float[cells],square=new float[cells];int[] count=new int[cells];float[] log=kind==HAZE?null:logY();
    for(int y=0;y<h;y++)for(int x=0;x<w;x++){int i=y*w+x,g=(y/cell)*gw+x/cell;double v;if(log!=null)v=log[i];else{int p=px[i];v=Math.min(LIN[(p>>16)&255],Math.min(LIN[(p>>8)&255],LIN[p&255]));}mean[g]+=v;square[g]+=v*v;count[g]++;}
    for(int i=0;i<cells;i++){mean[i]/=count[i];square[i]/=count[i];}
@@ -377,7 +377,7 @@ final class Develop{
        if(sh!=0)ev+=sh*(sh>0?1.35:1)*(1-smooth(.13,.45,bl))*(.55+.45*smooth(0,.15,bl));
        // Realces poupam o que já está quase branco: a recuperação fica com a compressão abaixo.
        if(hl!=0)ev+=hl*(hl<0?.75:.9)*smooth(.4,.9,bl)*(1-smooth(.85,1,lp));}
-      if(clarityF!=null)ev+=clarity*.65*soft(l0-clarityF.at(x,y,l0),1.5)*4*lp*(1-lp);
+      if(clarityF!=null)ev+=clarity*2*soft(l0-clarityF.at(x,y,l0),1.5)*4*lp*(1-lp);
       if(textureF!=null)ev+=texture*.6*soft(l0-textureF.at(x,y,l0),1)*(1-smooth(.85,1,lp));
      }
      if(whites!=0)ev+=whites*.62*smooth(.3,1,lp);
@@ -386,6 +386,10 @@ final class Develop{
      if(rollPower>1&&yt>knee){double q=(yt-knee)/(top-knee);yt=q>=1?1:knee+(1-knee)*(1-Math.pow(1-q,rollPower));}
      if(tone!=null)yt=decode(table(tone,encode(Math.min(1,yt))));
      if(lum>1e-9){double k=yt/lum;r*=k;g*=k;b*=k;}else r=g=b=yt;
+     // Cores claras e saturadas (pele no sol) ganham um ombro suave no canal mais forte em vez de
+     // estourar: o encaixe abaixo tiraria a cor e deixaria a pele branca.
+     double vmax=Math.max(r,Math.max(g,b));
+     if(vmax>.8){double vs=(vmax-Math.min(r,Math.min(g,b)))/vmax,f=1-vs*(1-(.8+.2*(1-Math.exp(-(vmax-.8)/.2)))/vmax);r*=f;g*=f;b*=f;}
     }
     c[0]=r;c[1]=g;c[2]=b;fit(c,luma(r,g,b));
     double R=encode(c[0]),G=encode(c[1]),B=encode(c[2]);
@@ -466,19 +470,21 @@ final class Develop{
   final boolean active,vignette,grain;final double amount,inner,width,roundness,power,highlights,cx,cy,hw,hh,hc,grainAmount,cell,rough;final int style;
   Effects(Settings s,int w,int h){
    amount=s.vignette/100;vignette=amount!=0;style=(int)Math.round(s.vignetteStyle);
-   inner=.2+s.vignetteMidpoint/100*.95;width=.08+s.vignetteFeather/100*1.1;roundness=s.vignetteRoundness/100;power=roundness<0?2-roundness*6:2;highlights=s.vignetteHighlights/100;
+   // Formato medido numa exportação do Lightroom: arredondamento 0 é um retângulo de cantos
+   // redondos (norma ~3,3), +100 vira elipse; a difusão é longa e os cantos escurecem bem.
+   inner=.2+s.vignetteMidpoint/100*.95;width=.1+s.vignetteFeather/100*1.56;roundness=s.vignetteRoundness/100;power=roundness<0?3.27-roundness*6:2+1.27*(1-roundness);highlights=s.vignetteHighlights/100;
    cx=w/2.;cy=h/2.;hw=w/2.;hh=h/2.;hc=Math.sqrt((double)w*h)/2;
    grainAmount=s.grain/100*.1;grain=grainAmount>0;cell=Math.max(1,(1+s.grainSize/100*3)*Math.max(w,h)/2560.);rough=s.grainRoughness/100;
    active=vignette||grain;
   }
   int apply(double r,double g,double b,int x,int y){
    if(vignette){
-    double u=(x+.5-cx)/hw,v=(y+.5-cy)/hh;if(roundness>0){u+=((x+.5-cx)/hc-u)*roundness;v+=((y+.5-cy)/hc-v)*roundness;}
+    double u=(x+.5-cx)/hw,v=(y+.5-cy)/hh;if(roundness>0){double k=roundness*roundness;u+=((x+.5-cx)/hc-u)*k;v+=((y+.5-cy)/hc-v)*k;}
     double d=power==2?Math.sqrt(u*u+v*v):Math.pow(Math.pow(Math.abs(u),power)+Math.pow(Math.abs(v),power),1/power),m=smooth(inner,inner+width,d);
     if(m>0){
      if(amount<0){
       if(style==3){double f=1+amount*m*.9;r*=f;g*=f;b*=f;}
-      else{double l=clamp01(luma(r,g,b)),f=exp2(amount*m*.75);f=1-(1-f)*(1-highlights*smooth(.5,1,l));r*=f;g*=f;b*=f;}
+      else{double l=clamp01(luma(r,g,b)),f=exp2(amount*m*1.5);f=1-(1-f)*(1-highlights*smooth(.5,1,l));r*=f;g*=f;b*=f;}
      }else{double k=amount*m*(style==3?.9:.75);r+=(1-r)*k;g+=(1-g)*k;b+=(1-b)*k;}
     }
    }

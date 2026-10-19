@@ -189,8 +189,8 @@ final class EditorTests: XCTestCase {
             "BlueSaturation": 25, "RedHue": 10, "ShadowTint": -5, "Sharpness": 40, "PostCropVignetteAmount": -21, "GrainAmount": 12,
         ]
         let out = render(img, preset).pixels
-        let android: [UInt32] = [0xFF376BA6, 0xFF3A6DA9, 0xFF3E72AD, 0xFF4378B3, 0xFF457AB8, 0xFF487EBC, 0xFF27703C, 0xFF2D7A43, 0xFF2E7C44,
-                                 0xFFD3AA8E, 0xFFC69E82, 0xFFD6AD90, 0xFF474A4E, 0xFF515559, 0xFF54575A, 0xFF595C60, 0xFF5A5D60, 0xFF55585B]
+        let android: [UInt32] = [0xFF36669F, 0xFF3A6CA8, 0xFF4075B1, 0xFF457BB8, 0xFF467DBB, 0xFF487FBD, 0xFF1E6033, 0xFF2B7440, 0xFF2C7641,
+                                 0xFFE7B99A, 0xFFCDA386, 0xFFF0C0A0, 0xFF3D4145, 0xFF515458, 0xFF54575A, 0xFF5A5D60, 0xFF585C5F, 0xFF4C4F53]
         for (n, i) in stride(from: 0, to: out.count, by: 97).enumerated() {
             for shift: UInt32 in [16, 8, 0] {
                 let a = Int((out[i] >> shift) & 255), b = Int((android[n] >> shift) & 255)
@@ -198,7 +198,7 @@ final class EditorTests: XCTestCase {
             }
         }
         let sum = out.reduce(0) { $0 + Int(($1 >> 16) & 255) + Int(($1 >> 8) & 255) + Int($1 & 255) }
-        XCTAssertEqual(Double(sum), 700_788, accuracy: 700_788 * 0.001)
+        XCTAssertEqual(Double(sum), 708_264, accuracy: 708_264 * 0.001)
     }
 
     /// Ajustes do editor (vinheta, HSL, nitidez…) substituem os valores do preset.

@@ -455,14 +455,14 @@ public enum Develop {
         /// Raios relativos ao maior lado, para a prévia e a exportação ficarem iguais.
         func sigma(_ kind: Int) -> Double {
             let edge = Double(max(width, height))
-            return kind == Source.tone ? edge / 40 : kind == Source.clarity ? edge / 120 : kind == Source.texture ? max(0.8, edge / 600) : edge / 50
+            return kind == Source.tone ? edge / 40 : kind == Source.clarity ? edge / 50 : kind == Source.texture ? max(0.8, edge / 600) : edge / 50
         }
 
         func field(_ kind: Int) -> Field {
             lock.lock(); defer { lock.unlock() }
             if let f = fields[kind] { return f }
             let w = width, h = height
-            let radius = self.sigma(kind), eps = kind == Source.tone ? 0.25 : kind == Source.clarity ? 0.12 : 0
+            let radius = self.sigma(kind), eps = kind == Source.tone ? 0.25 : kind == Source.clarity ? 4 : 0
             let cell = max(1, Int(radius / 3)), gw = (w + cell - 1) / cell, gh = (h + cell - 1) / cell, cells = gw * gh
             var mean = [Float](repeating: 0, count: cells), square = mean
             var count = [Int](repeating: 0, count: cells)
@@ -625,7 +625,7 @@ public enum Develop {
                         // Realces poupam o que já está quase branco: a recuperação fica com a compressão abaixo.
                         if hl != 0 { ev += hl * (hl < 0 ? 0.75 : 0.9) * smooth(0.4, 0.9, bl) * (1 - smooth(0.85, 1, lp)) }
                     }
-                    if let clarityF { ev += clarity * 0.65 * soft(l0 - clarityF.at(x, y, l0), 1.5) * 4 * lp * (1 - lp) }
+                    if let clarityF { ev += clarity * 2 * soft(l0 - clarityF.at(x, y, l0), 1.5) * 4 * lp * (1 - lp) }
                     if let textureF { ev += texture * 0.6 * soft(l0 - textureF.at(x, y, l0), 1) * (1 - smooth(0.85, 1, lp)) }
                 }
                 if whites != 0 { ev += whites * 0.62 * smooth(0.3, 1, lp) }
@@ -637,6 +637,13 @@ public enum Develop {
                 }
                 if let tone { yt = decode(table(tone, encode(min(1, yt)))) }
                 if lum > 1e-9 { let k = yt / lum; r *= k; g *= k; b *= k } else { r = yt; g = yt; b = yt }
+                // Cores claras e saturadas (pele no sol) ganham um ombro suave no canal mais forte em vez de
+                // estourar: o encaixe abaixo tiraria a cor e deixaria a pele branca.
+                let vmax = max(r, max(g, b))
+                if vmax > 0.8 {
+                    let vs = (vmax - min(r, min(g, b))) / vmax, f = 1 - vs * (1 - (0.8 + 0.2 * (1 - exp(-(vmax - 0.8) / 0.2))) / vmax)
+                    r *= f; g *= f; b *= f
+                }
             }
             let y0 = luma(r, g, b)
             fit(&r, &g, &b, y0)
@@ -736,8 +743,10 @@ public enum Develop {
 
         init(_ s: Settings, _ w: Int, _ h: Int) {
             amount = s.vignette / 100; vignette = amount != 0; style = Int(s.vignetteStyle.rounded())
-            inner = 0.2 + s.vignetteMidpoint / 100 * 0.95; width = 0.08 + s.vignetteFeather / 100 * 1.1
-            roundness = s.vignetteRoundness / 100; power = roundness < 0 ? 2 - roundness * 6 : 2; highlights = s.vignetteHighlights / 100
+            // Formato medido numa exportação do Lightroom: arredondamento 0 é um retângulo de cantos
+            // redondos (norma ~3,3), +100 vira elipse; a difusão é longa e os cantos escurecem bem.
+            inner = 0.2 + s.vignetteMidpoint / 100 * 0.95; width = 0.1 + s.vignetteFeather / 100 * 1.56
+            roundness = s.vignetteRoundness / 100; power = roundness < 0 ? 3.27 - roundness * 6 : 2 + 1.27 * (1 - roundness); highlights = s.vignetteHighlights / 100
             cx = Double(w) / 2; cy = Double(h) / 2; hw = Double(w) / 2; hh = Double(h) / 2; hc = (Double(w) * Double(h)).squareRoot() / 2
             grainAmount = s.grain / 100 * 0.1; grain = grainAmount > 0
             cell = max(1, (1 + s.grainSize / 100 * 3) * Double(max(w, h)) / 2560); rough = s.grainRoughness / 100
@@ -749,7 +758,7 @@ public enum Develop {
             if vignette {
                 let px = Double(x) + 0.5, py = Double(y) + 0.5
                 var u = (px - cx) / hw, v = (py - cy) / hh
-                if roundness > 0 { u += ((px - cx) / hc - u) * roundness; v += ((py - cy) / hc - v) * roundness }
+                if roundness > 0 { let k = roundness * roundness; u += ((px - cx) / hc - u) * k; v += ((py - cy) / hc - v) * k }
                 let d = power == 2 ? (u * u + v * v).squareRoot() : pow(pow(abs(u), power) + pow(abs(v), power), 1 / power)
                 let m = smooth(inner, inner + width, d)
                 if m > 0 {
@@ -759,7 +768,7 @@ public enum Develop {
                             r *= f; g *= f; b *= f
                         } else {
                             let l = clamp01(luma(r, g, b))
-                            var f = exp2v(amount * m * 0.75)
+                            var f = exp2v(amount * m * 1.5)
                             f = 1 - (1 - f) * (1 - highlights * smooth(0.5, 1, l))
                             r *= f; g *= f; b *= f
                         }
