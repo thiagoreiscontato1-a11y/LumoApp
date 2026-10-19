@@ -84,6 +84,7 @@ actor PhotoPipeline {
             var image = try ImageBridge.decode(original, maxEdge: options.edge)
             var opts = options
             opts.manual = record.manual
+            opts.extra = record.extra
             PhotoEditor.edit(&image, options: opts)
 
             let small = image.downsampled(maxEdge: 720)
