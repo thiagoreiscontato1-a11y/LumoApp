@@ -72,6 +72,10 @@ Atualização sobre a 0.15.5 com duas melhorias principais:
 lente, exposição, GPS). O motor de revelação usa ~40% menos memória na exportação (mesmos pixels) e o app pede heap grande,
 então 24 MP cabem sem reduzir. "Reduzida · 2560/1920 px" continua em Ajustes para quem precisa de envio mais leve. No iPhone o
 padrão também passou a ser Original.
+RAW no Android: a prévia JPEG embutida é lida pela estrutura do arquivo (a miniatura EXIF aninhada não corta mais a prévia, e os
+dados sem perdas do sensor são ignorados), ganha o EXIF e a orientação do RAW, e no cartão com RAW+JPEG o JPEG da câmera é usado
+(o RAW par fica no cartão, como no iPhone). A prévia embutida é feita pela câmera com compressão maior (~qualidade 80): para a
+melhor qualidade em RAW, fotografe em RAW+JPEG (L/Fine).
 
 Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
 

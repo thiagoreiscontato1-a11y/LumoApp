@@ -10,3 +10,12 @@ Correção:
 - EXIF da câmera (data/hora, câmera, lente, exposição, GPS) é copiado para a foto editada.
 - JPEG continua com qualidade 95.
 - iOS: padrão "Original (recomendado)"; quem estava no padrão antigo de 2560 px passa para Original uma vez.
+
+RAW → JPEG (Android):
+- A prévia embutida no RAW é a única imagem que o Android usa (não há revelação RAW). A câmera grava essa prévia em tamanho cheio, mas com compressão maior: num CR2 de 26 MB do Canon 5D Mark II ela tem 5616×3744 e 2,4 MB (tabelas de quantização ≈ qualidade 80). Um CR3 de 15 MB dá uma prévia de ~1,7 MB pelo mesmo motivo. Com o padrão antigo de 2560 px a editada ficava ainda menor (~1,1 MB).
+- Agora a editada sai em resolução cheia da prévia, qualidade 95 (~3,8 MB no exemplo do 5D Mark II), mas os detalhes ficam limitados ao que a câmera gravou na prévia.
+- Novo extrator: lê cada JPEG pela estrutura (segmentos e dados até o marcador final). Antes, "primeiro FFD9 depois de FFD8" cortava prévias com miniatura EXIF dentro (Fuji RAF, Olympus, Panasonic) e podia perder a prévia grande. Dados sem perdas do sensor (SOF3) e miniaturas < 320 px são ignorados. Arquivo mapeado em memória: ~90 ms para um CR2 de 26 MB.
+- EXIF e orientação do RAW (CR2, NEF, ARW, DNG, RW2, ORF, PEF, SRW, RAF) são copiados para a prévia; fotos em pé deixam de ficar deitadas. CR3 não é lido pelo ExifInterface do Android e segue sem EXIF.
+- Cartão com RAW+JPEG: o JPEG da câmera é usado e o RAW par fica no cartão (igual ao iPhone). A mensagem final mostra quantos RAW tinham par.
+- Recomendação para qualidade máxima: fotografar em RAW+JPEG (L/Fine).
+- Teste novo: tests/raw_preview_contract.py.

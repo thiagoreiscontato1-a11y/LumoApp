@@ -83,10 +83,19 @@ final class PhotoEditor {
  static final int JPEG_QUALITY=95;
  /** Metadados da câmera copiados para a foto editada; a orientação já foi aplicada nos pixels. */
  static final String[] EXIF_TAGS={ExifInterface.TAG_DATETIME,ExifInterface.TAG_DATETIME_ORIGINAL,ExifInterface.TAG_DATETIME_DIGITIZED,ExifInterface.TAG_OFFSET_TIME,ExifInterface.TAG_OFFSET_TIME_ORIGINAL,ExifInterface.TAG_SUBSEC_TIME_ORIGINAL,ExifInterface.TAG_MAKE,ExifInterface.TAG_MODEL,"LensMake","LensModel","BodySerialNumber",ExifInterface.TAG_ARTIST,ExifInterface.TAG_COPYRIGHT,ExifInterface.TAG_EXPOSURE_TIME,ExifInterface.TAG_F_NUMBER,ExifInterface.TAG_ISO_SPEED_RATINGS,ExifInterface.TAG_FOCAL_LENGTH,ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM,ExifInterface.TAG_EXPOSURE_BIAS_VALUE,ExifInterface.TAG_EXPOSURE_PROGRAM,ExifInterface.TAG_EXPOSURE_MODE,ExifInterface.TAG_METERING_MODE,ExifInterface.TAG_WHITE_BALANCE,ExifInterface.TAG_FLASH,ExifInterface.TAG_GPS_LATITUDE,ExifInterface.TAG_GPS_LATITUDE_REF,ExifInterface.TAG_GPS_LONGITUDE,ExifInterface.TAG_GPS_LONGITUDE_REF,ExifInterface.TAG_GPS_ALTITUDE,ExifInterface.TAG_GPS_ALTITUDE_REF,ExifInterface.TAG_GPS_TIMESTAMP,ExifInterface.TAG_GPS_DATESTAMP};
- static void copyExif(File source,File destination){
+ static void copyExif(File source,File destination){copyExif(source,destination,false);}
+ /**
+  * Copia o EXIF de {@code source} (JPEG ou RAW TIFF: CR2, NEF, ARW, DNG…) para o JPEG {@code destination}.
+  * {@code keepOrientation}: prévia extraída do RAW, cujos pixels não estão girados; a orientação
+  * do RAW vai junto (se a prévia não tiver a própria) para a edição girar a foto em pé.
+  * Sem ela, a orientação vira normal porque os pixels já foram girados.
+  */
+ static void copyExif(File source,File destination,boolean keepOrientation){
   try{ExifInterface in=new ExifInterface(source.toString()),out=new ExifInterface(destination.toString());boolean any=false;
-   for(String tag:EXIF_TAGS){String v=in.getAttribute(tag);if(v!=null&&!v.isEmpty()){out.setAttribute(tag,v);any=true;}}
-   if(!any)return;out.setAttribute(ExifInterface.TAG_ORIENTATION,String.valueOf(ExifInterface.ORIENTATION_NORMAL));out.saveAttributes();
+   for(String tag:EXIF_TAGS){String v=in.getAttribute(tag);if(v!=null&&!v.isEmpty()&&(!keepOrientation||out.getAttribute(tag)==null)){out.setAttribute(tag,v);any=true;}}
+   if(keepOrientation){String o=in.getAttribute(ExifInterface.TAG_ORIENTATION);if(o!=null&&out.getAttribute(ExifInterface.TAG_ORIENTATION)==null){out.setAttribute(ExifInterface.TAG_ORIENTATION,o);any=true;}}
+   else if(any)out.setAttribute(ExifInterface.TAG_ORIENTATION,String.valueOf(ExifInterface.ORIENTATION_NORMAL));
+   if(any)out.saveAttributes();
   }catch(Exception ignored){}
  }
  static void edit(File source,File destination,JSONObject options)throws Exception{

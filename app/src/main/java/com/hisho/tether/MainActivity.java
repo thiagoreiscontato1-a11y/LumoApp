@@ -839,6 +839,8 @@ public class MainActivity extends Activity {
  void start(UsbDevice d){startCamera(d,null,null);}
  void startCamera(UsbDevice d,String wifiHost,android.net.Network wifiNetwork){if(!requireEvent())return;if(deletingPhotos){message("Aguarde a exclusão terminar.");return;}if(CaptureService.active!=null){message("Serviço já ativo.");return;}try{JSONObject cfg=buildCurrentSettings();getSharedPreferences("hisho",0).edit().putString("liveSettings",cfg.toString()).apply();Intent i=new Intent(MainActivity.this,CaptureService.class).putExtra("settings",cfg.toString());if(d!=null)i.putExtra("device",d);if(wifiHost!=null)i.putExtra("wifiHost",wifiHost).putExtra("wifiNetwork",wifiNetwork);startForegroundService(i);}catch(Exception e){message(e.getMessage());}}
  static final int REQUEST_CARD_FOLDER=40;
+ /** Pasta + nome sem extensão, para achar o par RAW+JPEG da mesma foto. */
+ static String cardStem(CardPhoto c){return c.album+"/"+c.name.toLowerCase(Locale.ROOT).replaceFirst("\\.[^.]+$","");}
  static final class CardPhoto{final Uri uri;final String name,album;final long size,modified;CardPhoto(Uri u,String n,long s,long m,String a){uri=u;name=n;size=s;modified=m;album=a;}}
  void chooseCardFolder(){if(!requireEvent())return;
   Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
@@ -903,6 +905,9 @@ public class MainActivity extends Activity {
    try{String rootId=DocumentsContract.getTreeDocumentId(tree);Uri root=DocumentsContract.buildDocumentUriUsingTree(tree,rootId);photos=scanCardFolder(tree,root,0,new HashSet<>());}
    catch(CancellationException e){photos=new ArrayList<>();}
    catch(Exception e){photos=new ArrayList<>();failed++;final String error=e.getMessage();handler.post(()->message("Não foi possível ler o cartão: "+error));}
+   // RAW+JPEG: o JPEG da câmera (qualidade cheia) vale mais que a prévia embutida no RAW, então o RAW com par fica no cartão, como no iPhone.
+   int pairedRaw=0;{Set<String> jpegStems=new HashSet<>();for(CardPhoto c:photos){String n=c.name.toLowerCase(Locale.ROOT);if(n.endsWith(".jpg")||n.endsWith(".jpeg"))jpegStems.add(cardStem(c));}
+    ArrayList<CardPhoto> kept=new ArrayList<>();for(CardPhoto c:photos){if(RawPreview.isRaw(c.name)&&jpegStems.contains(cardStem(c)))pairedRaw++;else kept.add(c);}photos=kept;}
    importTotal=photos.size();importProcessed=0;importScanning=false;handler.post(this::updateImportBar);
    File spool=new File(getFilesDir(),"queue");if(!spool.exists())spool.mkdirs();
    for(CardPhoto photo:photos){if(importCancelRequested||!DemoLicense.allowed(MainActivity.this))break;importProcessed++;File temp=null;String insertedId="";try{
@@ -915,16 +920,16 @@ public class MainActivity extends Activity {
     String base=photo.name.replaceFirst("\\.[^.]+$","").replaceAll("[^a-zA-Z0-9_-]","_");String outName=base+"_Cartao_"+id.substring(0,10)+".jpg";long captured=modified>0?modified:System.currentTimeMillis();
     database.addImported(id,temp,outName,settings,captured,hash,pHash,temp.length());insertedId=id;
     database.setAlbum(id,photo.album,photo.name);
-    if(raw){String rawName=photo.name.replaceAll("[^a-zA-Z0-9_.-]","_");rawName=rawName.replaceFirst("\\.[^.]+$","")+"_"+id.substring(0,10)+photo.name.substring(photo.name.lastIndexOf('.'));Uri rawUri=database.save(temp,"RAW",rawName,id,"raw_original");File jpeg=new File(spool,id+"_preview.jpg");if(!RawPreview.extract(temp,jpeg)){database.set(id,"rawOnly","original",rawUri.toString());database.history(id,System.currentTimeMillis(),"RAW preservado","Sem prévia JPEG compatível; revelação RAW ainda não disponível.");temp.delete();imported++;continue;}temp.delete();if(!jpeg.renameTo(temp))throw new IOException("Falha ao preparar prévia RAW.");database.history(id,System.currentTimeMillis(),"RAW preservado","Edição utiliza a prévia JPEG embutida.");}
+    if(raw){String rawName=photo.name.replaceAll("[^a-zA-Z0-9_.-]","_");rawName=rawName.replaceFirst("\\.[^.]+$","")+"_"+id.substring(0,10)+photo.name.substring(photo.name.lastIndexOf('.'));Uri rawUri=database.save(temp,"RAW",rawName,id,"raw_original");File jpeg=new File(spool,id+"_preview.jpg");boolean extracted=RawPreview.extract(temp,jpeg);if(extracted)PhotoEditor.copyExif(temp,jpeg,true);if(!extracted){database.set(id,"rawOnly","original",rawUri.toString());database.history(id,System.currentTimeMillis(),"RAW preservado","Sem prévia JPEG compatível; revelação RAW ainda não disponível.");temp.delete();imported++;continue;}temp.delete();if(!jpeg.renameTo(temp))throw new IOException("Falha ao preparar prévia RAW.");database.history(id,System.currentTimeMillis(),"RAW preservado","Edição utiliza a prévia JPEG embutida.");}
     Uri original=database.save(temp,"Originais",outName,id,"original");database.set(id,"ready","original",original.toString());imported++;
    }catch(CancellationException e){if(temp!=null)temp.delete();importProcessed--;break;}
    catch(Exception e){if(temp!=null)temp.delete();if(!insertedId.isEmpty())try{database.set(insertedId,"originalError","error",e.toString());}catch(Exception ignored){}failed++;}}
    if(ownService)try{startService(new Intent(MainActivity.this,CaptureService.class).setAction("finish_import"));}catch(Exception ignored){}
-   final int done=imported,dupes=duplicates,skip=unsupported,errors=failed;final boolean cancelled=importCancelRequested;final int left=Math.max(0,importTotal-importProcessed);
+   final int done=imported,dupes=duplicates,skip=unsupported,errors=failed,paired=pairedRaw;final boolean cancelled=importCancelRequested;final int left=Math.max(0,importTotal-importProcessed);
    importingEvent=false;importCancelRequested=false;importScanning=false;
    handler.post(()->{updateImportBar();gallerySignature="";filesSignature="";reviewSignature="";if(selected==1)refreshFiles(true);if(selected==2)refreshReview(true);refreshGallery();
     if(cancelled)message("Importação cancelada: "+done+" foto(s) já estão na edição"+(dupes>0?", "+dupes+" duplicada(s)":"")+(errors>0?", "+errors+" erro(s)":"")+". "+left+" foto(s) da pasta não foram importadas.");
-    else message("Cartão processado: "+done+" foto(s) na edição, "+dupes+" duplicada(s), "+skip+" arquivo(s) não compatível(is) e "+errors+" erro(s).");});
+    else message("Cartão processado: "+done+" foto(s) na edição, "+dupes+" duplicada(s), "+skip+" arquivo(s) não compatível(is) e "+errors+" erro(s)."+(paired>0?" "+paired+" RAW com JPEG par: usado o JPEG da câmera.":""));});
   });
  }
  static String read(InputStream stream)throws IOException{try(InputStream s=stream;ByteArrayOutputStream b=new ByteArrayOutputStream()){byte[] a=new byte[8192];int n;while((n=s.read(a))!=-1){if(b.size()+n>1024*1024)throw new IOException("Arquivo maior que 1 MB.");b.write(a,0,n);}return b.toString("UTF-8");}}
