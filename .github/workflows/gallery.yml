@@ -1,0 +1,88 @@
+name: Galeria online
+
+# Testa o servidor da galeria a cada mudança em online-gallery/ e publica na Cloudflare
+# quando acionado manualmente (Actions → Galeria online → Run workflow).
+# Segredos necessários para publicar (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GALLERY_ADMIN_TOKEN
+# Variável opcional: STUDIO_NAME (nome exibido aos convidados).
+
+on:
+  push:
+    paths:
+      - 'online-gallery/**'
+      - '.github/workflows/gallery.yml'
+  pull_request:
+    paths:
+      - 'online-gallery/**'
+  workflow_dispatch:
+    inputs:
+      publicar:
+        description: 'Publicar na Cloudflare depois dos testes'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: online-gallery/worker
+
+jobs:
+  test:
+    name: Testes da API
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    name: Publicar na Cloudflare
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.publicar
+    runs-on: ubuntu-24.04
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GALLERY_ADMIN_TOKEN: ${{ secrets.GALLERY_ADMIN_TOKEN }}
+      STUDIO_NAME: ${{ vars.STUDIO_NAME }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Conferir segredos
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$GALLERY_ADMIN_TOKEN" ] || missing="$missing GALLERY_ADMIN_TOKEN"
+          if [ -n "$missing" ]; then echo "::error::Faltam segredos do repositório:$missing (veja online-gallery/README.md)"; exit 1; fi
+          if [ ${#GALLERY_ADMIN_TOKEN} -lt 24 ]; then echo "::error::GALLERY_ADMIN_TOKEN precisa ter pelo menos 24 caracteres."; exit 1; fi
+      - name: Criar armazenamento de fotos (R2), se ainda não existir
+        run: |
+          if npx wrangler r2 bucket list | grep -q "lumo-galeria-fotos"; then echo "Bucket já existe."; else npx wrangler r2 bucket create lumo-galeria-fotos; fi
+      - name: Criar banco de dados (D1), se ainda não existir, e aplicar o esquema
+        run: |
+          find_id() { npx wrangler d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const l=JSON.parse(s);const d=(Array.isArray(l)?l:l.result||[]).find(x=>x.name==="lumo-galeria");process.stdout.write(d?(d.uuid||d.database_id||""):"")})'; }
+          ID="$(find_id)"
+          if [ -z "$ID" ]; then npx wrangler d1 create lumo-galeria; ID="$(find_id)"; fi
+          if [ -z "$ID" ]; then echo "::error::Não foi possível obter o ID do banco D1."; exit 1; fi
+          sed -i "s/00000000-0000-0000-0000-000000000000/$ID/" wrangler.toml
+          npx wrangler d1 migrations apply lumo-galeria --remote
+      - name: Publicar o Worker
+        run: |
+          npx wrangler deploy --var "STUDIO_NAME:${STUDIO_NAME:-Lumo}" | tee deploy.log
+          printf '%s' "$GALLERY_ADMIN_TOKEN" | npx wrangler secret put ADMIN_TOKEN
+          URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)"
+          {
+            echo "## Galeria online publicada"
+            echo ""
+            echo "- Painel do fotógrafo: ${URL}/admin"
+            echo "- Endereço para o app Lumo (Entrega → Galeria online): ${URL#https://}"
+          } >> "$GITHUB_STEP_SUMMARY"

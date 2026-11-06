@@ -8,7 +8,7 @@ final class FottoSync{
  private static final long WATCHDOG_INTERVAL_MS=4000L,STALL_BASE_MS=9000L,STALL_MAX_MS=60000L;
  private static volatile long LAST_WATCHDOG_AT=0L;
 
- static void kick(Context c){long after=c.getSharedPreferences("hisho",0).getLong("fottoStartRowid",Long.MAX_VALUE);kick(c,after,false);}
+ static void kick(Context c){GallerySync.kick(c);long after=c.getSharedPreferences("hisho",0).getLong("fottoStartRowid",Long.MAX_VALUE);kick(c,after,false);}
  static void sendExisting(Context c){STOP_REQUESTED.set(false);kick(c,0,true);}
  static void kick(Context source,long after,boolean resetErrors){if(!DemoLicense.allowed(source))return;Context c=source.getApplicationContext();android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);if(!p.getBoolean("fottoAuto",false)&&!resetErrors)return;if(FottoApi.token(c).isEmpty()||p.getString("fottoGalleryId","").isEmpty())return;if(!RUNNING.compareAndSet(false,true))return;STOP_REQUESTED.set(false);EXEC.execute(()->run(c,after,resetErrors));}
  static void sendSelected(Context source,Collection<String> ids){STOP_REQUESTED.set(false);if(ids==null||ids.isEmpty())return;Context c=source.getApplicationContext();android.content.SharedPreferences p=c.getSharedPreferences("hisho",0);if(FottoApi.token(c).isEmpty()||p.getString("fottoGalleryId","").isEmpty()){p.edit().putString("fottoLastStatus","Conecte o Fotto e escolha um evento antes de enviar.").apply();return;}if(!RUNNING.compareAndSet(false,true))return;EXEC.execute(()->runSelected(c,new ArrayList<>(ids)));}

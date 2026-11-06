@@ -1,0 +1,27 @@
+# Galeria online do Lumo — Cloudflare Workers + R2 (fotos) + D1 (dados).
+# Guia de publicação: ../README.md
+name = "lumo-galeria"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[vars]
+# Nome exibido para os convidados no topo da galeria.
+STUDIO_NAME = "Lumo"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+html_handling = "none"
+not_found_handling = "none"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lumo-galeria"
+# Troque pelo ID mostrado em `npx wrangler d1 create lumo-galeria` (o workflow do GitHub preenche sozinho).
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "lumo-galeria-fotos"

@@ -1,4 +1,10 @@
-# LUMO — Android 0.16.1 e iOS 0.4.0
+# LUMO — Android 0.17.0 e iOS 0.4.0
+
+**Android 0.17.0 — Galeria online para os convidados:** em Entrega → Galeria online, o Lumo cria uma galeria para o evento
+e publica cada foto aprovada, em paralelo ao Fotto (que continua igual). Os convidados abrem um link ou QR code, veem as fotos,
+favoritam, baixam uma a uma, em `.zip` ou direto na galeria do celular, e recebem aviso de fotos novas. O fotógrafo vê quem
+favoritou o quê. O servidor roda grátis na Cloudflare (`*.workers.dev`, sem domínio). Guia completo em
+[`online-gallery/README.md`](online-gallery/README.md).
 
 **Downloads:** release [`lumo-latest`](https://github.com/thiagoreiscontato1-a11y/LumoApp/releases/tag/lumo-latest) — `Lumo.apk` (Android) e
 `Lumo-iOS-unsigned.ipa` (iPhone, instalar com Sideloadly/AltStore), gerados automaticamente a cada atualização da `main`.

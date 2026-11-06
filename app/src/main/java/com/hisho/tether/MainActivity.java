@@ -671,7 +671,86 @@ public class MainActivity extends Activity {
    .item("upload",CYAN,"Enviar todas as pendentes","Fotos aprovadas que ainda não foram enviadas",()->{if(checkFottoReady())FottoSync.sendExisting(this);})
    .item("open",CYAN,"Abrir Fotto no navegador","Conferir o evento ou alternativa ao envio direto",this::openFottoWeb)
    .item("folder",CYAN,"Alterar pasta de exportação","Onde o Lumo salva originais e editadas",this::chooseExportFolder)
+   .section("Para os convidados")
+   .item("photos",CYAN,"Galeria online",galleryMenuSubtitle(),this::galleryMenu)
    .show();
+ }
+
+ // ---------------------------------------------------------------- galeria online (online-gallery/worker)
+ String galleryMenuSubtitle(){
+  if(!GalleryApi.configured(this))return "Link para os convidados verem, favoritarem e baixarem";
+  GalleryApi.Gallery g=GalleryApi.galleryFor(this,database.activeEvent());
+  return g==null?"Crie a galeria deste evento":"Publicando em: "+g.title;
+ }
+ void galleryMenu(){
+  boolean connected=GalleryApi.configured(this);
+  String event=database.activeEvent();GalleryApi.Gallery g=connected?GalleryApi.galleryFor(this,event):null;
+  LumoSheet sheet=new LumoSheet(this,"Galeria online",connected?(g==null?"Evento: "+database.eventName():g.title):"Os convidados recebem um link (ou QR code) para ver, favoritar e baixar as fotos. Complementa o Fotto.");
+  if(!connected){
+   sheet.item("person",CYAN,"Conectar servidor da galeria","Endereço workers.dev e chave de acesso",this::connectGalleryDialog).show();return;
+  }
+  if(g==null){
+   sheet.item("add",CYAN,"Criar galeria deste evento",database.eventName(),this::createGalleryDialog);
+  }else{
+   int done=database.onlineDone(g.id),pending=database.onlinePending(g.id,event),errors=database.onlineErrors(g.id);
+   sheet.status("photos",CYAN,"Publicadas",String.valueOf(done));
+   if(pending>0)sheet.status("clock",CYAN,"Aguardando envio",String.valueOf(pending));
+   if(errors>0)sheet.status("warning",DANGER,"Com erro",String.valueOf(errors));
+   String status=GallerySync.status(this);if(!status.isEmpty())sheet.text(status);
+   sheet.section("Convidados")
+    .item("share",CYAN,"Compartilhar link","WhatsApp, Instagram, e-mail…"+(g.hasPin?" (lembre de mandar a senha)":""),()->shareGalleryLink(g))
+    .item("file",CYAN,"Copiar link",g.url,()->{((ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Galeria",g.url));message("Link copiado.");})
+    .item("open",CYAN,"Painel no navegador","QR code para imprimir, favoritas dos convidados e configurações",()->openUrl(GalleryApi.server(this)+"/admin#g="+g.id))
+    .section("Envio")
+    .choice("bolt",CYAN,"Publicar automaticamente","Cada foto aprovada vai para a galeria",GallerySync.auto(this),()->{boolean on=!GallerySync.auto(this);GallerySync.setAuto(this,on);message(on?"Publicação automática ligada.":"Publicação automática desligada.");})
+    .item("upload",CYAN,"Enviar pendentes agora",pending==0?"Nada pendente":pending+" foto(s)",()->{GallerySync.sendNow(this);message("Enviando para a galeria online…");})
+    .item("refresh",CYAN,"Trocar galeria deste evento","Desliga este evento da galeria atual (nada é apagado online)",()->{GalleryApi.forgetGallery(this,event);message("Galeria desligada deste evento.");});
+  }
+  sheet.section("Servidor").item("person",CYAN,"Trocar servidor ou chave",GalleryApi.server(this).replaceFirst("^https://",""),this::connectGalleryDialog).show();
+ }
+ void openUrl(String url){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){message("Nenhum navegador disponível.");}}
+ void shareGalleryLink(GalleryApi.Gallery g){
+  String text="Fotos do evento "+g.title+": "+g.url;
+  startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT,g.title).putExtra(Intent.EXTRA_TEXT,text),"Compartilhar galeria"));
+ }
+ void connectGalleryDialog(){
+  EditText server=new EditText(this);server.setSingleLine(true);server.setHint("lumo-galeria.suaconta.workers.dev");server.setTextSize(14);server.setText(GalleryApi.server(this).replaceFirst("^https://",""));server.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
+  EditText key=new EditText(this);key.setSingleLine(true);key.setHint("Chave de acesso (ADMIN_TOKEN)");key.setTextSize(14);key.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+  LinearLayout body=vertical();body.setPadding(dp(20),dp(4),dp(20),0);
+  label(body,"Endereço do servidor publicado na Cloudflare e a mesma chave usada no painel. Veja online-gallery/README.md.",12);
+  body.addView(server,new LinearLayout.LayoutParams(-1,dp(58)));body.addView(key,new LinearLayout.LayoutParams(-1,dp(58)));
+  AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Servidor da galeria").setView(body).setNegativeButton("Cancelar",null).setPositiveButton("Conectar",null).create();
+  dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+   String url=GalleryApi.normalizeServer(server.getText().toString()),token=key.getText().toString().trim();
+   if(url.isEmpty()){server.setError("Informe o endereço.");return;}if(token.isEmpty()){key.setError("Informe a chave.");return;}
+   dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+   fottoNetwork.execute(()->{
+    try{String studio=GalleryApi.check(url,token);getSharedPreferences("hisho",0).edit().putString("lgServer",url).putString("lgToken",token).apply();
+     handler.post(()->{if(destroyed)return;dialog.dismiss();message("Galeria conectada · "+studio);galleryMenu();});}
+    catch(Exception e){handler.post(()->{if(destroyed)return;dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);key.setError(e.getMessage());});}
+   });
+  }));dialog.show();
+ }
+ void createGalleryDialog(){
+  String event=database.activeEvent();
+  EditText title=new EditText(this);title.setSingleLine(true);title.setHint("Nome que os convidados veem");title.setTextSize(14);title.setText(database.eventName());
+  EditText pin=new EditText(this);pin.setSingleLine(true);pin.setHint("Senha (opcional, 4 ou mais letras/números)");pin.setTextSize(14);
+  CheckBox download=new CheckBox(this);download.setText("Convidados podem baixar em alta");download.setChecked(true);download.setTextColor(TEXT);
+  LinearLayout body=vertical();body.setPadding(dp(20),dp(4),dp(20),0);
+  label(body,"As fotos aprovadas deste evento serão publicadas nela. Anote a senha: ela não pode ser vista depois.",12);
+  body.addView(title,new LinearLayout.LayoutParams(-1,dp(58)));body.addView(pin,new LinearLayout.LayoutParams(-1,dp(58)));body.addView(download);
+  AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Nova galeria online").setView(body).setNegativeButton("Cancelar",null).setPositiveButton("Criar",null).create();
+  dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+   String name=title.getText().toString().trim(),secret=pin.getText().toString().trim();
+   if(name.isEmpty()){title.setError("Informe o nome.");return;}
+   if(!secret.isEmpty()&&!secret.matches("[0-9A-Za-z]{4,32}")){pin.setError("Use de 4 a 32 letras ou números.");return;}
+   boolean allow=download.isChecked();dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+   fottoNetwork.execute(()->{
+    try{GalleryApi.Gallery g=GalleryApi.createGallery(this,name,event,secret,allow);GalleryApi.saveGallery(this,event,g);GallerySync.sendNow(this);
+     handler.post(()->{if(destroyed)return;dialog.dismiss();message("Galeria criada. Publicando as fotos aprovadas…");galleryMenu();});}
+    catch(Exception e){handler.post(()->{if(destroyed)return;dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);title.setError(e.getMessage());});}
+   });
+  }));dialog.show();
  }
  static String normalizeEventText(String value){
   String text=java.text.Normalizer.normalize(value==null?"":value,java.text.Normalizer.Form.NFD);
