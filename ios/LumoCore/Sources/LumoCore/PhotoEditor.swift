@@ -54,7 +54,7 @@ public struct EditOptions: Codable, Hashable {
     /// valor final de cada uma: substituem os do preset.
     public var extra: [String: Double]?
     /// Maior lado do JPEG editado; 0 mantém o original.
-    public var edge: Int = 2560
+    public var edge: Int = 0
     public var curation: Bool = true
     /// 0 = tolerante, 1 = equilibrada, 2 = rigorosa.
     public var curationSensitivity: Int = 1

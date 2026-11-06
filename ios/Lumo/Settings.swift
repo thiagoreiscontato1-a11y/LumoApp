@@ -8,7 +8,10 @@ struct LumoSettings: Codable, Equatable {
     var presetName = ""
     var curation = true
     var curationSensitivity = 1
-    var edge = 2560
+    /// Maior lado do JPEG editado (0 = resolução original, o padrão).
+    var edge = 0
+    /// Marca que o padrão antigo de 2560 px já foi trocado pela resolução original.
+    var fullResolutionDefault = true
     /// Recuperar fotos que já estavam no cartão ao conectar.
     var backfill = true
     var fottoAuto = false
@@ -35,6 +38,10 @@ struct LumoSettings: Codable, Equatable {
         curation = try c.decodeIfPresent(Bool.self, forKey: .curation) ?? d.curation
         curationSensitivity = try c.decodeIfPresent(Int.self, forKey: .curationSensitivity) ?? d.curationSensitivity
         edge = try c.decodeIfPresent(Int.self, forKey: .edge) ?? d.edge
+        // Versões antigas salvavam 2560 px como padrão e a foto editada ficava ~10× menor que a
+        // original. Uma única vez, quem ainda estava nesse padrão passa para a resolução original.
+        if try c.decodeIfPresent(Bool.self, forKey: .fullResolutionDefault) != true, edge == 2560 { edge = 0 }
+        fullResolutionDefault = true
         backfill = try c.decodeIfPresent(Bool.self, forKey: .backfill) ?? d.backfill
         fottoAuto = try c.decodeIfPresent(Bool.self, forKey: .fottoAuto) ?? d.fottoAuto
         wifiHost = try c.decodeIfPresent(String.self, forKey: .wifiHost) ?? d.wifiHost

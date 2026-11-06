@@ -1,4 +1,4 @@
-# LUMO — Android 0.16.1 e iOS 0.4.0
+# LUMO — Android 0.16.2 e iOS 0.4.0
 
 **Downloads:** release [`lumo-latest`](https://github.com/thiagoreiscontato1-a11y/LumoApp/releases/tag/lumo-latest) — `Lumo.apk` (Android) e
 `Lumo-iOS-unsigned.ipa` (iPhone, instalar com Sideloadly/AltStore), gerados automaticamente a cada atualização da `main`.
@@ -66,6 +66,12 @@ Atualização sobre a 0.15.5 com duas melhorias principais:
 ---
 
 # LUMO 0.15.5 — Fotto fila longa + correção de build
+
+**Android 0.16.2 — foto editada em resolução original:** a cópia editada deixou de ser reduzida para 2560 px por padrão
+(uma foto de 10 MB caía para ~1 MB). Agora sai no tamanho da câmera, JPEG qualidade 95, com o EXIF da câmera (data, câmera,
+lente, exposição, GPS). O motor de revelação usa ~40% menos memória na exportação (mesmos pixels) e o app pede heap grande,
+então 24 MP cabem sem reduzir. "Reduzida · 2560/1920 px" continua em Ajustes para quem precisa de envio mais leve. No iPhone o
+padrão também passou a ser Original.
 
 Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
 
