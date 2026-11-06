@@ -19,7 +19,27 @@ start --ez lumoViewer true
 shot 5-visualizador 12
 start --ei lumoPage 3
 shot 6-entrega 10
+# Modais (LumoSheet): menu, saúde do fluxo, eventos e tour.
+start --es lumoSheet menu
+shot 7-menu 8
+start --es lumoSheet saude
+shot 8-saude 8
+start --es lumoSheet eventos
+shot 9-eventos 8
+start --es lumoSheet tour
+shot 10-tour 8
+# Tablet deitado (1280x800 dp): cartão centralizado e topo em largura grande.
+adb shell wm size 2560x1600
+adb shell wm density 320
+start
+shot 11-tablet-ao-vivo 10
+start --es lumoSheet menu
+shot 12-tablet-menu 8
+adb shell wm size reset
+adb shell wm density reset
 ls -l screenshots
 echo "===== LOGCAT (erros do app) ====="
 adb logcat -d -b crash | tail -120
+# Se o app fechou em algum momento, guarda o log; o workflow falha depois de publicar as capturas.
+adb logcat -d -b crash | grep -A40 "Process: com.hisho.tether" > screenshots/crash.txt || true
 adb logcat -d | grep -E "FATAL|AndroidRuntime|LUMO|hisho" | tail -120

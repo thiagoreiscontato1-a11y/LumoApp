@@ -41,5 +41,8 @@ final class LumoTheme {
 
  static GradientDrawable dot(int color,int size){GradientDrawable d=new GradientDrawable();d.setShape(GradientDrawable.OVAL);d.setColor(color);d.setSize(size,size);d.setBounds(0,0,size,size);return d;}
 
+ /** Tema do app (res/values/styles.xml, LumoApp), achado pelo nome porque o build não gera R. */
+ static int appTheme(Context c){int id=c.getResources().getIdentifier("LumoApp","style",c.getPackageName());return id!=0?id:android.R.style.Theme_Material_NoActionBar;}
+
  private LumoTheme(){}
 }

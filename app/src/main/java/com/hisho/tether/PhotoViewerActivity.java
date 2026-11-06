@@ -32,7 +32,7 @@ public class PhotoViewerActivity extends Activity {
  int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
 
  @Override public void onCreate(Bundle saved){
-  setTheme(android.R.style.Theme_Material_NoActionBar);
+  setTheme(LumoTheme.appTheme(this));
   super.onCreate(saved);
   database=new Jobs(this);
   String[] list=getIntent().getStringArrayExtra(EXTRA_IDS);
