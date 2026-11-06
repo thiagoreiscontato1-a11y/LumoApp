@@ -8,6 +8,9 @@ adb shell settings put global window_animation_scale 0
 adb shell settings put global transition_animation_scale 0
 start() { adb shell am force-stop com.hisho.tether; adb shell am start -n com.hisho.tether/.MainActivity "$@"; }
 shot() { sleep "$2"; adb exec-out screencap -p > "screenshots/$1.png"; }
+# Primeira abertura, sem conta: tela de entrada (login com Fotto). O modo demonstração entra sem conta.
+start
+shot 0-login 8
 start --ez lumoDemo true
 shot 1-ao-vivo-processando 25
 shot 2-ao-vivo 50

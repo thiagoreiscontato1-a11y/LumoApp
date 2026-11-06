@@ -1,4 +1,4 @@
-# LUMO — Android 0.16.2 e iOS 0.4.0
+# LUMO — Android 0.17.0 e iOS 0.4.0
 
 **Downloads:** release [`lumo-latest`](https://github.com/thiagoreiscontato1-a11y/LumoApp/releases/tag/lumo-latest) — `Lumo.apk` (Android) e
 `Lumo-iOS-unsigned.ipa` (iPhone, instalar com Sideloadly/AltStore), gerados automaticamente a cada atualização da `main`.
@@ -14,6 +14,12 @@ do evento sempre visível; telas vazias com ação (importar do cartão, conecta
 Menus, Saúde do fluxo, Eventos e tour em modais novos (folha inferior no celular, cartão central no tablet), com ícones,
 subtítulos e o evento atual marcado; confirmações e formulários seguem o mesmo tema escuro arredondado.
 Corrige o fechamento do modo demonstração quando o Android recria a tela.
+
+**Android 0.17.0 — login com a conta Fotto:** sem sessão Fotto o app abre numa tela de entrada (“Entrar com Fotto”);
+depois do login vai direto para a tela ao vivo e continua abrindo sem internet. Quem já tinha o Fotto conectado não precisa entrar
+de novo. Menu → Conta → **Sair da conta Fotto** apaga a sessão, os cookies do login, o evento de destino e para o envio automático;
+fotos, eventos locais e edições ficam no aparelho. Sessão expirada não tira ninguém do app no meio de um evento: continua o aviso
+“Conectar Fotto novamente”. O modo demonstração das capturas do CI entra sem conta.
 
 **iOS:** veja [`ios/README.md`](ios/README.md). Os workflows **Lumo Android** e **Lumo iOS** testam, compilam e publicam capturas de tela
 do modo demonstração nas branches `ci/android-screenshots` e `ci/ios-screenshots`.

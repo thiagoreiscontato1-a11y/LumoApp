@@ -1,0 +1,10 @@
+Lumo 0.17.0 (Android): login com a conta Fotto.
+
+- Nova tela de entrada (LumoLoginActivity): logo, "Entre com sua conta Fotto" e o botão "Entrar com Fotto", que abre o login já existente do Fotto (FottoLoginActivity). Sem internet, avisa antes de abrir.
+- O MainActivity só abre com uma sessão Fotto salva. Sem sessão, vai para a tela de entrada. A checagem é local: depois do primeiro login o app abre normalmente offline.
+- Quem já tinha o Fotto conectado entra direto, sem novo login.
+- Menu → Conta → "Sair da conta Fotto": mostra nome/e-mail da conta (lidos do /me), pede confirmação, avisa quantas fotos ainda não foram enviadas e bloqueia a saída durante captura/importação. Ao sair: para o envio automático, apaga as chaves do Fotto, o evento de destino e os cookies/armazenamento do WebView (o próximo login pede e-mail e senha de novo). Fotos, eventos locais, edições e a fila ficam no aparelho.
+- Sessão expirada (HTTP 401) não força a saída: o app segue funcionando e o aviso "Conectar Fotto novamente" continua na Saúde do fluxo e na Entrega.
+- Modo demonstração (--ez lumoDemo true, usado pelas capturas do CI) entra sem conta; "Sair do modo demonstração" volta para a tela de entrada.
+- CI: nova captura 0-login.png (primeira abertura). Novo teste tests/login_contract.py.
+- versionCode 53, versionName 0.17.0.
