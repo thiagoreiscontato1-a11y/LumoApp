@@ -21,7 +21,7 @@ public class PhotoViewerActivity extends Activity {
  private Jobs database;
  private ZoomImageView image;
  private LinearLayout top,bottom,actions;
- private TextView counter,favorite,stage,reason,score;
+ private TextView counter,stage,reason,score;private ImageButton favorite;
  private String[] row;
  private boolean chrome=true,destroyed=false,changed=false;
  private final Handler handler=new Handler(Looper.getMainLooper());
@@ -50,10 +50,10 @@ public class PhotoViewerActivity extends Activity {
 
   top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(14),dp(10),dp(14),dp(18));
   top.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xcc000000,0x00000000}));
-  top.addView(circle("✕",v->finish()),new LinearLayout.LayoutParams(dp(42),dp(42)));
+  top.addView(circle("close","Fechar",v->finish()),new LinearLayout.LayoutParams(dp(48),dp(48)));
   counter=label("",14,Color.WHITE,true);counter.setGravity(Gravity.CENTER);top.addView(counter,new LinearLayout.LayoutParams(0,-2,1));
-  favorite=circle("☆",v->toggleFavorite());top.addView(favorite,new LinearLayout.LayoutParams(dp(42),dp(42)));
-  TextView info=circle("i",v->showInfo());LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(dp(42),dp(42));ip.leftMargin=dp(8);top.addView(info,ip);
+  favorite=circle("star_outline","Favoritar",v->toggleFavorite());top.addView(favorite,new LinearLayout.LayoutParams(dp(48),dp(48)));
+  ImageButton info=circle("info","Informações da foto",v->showInfo());LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(dp(48),dp(48));ip.leftMargin=dp(8);top.addView(info,ip);
   root.addView(top,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));
 
   bottom=new LinearLayout(this);bottom.setOrientation(LinearLayout.VERTICAL);bottom.setPadding(dp(16),dp(26),dp(16),dp(16));
@@ -74,10 +74,12 @@ public class PhotoViewerActivity extends Activity {
 
  TextView label(String value,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setTypeface(Typeface.create(bold?"sans-serif-medium":"sans-serif",Typeface.NORMAL));return t;}
 
- TextView circle(String value,View.OnClickListener l){TextView t=label(value,17,Color.WHITE,true);t.setGravity(Gravity.CENTER);t.setBackground(LumoTheme.fill(0x73000000,dp(21)));t.setOnClickListener(l);return t;}
+ /** Botão redondo de ícone sobre a foto: 48dp, com nome para o TalkBack. */
+ ImageButton circle(String icon,String description,View.OnClickListener l){ImageButton b=new ImageButton(this);b.setImageDrawable(LumoTheme.icon(this,icon,Color.WHITE,dp(24)));b.setScaleType(ImageView.ScaleType.CENTER);b.setPadding(0,0,0,0);b.setContentDescription(description);b.setTooltipText(description);b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x33ffffff),LumoTheme.fill(0x73000000,dp(24)),null));b.setOnClickListener(l);return b;}
+ void showFavorite(boolean on){favorite.setImageDrawable(LumoTheme.icon(this,on?"star":"star_outline",on?LumoTheme.WARN:Color.WHITE,dp(24)));favorite.setContentDescription(on?"Remover dos favoritos":"Favoritar");}
 
  Button action(String title,int color,View.OnClickListener l){
-  Button b=new Button(this);b.setText(title);b.setAllCaps(false);b.setTextSize(12);b.setTextColor(color);b.setTypeface(Typeface.create("sans-serif-medium",0));
+  Button b=new Button(this);b.setText(title);b.setAllCaps(false);b.setTextSize(13);b.setTextColor(color);b.setTypeface(Typeface.create("sans-serif-medium",0));
   b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x33ffffff),LumoTheme.fill(0x1affffff,dp(14)),null));
   b.setMinHeight(0);b.setMinimumHeight(0);b.setPadding(dp(4),0,dp(4),0);b.setOnClickListener(l);return b;
  }
@@ -91,10 +93,10 @@ public class PhotoViewerActivity extends Activity {
   row=database.viewerRow(current());
   if(row==null){ids.remove(index);if(ids.isEmpty()){finish();return;}index=Math.min(index,ids.size()-1);row=database.viewerRow(current());if(row==null){finish();return;}}
   counter.setText((index+1)+" de "+ids.size());
-  boolean fav=database.isFavorite(row[0]);favorite.setText(fav?"★":"☆");favorite.setTextColor(fav?LumoTheme.WARN:Color.WHITE);
+  boolean fav=database.isFavorite(row[0]);showFavorite(fav);
   String st=row[3];int sc=0;try{sc=Integer.parseInt(row[4]);}catch(Exception ignored){}
   boolean review="review".equals(st),done="done".equals(st);
-  stage.setText(review?"⚠ Revisão":done?"✓ Aprovada":"● "+("error".equals(st)?"Falha":"Editando"));
+  stage.setText(review?"Revisão":done?"Aprovada":"error".equals(st)?"Falha":"Editando");stage.setCompoundDrawablesRelative(review||done||"error".equals(st)?LumoTheme.icon(this,done?"check":"warning",Color.WHITE,dp(16)):null,null,null,null);stage.setCompoundDrawablePadding(dp(5));
   stage.setTextColor(review?LumoTheme.WARN:done?LumoTheme.OK:LumoTheme.CYAN);stage.setBackground(LumoTheme.fill(0x8c000000,dp(14)));
   reason.setText(row[5].replace("Sob revisão: ",""));
   score.setText(sc>0?sc+"\n/10":"—");score.setTextSize(sc>0?16:20);
@@ -144,7 +146,7 @@ public class PhotoViewerActivity extends Activity {
 
  void setChildrenEnabled(ViewGroup g,boolean on){for(int i=0;i<g.getChildCount();i++){View v=g.getChildAt(i);v.setEnabled(on);if(v instanceof ViewGroup)setChildrenEnabled((ViewGroup)v,on);}}
 
- void toggleFavorite(){boolean on=database.toggleFavorite(current());changed=true;favorite.setText(on?"★":"☆");favorite.setTextColor(on?LumoTheme.WARN:Color.WHITE);try{((Vibrator)getSystemService(VIBRATOR_SERVICE)).vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK));}catch(Exception ignored){}}
+ void toggleFavorite(){boolean on=database.toggleFavorite(current());changed=true;showFavorite(on);try{((Vibrator)getSystemService(VIBRATOR_SERVICE)).vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK));}catch(Exception ignored){}}
 
  void edit(){Intent e=new Intent(this,ManualEditorActivity.class).putExtra("focusId",current()).putExtra("jobIds",current()).putExtra("pasteOnOpen",false);changed=true;startActivity(e);}
 
