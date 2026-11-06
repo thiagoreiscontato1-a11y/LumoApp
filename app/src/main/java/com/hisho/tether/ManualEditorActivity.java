@@ -56,7 +56,7 @@ public class ManualEditorActivity extends Activity{
  void primary(Button b){b.setTextColor(Color.WHITE);b.setBackground(shape(BLUE,11));}
 
  @Override public void onCreate(Bundle state){
-  darkMode=true;setTheme(android.R.style.Theme_Material_NoActionBar);super.onCreate(state);palette();jobs=new Jobs(this);
+  darkMode=true;setTheme(LumoTheme.appTheme(this));super.onCreate(state);palette();jobs=new Jobs(this);
   focusId=getIntent().getStringExtra("focusId");pasteOnOpen=getIntent().getBooleanExtra("pasteOnOpen",false);String packed=getIntent().getStringExtra("jobIds");if(packed!=null)for(String id:packed.split(","))if(!id.trim().isEmpty()&&!targets.contains(id.trim()))targets.add(id.trim());if(focusId==null)focusId="";if(!focusId.isEmpty()&&!targets.contains(focusId))targets.add(0,focusId);if(focusId.isEmpty()&&!targets.isEmpty())focusId=targets.get(0);
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(CARD);getWindow().getDecorView().setSystemUiVisibility(darkMode?0:(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));
 

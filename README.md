@@ -11,6 +11,8 @@ enviar, compartilhar e excluir; galeria com filtros (favoritas, aprovadas, revis
 textos com contraste mínimo de 4,5:1 (botão principal com texto escuro sobre o degradê). Topo com pílula de estado curta e nome
 do evento sempre visível; telas vazias com ação (importar do cartão, conectar, mostrar todas); a Entrega mostra o próximo passo
 (conectar conta → escolher evento → enviar) e só oferece "Encerrar envio" quando há envio ativo; retorno tátil nas ações.
+Menus, Saúde do fluxo, Eventos e tour em modais novos (folha inferior no celular, cartão central no tablet), com ícones,
+subtítulos e o evento atual marcado; confirmações e formulários seguem o mesmo tema escuro arredondado.
 Corrige o fechamento do modo demonstração quando o Android recria a tela.
 
 **iOS:** veja [`ios/README.md`](ios/README.md). Os workflows **Lumo Android** e **Lumo iOS** testam, compilam e publicam capturas de tela

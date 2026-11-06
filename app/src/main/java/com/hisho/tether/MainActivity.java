@@ -145,7 +145,7 @@ public class MainActivity extends Activity {
  }
 
  @Override public void onCreate(Bundle saved){
-  darkMode=true;if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);setTheme(android.R.style.Theme_Material_NoActionBar);super.onCreate(saved);applyPalette();database=new Jobs(MainActivity.this);loadPreset();PresetLibrary.seed(MainActivity.this,presetName,presetData);QueueRecovery.resume(MainActivity.this);
+  darkMode=true;if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);setTheme(LumoTheme.appTheme(this));super.onCreate(saved);applyPalette();database=new Jobs(MainActivity.this);loadPreset();PresetLibrary.seed(MainActivity.this,presetName,presetData);QueueRecovery.resume(MainActivity.this);
   if(saved!=null){gallery.follow=saved.getBoolean("follow",true);gallery.selected=saved.getString("photo","");}
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);getWindow().getDecorView().setSystemUiVisibility(0);
   LinearLayout root=vertical();root.setBackgroundColor(BG);root.setOnApplyWindowInsetsListener((v,in)->{v.setPadding(in.getSystemWindowInsetLeft(),in.getSystemWindowInsetTop(),in.getSystemWindowInsetRight(),in.getSystemWindowInsetBottom());return in.consumeSystemWindowInsets();});setContentView(root);
@@ -153,7 +153,7 @@ public class MainActivity extends Activity {
   // Topo: evento atual, estado da câmera e menu — leitura de relance, como no iPhone.
   LinearLayout bar=row();bar.setPadding(dp(16),dp(10),dp(12),dp(8));
   LinearLayout eventBox=vertical();TextView eventLabel=text("EVENTO",10,LumoTheme.TERTIARY,true);eventLabel.setLetterSpacing(.14f);eventBox.addView(eventLabel);
-  eventTitle=text(database.eventName(),19,TEXT,true);eventTitle.setSingleLine(true);eventTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);eventTitle.setCompoundDrawablesRelative(null,null,icon("expand",LumoTheme.SECONDARY),null);eventTitle.setCompoundDrawablePadding(dp(2));eventBox.addView(eventTitle);eventBox.setMinimumHeight(dp(48));eventBox.setGravity(Gravity.CENTER_VERTICAL);eventBox.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),null,LumoTheme.fill(Color.WHITE,dp(12))));eventBox.setOnClickListener(v->chooseLocalEvent());
+  eventTitle=text(database.eventName(),19,TEXT,true);eventTitle.setSingleLine(true);eventTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);eventTitle.setCompoundDrawablesRelative(null,null,icon("expand",LumoTheme.SECONDARY),null);eventTitle.setCompoundDrawablePadding(dp(2));eventBox.addView(eventTitle,new LinearLayout.LayoutParams(-2,-2));eventBox.setMinimumHeight(dp(48));eventBox.setGravity(Gravity.CENTER_VERTICAL);eventBox.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),null,LumoTheme.fill(Color.WHITE,dp(12))));eventBox.setOnClickListener(v->chooseLocalEvent());
   bar.addView(eventBox,new LinearLayout.LayoutParams(0,-2,1));
   badge=text("",13,LumoTheme.SECONDARY,true);badge.setGravity(Gravity.CENTER);badge.setSingleLine(true);badge.setPadding(dp(12),0,dp(14),0);badge.setMinHeight(dp(48));badge.setCompoundDrawablePadding(dp(7));badge.setBackground(LumoTheme.card(CARD,dp(24),dp(1)));badge.setOnClickListener(v->showHealthPanel());setBadge("SEM CÂMERA");
   LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-2,-2);bp.leftMargin=dp(8);bar.addView(badge,bp);
@@ -179,9 +179,11 @@ public class MainActivity extends Activity {
   else if(DemoLicense.allowed(this)&&!getSharedPreferences("hisho",0).getBoolean("tourSeen",false))handler.post(()->showTour(0));
   if(getIntent()!=null&&getIntent().hasExtra("lumoPage"))handler.post(()->select(getIntent().getIntExtra("lumoPage",0)));
   if(getIntent()!=null&&getIntent().getBooleanExtra("lumoViewer",false))handler.postDelayed(this::openViewerFromLive,2500);
+  // Capturas do CI: abre um modal específico (menu, saude, eventos, tour).
+  if(getIntent()!=null&&getIntent().hasExtra("lumoSheet")){String which=getIntent().getStringExtra("lumoSheet");handler.postDelayed(()->{if(destroyed)return;if("menu".equals(which))showMainMenu();else if("saude".equals(which))showHealthPanel();else if("eventos".equals(which))chooseLocalEvent();else if("tour".equals(which))showTour(1);},2500);}
  }
 
- private AlertDialog tourDialog;
+ private Dialog tourDialog;
  void showTour(int step){
   if(isFinishing()||destroyed||!DemoLicense.allowed(this))return;
   String[][] steps={
@@ -205,18 +207,25 @@ public class MainActivity extends Activity {
    {"0","Pronto para começar","Crie ou selecione primeiro um evento; escolha a pasta de saída e o preset; depois conecte a câmera ou importe do cartão. Faça um teste com poucas fotos, revise o resultado e configure a Entrega. Você pode sair e repetir este tour quando quiser."}
   };
   if(step<0||step>=steps.length)return;
-  if(tourDialog!=null)tourDialog.dismiss();
+  boolean moving=tourDialog!=null&&tourDialog.isShowing();
+  if(tourDialog!=null){Window old=tourDialog.getWindow();if(old!=null)old.setWindowAnimations(0);tourDialog.setOnCancelListener(null);tourDialog.dismiss();}
   int page=Integer.parseInt(steps[step][0]);select(page);
   if(page==1&&galleryList!=null)galleryList.setSelection(0);else scrollers[page].smoothScrollTo(0,0);
-  ScrollView scroll=new ScrollView(this);TextView body=text(steps[step][2],16,TEXT,false);body.setPadding(dp(22),dp(12),dp(22),dp(12));scroll.addView(body);
-  AlertDialog.Builder builder=new AlertDialog.Builder(this).setTitle((step+1)+"/"+steps.length+" · "+steps[step][1]).setView(scroll)
-   .setPositiveButton(step==steps.length-1?"Concluir":"Próximo",(d,n)->{if(step==steps.length-1)finishTour();else showTour(step+1);})
-   .setNegativeButton("Sair do tour",(d,n)->finishTour());
-  if(step>0)builder.setNeutralButton("Voltar",(d,n)->showTour(step-1));
-  tourDialog=builder.create();tourDialog.setOnCancelListener(d->finishTour());tourDialog.setCanceledOnTouchOutside(false);tourDialog.show();
-  Window w=tourDialog.getWindow();if(w!=null){w.setGravity(Gravity.BOTTOM);w.setDimAmount(.15f);w.setLayout(-1,-2);}
+  final boolean last=step==steps.length-1;String[] where={"Tela ao vivo","Galeria","Revisão","Entrega"};
+  LumoSheet sheet=new LumoSheet(this,steps[step][1],where[page]+" · passo "+(step+1)+" de "+steps.length,true);
+  // Barra de progresso fina: mostra quanto do tour falta sem listar 18 pontos.
+  FrameLayout track=new FrameLayout(this);track.setBackground(LumoTheme.fill(LumoTheme.LINE,dp(2)));View fill=new View(this);fill.setBackground(LumoTheme.gradient(dp(2)));
+  int width=Math.min(dp(624),getResources().getDisplayMetrics().widthPixels-dp(48));track.addView(fill,new FrameLayout.LayoutParams(Math.max(dp(8),width*(step+1)/steps.length),-1));
+  LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,dp(4));tp.setMargins(dp(12),dp(2),dp(12),dp(12));track.setLayoutParams(tp);sheet.view(track);
+  sheet.text(steps[step][2]);
+  sheet.action("Sair",LumoSheet.TEXT,this::finishTour);
+  if(step>0)sheet.action("Voltar",LumoSheet.SECONDARY,()->showTour(step-1));
+  sheet.action(last?"Concluir":"Próximo",LumoSheet.PRIMARY,()->{if(last)finishTour();else showTour(step+1);});
+  sheet.keepOpen().onCancel(this::finishTour);sheet.cancelable(true);sheet.outsideCancels(false);
+  if(moving){Window w=sheet.dialog.getWindow();if(w!=null)w.setWindowAnimations(0);}
+  tourDialog=sheet.show();
  }
- void finishTour(){getSharedPreferences("hisho",0).edit().putBoolean("tourSeen",true).apply();tourDialog=null;}
+ void finishTour(){getSharedPreferences("hisho",0).edit().putBoolean("tourSeen",true).apply();if(tourDialog!=null){Dialog d=tourDialog;tourDialog=null;d.setOnCancelListener(null);if(d.isShowing())d.dismiss();}}
 
  void loadPreset(){try{String saved=getSharedPreferences("hisho",0).getString("preset",null);presetData=new JSONObject(saved==null?read(getAssets().open("vibrant.json")):saved);presetName=getSharedPreferences("hisho",0).getString("presetName","Vibrant");}catch(Exception e){presetData=new JSONObject();presetName="Vibrant";}}
 
@@ -232,22 +241,42 @@ public class MainActivity extends Activity {
   e.apply();publishLiveSettings();refreshQuickControls();if(on){QueueRecovery.resume(MainActivity.this);FottoSync.kick(MainActivity.this);message("Modo rápido ativado.");}else message("Modo rápido desativado.");
  }
  void showPresetChooser(){
-  ArrayList<String> names=PresetLibrary.names(MainActivity.this);ArrayList<String> items=new ArrayList<>();items.add("Sem predefinição");items.addAll(names);items.add("Importar nova predefinição XMP…");
-  new AlertDialog.Builder(MainActivity.this).setTitle("Predefinição durante o evento").setItems(items.toArray(new String[0]),(d,n)->{
-   if(n==0){getSharedPreferences("hisho",0).edit().putBoolean("presetEnabled",false).apply();publishLiveSettings();refreshQuickControls();message("Predefinição desligada para as próximas fotos.");return;}
-   if(n==items.size()-1){startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),10);return;}
-   String name=items.get(n);JSONObject chosen=PresetLibrary.get(MainActivity.this,name);presetData=chosen;presetName=name;getSharedPreferences("hisho",0).edit().putString("preset",chosen.toString()).putString("presetName",name).putBoolean("presetEnabled",true).apply();publishLiveSettings();refreshQuickControls();message("Predefinição "+name+" aplicada às próximas fotos.");
-  }).show();
+  ArrayList<String> names=PresetLibrary.names(MainActivity.this);boolean enabled=getSharedPreferences("hisho",0).getBoolean("presetEnabled",true);
+  LumoSheet sheet=new LumoSheet(this,"Predefinição","Vale para as próximas fotos; as anteriores podem ser reeditadas na Galeria.");
+  sheet.choice("close",LumoTheme.SECONDARY,"Sem predefinição","Só a edição automática",!enabled,()->{getSharedPreferences("hisho",0).edit().putBoolean("presetEnabled",false).apply();publishLiveSettings();refreshQuickControls();message("Predefinição desligada para as próximas fotos.");});
+  if(!names.isEmpty())sheet.section("Suas predefinições");
+  for(String name:names)sheet.choice("palette",CYAN,name,null,enabled&&name.equals(presetName),()->{JSONObject chosen=PresetLibrary.get(MainActivity.this,name);presetData=chosen;presetName=name;getSharedPreferences("hisho",0).edit().putString("preset",chosen.toString()).putString("presetName",name).putBoolean("presetEnabled",true).apply();publishLiveSettings();refreshQuickControls();message("Predefinição "+name+" aplicada às próximas fotos.");});
+  sheet.section("Nova");
+  sheet.item("add",CYAN,"Importar predefinição XMP","Arquivo exportado do Lightroom",()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),10));
+  sheet.show();
  }
- String age(long at){if(at<=0)return "—";long s=Math.max(0,(System.currentTimeMillis()-at)/1000);if(s<60)return "há "+s+"s";if(s<3600)return "há "+(s/60)+"min";return "há "+(s/3600)+"h";}
+ String age(long at){if(at<=0)return "—";long s=Math.max(0,(System.currentTimeMillis()-at)/1000);if(s<60)return "há "+s+"s";if(s<3600)return "há "+(s/60)+" min";if(s<48*3600)return "há "+(s/3600)+" h";return "há "+(s/86400)+" dias";}
+ /** Primeiro número de um texto ("51%" → 51); -1 se não houver. */
+ static int leadingInt(String v){java.util.regex.Matcher m=java.util.regex.Pattern.compile("\\d+").matcher(v==null?"":v);return m.find()?Integer.parseInt(m.group()):-1;}
  void showHealthPanel(){
   CaptureService cs=CaptureService.active;android.content.SharedPreferences p=getSharedPreferences("hisho",0);String gallery=p.getString("fottoGalleryId","");int errors=0;try(Cursor c=database.getReadableDatabase().rawQuery("SELECT COUNT(*) FROM jobs WHERE state IN ('error','originalError')",null)){if(c.moveToFirst())errors=c.getInt(0);}int q=database.pending(),reviews=database.reviewCount(),fottoPending=gallery.isEmpty()?0:database.fottoPending(gallery),confirmed=gallery.isEmpty()?0:database.fottoDone(gallery);String lastFotto=p.getString("fottoLastStatus","Sem atividade");
-  LinearLayout box=vertical();box.setPadding(dp(20),dp(8),dp(20),dp(12));
-  String camera=cs!=null&&cs.capturing?"OK · "+cs.cameraName:"Sem câmera ativa";String download=errors==0?"OK":"Atenção · "+errors+" erro(s)";String edit=q==0?"OK":"Processando · "+q;String cur=reviews==0?"OK":"Revisão · "+reviews;String fotto=FottoApi.token(MainActivity.this).isEmpty()?"Não conectado":(gallery.isEmpty()?"Sem evento":(database.fottoLastError(gallery).isEmpty()?"OK":"Atenção"));
+  boolean camOk=cs!=null&&cs.capturing;String camera=camOk?cs.cameraName:"Nenhuma conectada";boolean token=!FottoApi.token(MainActivity.this).isEmpty();String fottoError=gallery.isEmpty()?"":database.fottoLastError(gallery);
+  String fotto=!token?"Não conectado":gallery.isEmpty()?"Sem evento":fottoError.isEmpty()?"OK":"Atenção";
   String batteryLine=metricBattery==null?"—":metricBattery.getText().toString().replace("BATERIA\n",""),storageLine=metricStorage==null?"—":metricStorage.getText().toString().replace("ESPAÇO\n","");
-  String[] lines={"Câmera: "+camera,"Bateria: "+batteryLine,"Espaço livre: "+storageLine,"Recebimento: "+download,"Edição: "+edit,"Curadoria: "+cur,"Fotto direto: "+fotto,"Fila: "+q,"Última foto recebida: "+age(Math.max(database.lastDownloadedAt(),p.getLong("lastPhotoAt",0))),"Fotto: "+confirmed+" confirmada(s) · "+fottoPending+" pendente(s)","Status Fotto: "+lastFotto};
-  for(String line:lines){TextView t=text(line,13,line.contains("Atenção")||line.contains("Não conectado")?WARN:TEXT,line.endsWith("OK"));box.addView(t,new LinearLayout.LayoutParams(-1,dp(31)));}
-  new AlertDialog.Builder(MainActivity.this).setTitle("Saúde do fluxo").setView(box).setPositiveButton("Fechar",null).setNeutralButton("Retomar filas",(d,n)->QueueRecovery.resume(MainActivity.this)).show();
+  int battery=leadingInt(batteryLine),freeGb=leadingInt(storageLine);boolean lowBattery=battery>=0&&battery<=20,lowSpace=freeGb>=0&&freeGb<1;
+  boolean fottoProblem=lastFotto.startsWith("Falha")||lastFotto.toLowerCase(Locale.ROOT).contains("expirad")||!fottoError.isEmpty();
+  int attention=(errors>0?1:0)+(reviews>0?1:0)+(lowBattery?1:0)+(lowSpace?1:0)+(fottoProblem||!"OK".equals(fotto)?1:0);
+  LumoSheet sheet=new LumoSheet(this,"Saúde do fluxo",attention==0?"Tudo certo para fotografar.":attention==1?"1 ponto de atenção":attention+" pontos de atenção");
+  if(fottoProblem){sheet.banner("warning",WARN,!fottoError.isEmpty()?fottoError:lastFotto);if(!token||lastFotto.toLowerCase(Locale.ROOT).contains("expirad"))sheet.item("person",CYAN,"Conectar Fotto novamente","Entre de novo para voltar a enviar",()->startActivityForResult(new Intent(MainActivity.this,FottoLoginActivity.class),30));}
+  sheet.section("Aparelho")
+   .status("camera",camOk?SUCCESS:LumoTheme.SECONDARY,"Câmera",camera)
+   .status("battery",lowBattery?WARN:SUCCESS,"Bateria",batteryLine)
+   .status("storage",lowSpace?WARN:SUCCESS,"Espaço livre",storageLine)
+   .section("Fluxo")
+   .status("download",errors==0?SUCCESS:WARN,"Recebimento",errors==0?"OK":errors==1?"1 erro":errors+" erros")
+   .status("tune",q==0?SUCCESS:CYAN,"Edição",q==0?"Em dia":q+" na fila")
+   .status("flag",reviews==0?SUCCESS:WARN,"Curadoria",reviews==0?"Nada para revisar":reviews==1?"1 para revisar":reviews+" para revisar")
+   .status("clock",LumoTheme.SECONDARY,"Última foto recebida",age(Math.max(database.lastDownloadedAt(),p.getLong("lastPhotoAt",0))))
+   .section("Fotto")
+   .status("upload","OK".equals(fotto)?SUCCESS:WARN,"Envio direto",fotto)
+   .status("check",LumoTheme.SECONDARY,"Fotos enviadas",confirmed+" confirmadas · "+fottoPending+" pendentes");
+  if(!fottoProblem&&!lastFotto.isEmpty())sheet.status("info",LumoTheme.SECONDARY,"Último status",lastFotto);
+  sheet.action("Retomar filas",LumoSheet.TEXT,()->{QueueRecovery.resume(MainActivity.this);message("Filas retomadas.");}).action("Fechar",LumoSheet.PRIMARY,null).show();
  }
 
  void showPhotoDetails(PhotoItem item){
@@ -333,20 +362,33 @@ public class MainActivity extends Activity {
  }
 
  void showMainMenu(){
-  boolean event=getSharedPreferences("hisho",0).getBoolean("eventMode",false);
-  String[] items={"Ajustes de captura e edição","Predefinição: "+presetName,(event?"Desligar":"Ligar")+" modo evento","Saúde do fluxo","Testar alarme de desconexão","Galeria","Revisão","Entrega Fotto","Tour do Lumo"};
-  new AlertDialog.Builder(MainActivity.this).setTitle("Lumo").setItems(items,(d,n)->{
-   if(n==0){if(CaptureService.active!=null)message("Encerre a captura para mudar os ajustes.");else captureSettingsDialog();}
-   else if(n==1)showPresetChooser();else if(n==2)toggleEventMode();else if(n==3)showHealthPanel();else if(n==4)DisconnectAlert.test(MainActivity.this);
-   else if(n==5)select(1);else if(n==6)select(2);else if(n==7)select(3);else showTour(0);
-  }).show();
+  android.content.SharedPreferences p=getSharedPreferences("hisho",0);boolean event=p.getBoolean("eventMode",false),presetOn=p.getBoolean("presetEnabled",true);int reviews=database.reviewCount();
+  new LumoSheet(this,"Lumo",database.eventName())
+   .section("Captura")
+   .item("tune",CYAN,"Ajustes de captura e edição","Edição automática, resolução, curadoria e fotos anteriores",()->{if(CaptureService.active!=null)message("Encerre a captura para mudar os ajustes.");else captureSettingsDialog();})
+   .item("palette",CYAN,"Predefinição",presetOn?presetName:"Desligada",this::showPresetChooser)
+   .item("bolt",event?SUCCESS:CYAN,event?"Desligar modo evento":"Ligar modo evento",event?"Ligado · tela sempre acesa e envio automático":"Tela sempre acesa, curadoria e envio automático",this::toggleEventMode)
+   .section("Telas")
+   .item("photos",CYAN,"Galeria","Todas as fotos do evento, com filtros e álbuns",()->select(1))
+   .item("flag",reviews>0?WARN:CYAN,"Revisão",reviews>0?(reviews==1?"1 foto para revisar":reviews+" fotos para revisar"):"Nada para revisar",()->select(2))
+   .item("upload",CYAN,"Entrega Fotto","Conta, evento de destino e envio",()->select(3))
+   .section("Ajuda")
+   .item("heart",SUCCESS,"Saúde do fluxo","Câmera, bateria, espaço, filas e Fotto",this::showHealthPanel)
+   .item("bell",CYAN,"Testar alarme de desconexão","Toca o alerta usado quando a câmera cai",()->DisconnectAlert.test(MainActivity.this))
+   .item("help",CYAN,"Tour do Lumo","Rever a apresentação passo a passo",()->showTour(0))
+   .show();
  }
 
  void showAddMenu(){
   if(!requireEvent())return;
-  boolean event=getSharedPreferences("hisho",0).getBoolean("eventMode",false);
-  String[] items={"Importar do cartão USB / pasta","Conectar por Wi-Fi","Predefinição: "+presetName,(event?"Desligar":"Ligar")+" modo evento","Galeria"};
-  new AlertDialog.Builder(MainActivity.this).setItems(items,(d,n)->{if(n==0)chooseCardFolder();else if(n==1)wifiDialog();else if(n==2)showPresetChooser();else if(n==3)toggleEventMode();else select(1);}).show();
+  android.content.SharedPreferences p=getSharedPreferences("hisho",0);boolean event=p.getBoolean("eventMode",false),presetOn=p.getBoolean("presetEnabled",true);
+  new LumoSheet(this,"Adicionar",database.eventName())
+   .item("sdcard",CYAN,"Importar do cartão USB ou pasta","Procura nas subpastas e ignora fotos já importadas",this::chooseCardFolder)
+   .item("wifi",CYAN,"Conectar por Wi-Fi","Experimental · conecte o aparelho à rede da câmera",this::wifiDialog)
+   .item("palette",CYAN,"Predefinição",presetOn?presetName:"Desligada",this::showPresetChooser)
+   .item("bolt",event?SUCCESS:CYAN,event?"Desligar modo evento":"Ligar modo evento",event?"Ligado":"Tela sempre acesa, curadoria e envio automático",this::toggleEventMode)
+   .item("photos",CYAN,"Galeria",null,()->select(1))
+   .show();
  }
 
  /** Abre o visualizador a partir da prévia ao vivo, com todas as fotos do evento. */
@@ -385,12 +427,19 @@ public class MainActivity extends Activity {
 
  Button miniNav(String title,View.OnClickListener l){Button b=compactButton(title,l);b.setTextSize(11);return b;}
 
+ void showAlbumChooser(){ArrayList<String> list=database.albums();LumoSheet sheet=new LumoSheet(this,"Álbum","Filtra a galeria pela pasta de origem das fotos.");sheet.choice("photos",CYAN,"Todos os álbuns",null,galleryAlbum.isEmpty(),()->pickAlbum(""));for(String name:list)sheet.choice("folder",CYAN,name,null,name.equals(galleryAlbum),()->pickAlbum(name));sheet.show();}
+ void pickAlbum(String name){galleryAlbum=name;albumButton.setText("Álbum: "+(name.isEmpty()?"todos":name));resetGalleryAlbum();refreshFiles(true);}
+ void showGalleryMore(){int n=editSelection.size();new LumoSheet(this,"Galeria",n==0?"Segure uma foto para selecionar várias.":(n==1?"1 foto selecionada":n+" fotos selecionadas"))
+  .item("share",CYAN,"Compartilhar originais",n==0?"Selecione fotos primeiro":"Abre os apps de compartilhamento com os originais",this::shareOriginals)
+  .item("file",CYAN,"Exportar manifesto","JSON para a futura galeria online; não envia fotos",()->startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE,"lumo-gallery-manifest.json"),41))
+  .item("delete",DANGER,"Excluir por filtros","Escolha situação e período; pede confirmação",this::showDeleteFilters)
+  .show();}
  void galleryPage(){
   LinearLayout p=pages[1];pageHeader(p,"Galeria","Toque para abrir, deslizar e dar zoom. Segure para selecionar várias.");
   HorizontalScrollView filters=new HorizontalScrollView(this);filters.setHorizontalScrollBarEnabled(false);LinearLayout chips=row();filters.addView(chips);
   for(int i=0;i<FILTERS.length;i++){final int f=i;TextView c=text(FILTERS[i],14,TEXT,true);c.setGravity(Gravity.CENTER);c.setMinHeight(dp(40));c.setPadding(dp(16),0,dp(16),0);c.setCompoundDrawablePadding(dp(6));c.setOnClickListener(v->{galleryFilter=f;styleFilterChips();resetGalleryAlbum();refreshFiles(true);});LinearLayout.LayoutParams cl=new LinearLayout.LayoutParams(-2,-2);cl.rightMargin=dp(8);chips.addView(c,cl);filterChips[i]=c;}
   styleFilterChips();p.addView(filters,new LinearLayout.LayoutParams(-1,-2));gap(p,8);
-  albumButton=compactButton("Álbum: todos",v->{ArrayList<String> list=database.albums();list.add(0,"Todos os álbuns");new AlertDialog.Builder(this).setTitle("Álbum").setItems(list.toArray(new String[0]),(d,n)->{galleryAlbum=n==0?"":list.get(n);albumButton.setText("Álbum: "+(n==0?"todos":galleryAlbum));resetGalleryAlbum();refreshFiles(true);}).show();});LinearLayout galleryTools=row();galleryTools.addView(albumButton,new LinearLayout.LayoutParams(0,-2,1));ImageButton more=iconButton("more","Mais ações da galeria",TEXT,v->new AlertDialog.Builder(MainActivity.this).setItems(new String[]{"Compartilhar originais selecionados","Exportar manifesto para galeria online","Excluir por filtros…"},(d,n)->{if(n==0)shareOriginals();else if(n==1)startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE,"lumo-gallery-manifest.json"),41);else showDeleteFilters();}).show());more.setBackground(new RippleDrawable(ColorStateList.valueOf(0x180b7cff),border(CARD2,12),null));LinearLayout.LayoutParams mlp=new LinearLayout.LayoutParams(dp(52),dp(48));mlp.leftMargin=dp(8);galleryTools.addView(more,mlp);p.addView(galleryTools);
+  albumButton=compactButton("Álbum: todos",v->showAlbumChooser());albumButton.setCompoundDrawablesRelative(null,null,icon("expand",LumoTheme.SECONDARY),null);LinearLayout galleryTools=row();galleryTools.addView(albumButton,new LinearLayout.LayoutParams(0,-2,1));ImageButton more=iconButton("more","Mais ações da galeria",TEXT,v->showGalleryMore());more.setBackground(new RippleDrawable(ColorStateList.valueOf(0x180b7cff),border(CARD2,12),null));LinearLayout.LayoutParams mlp=new LinearLayout.LayoutParams(dp(52),dp(48));mlp.leftMargin=dp(8);galleryTools.addView(more,mlp);p.addView(galleryTools);
 
 
   galleryPageLabel=text("",11,MUTED,false);p.addView(galleryPageLabel);
@@ -606,16 +655,18 @@ public class MainActivity extends Activity {
  boolean checkFottoReady(){if(FottoApi.token(MainActivity.this).isEmpty()){message("Conecte sua conta Fotto na Entrega.");return false;}if(getSharedPreferences("hisho",0).getString("fottoGalleryId","").isEmpty()){message("Escolha um evento Fotto primeiro.");return false;}return true;}
  void deliverMenu(){
   boolean connected=!FottoApi.token(MainActivity.this).isEmpty();
-  String[] items={connected?"Reconectar conta Fotto":"Conectar conta Fotto","Trocar evento","Atualizar lista completa","Informar ID do evento","Enviar todas as pendentes","Abrir Fotto no navegador","Alterar pasta de exportação"};
-  new AlertDialog.Builder(this).setTitle("Entrega direta").setItems(items,(d,n)->{
-   if(n==0)startActivityForResult(new Intent(this,FottoLoginActivity.class),30);
-   else if(n==1){if(!connected){message("Conecte o Fotto primeiro.");return;}if(fottoGalleries.isEmpty()){openEventChooserAfterLoad=true;loadFottoGalleries();}else showEventChooser();}
-   else if(n==2){openEventChooserAfterLoad=true;loadFottoGalleries();}
-   else if(n==3)showManualEventDialog();
-   else if(n==4){if(checkFottoReady())FottoSync.sendExisting(this);}
-   else if(n==5)openFottoWeb();
-   else chooseExportFolder();
-  }).show();
+  String title=getSharedPreferences("hisho",0).getString("fottoGalleryTitle","");
+  new LumoSheet(this,"Entrega direta",connected?(title.isEmpty()?"Conta conectada · escolha o evento":"Destino: "+title):"Conecte a conta do Fotto para enviar")
+   .section("Conta e destino")
+   .item("person",CYAN,connected?"Reconectar conta Fotto":"Conectar conta Fotto",connected?"Use se a sessão expirar":"Entrar com a conta do fotógrafo",()->startActivityForResult(new Intent(this,FottoLoginActivity.class),30))
+   .item("event",CYAN,"Trocar evento",title.isEmpty()?"Nenhum evento escolhido":title,()->{if(!connected){message("Conecte o Fotto primeiro.");return;}if(fottoGalleries.isEmpty()){openEventChooserAfterLoad=true;loadFottoGalleries();}else showEventChooser();})
+   .item("refresh",CYAN,"Atualizar lista completa","Busca todas as páginas de eventos do Fotto",()->{openEventChooserAfterLoad=true;loadFottoGalleries();})
+   .item("search",CYAN,"Informar ID do evento","ID ou link do painel com /galleries/ID",this::showManualEventDialog)
+   .section("Envio")
+   .item("upload",CYAN,"Enviar todas as pendentes","Fotos aprovadas que ainda não foram enviadas",()->{if(checkFottoReady())FottoSync.sendExisting(this);})
+   .item("open",CYAN,"Abrir Fotto no navegador","Conferir o evento ou alternativa ao envio direto",this::openFottoWeb)
+   .item("folder",CYAN,"Alterar pasta de exportação","Onde o Lumo salva originais e editadas",this::chooseExportFolder)
+   .show();
  }
  static String normalizeEventText(String value){
   String text=java.text.Normalizer.normalize(value==null?"":value,java.text.Normalizer.Form.NFD);
@@ -764,13 +815,21 @@ public class MainActivity extends Activity {
 
  boolean eventChangeAllowed(){if(CaptureService.active!=null||importingEvent||deletingPhotos||FottoSync.running()){message("Encerre a captura e aguarde a importação/edição/envio em andamento antes de trocar de evento.");return false;}return true;}
  boolean requireEvent(){if(!database.activeEvent().isEmpty())return true;message("Crie ou selecione um evento antes de receber fotos.");chooseLocalEvent();return false;}
- void chooseLocalEvent(){if(!eventChangeAllowed())return;ArrayList<String[]> events=database.events();String[] labels=new String[events.size()+1];labels[0]="+ Criar evento";for(int i=0;i<events.size();i++)labels[i+1]=events.get(i)[1];new AlertDialog.Builder(this).setTitle("Eventos do Lumo").setItems(labels,(d,n)->{if(n==0)createLocalEvent();else selectLocalEvent(events.get(n-1)[0]);}).setNegativeButton("Fechar",null).show();}
+ void chooseLocalEvent(){if(!eventChangeAllowed())return;ArrayList<String[]> events=database.events();HashMap<String,Integer> counts=eventPhotoCounts();String active=database.activeEvent();
+  LumoSheet sheet=new LumoSheet(this,"Eventos","Cada evento guarda seus originais, editadas, revisão e destino no Fotto.");
+  sheet.item("add",CYAN,"Criar evento","Novo evento, já selecionado",this::createLocalEvent);
+  sheet.section("Seus eventos");
+  for(String[] e:events){final String id=e[0];Integer n=counts.get(id);int total=n==null?0:n;String photos=total==0?"Sem fotos":total==1?"1 foto":total+" fotos";boolean legacy=id.isEmpty();
+   sheet.choice(legacy?"history":"event",CYAN,e[1],legacy?"Antes dos eventos · "+photos:photos,id.equals(active),()->{if(!id.equals(database.activeEvent()))selectLocalEvent(id);});}
+  sheet.show();}
+ /** Quantidade de fotos por evento, para a lista de eventos. */
+ HashMap<String,Integer> eventPhotoCounts(){HashMap<String,Integer> out=new HashMap<>();try(Cursor c=database.getReadableDatabase().rawQuery("SELECT COALESCE(event_id,''),COUNT(*) FROM jobs WHERE original IS NOT NULL GROUP BY COALESCE(event_id,'')",null)){while(c.moveToNext())out.put(c.getString(0),c.getInt(1));}catch(Exception ignored){}return out;}
  void createLocalEvent(){EditText input=new EditText(this);input.setHint("Nome do evento");input.setSingleLine(true);input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(80)});AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Criar evento").setView(input).setPositiveButton("Criar e selecionar",null).setNegativeButton("Cancelar",null).create();dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String name=input.getText().toString().trim();if(name.isEmpty()){input.setError("Informe o nome do evento");return;}if(!eventChangeAllowed())return;String id=database.createEvent(name);dialog.dismiss();selectLocalEvent(id);}));dialog.show();}
  void selectLocalEvent(String id){if(!eventChangeAllowed())return;android.content.SharedPreferences p=getSharedPreferences("hisho",0);String old=database.activeEvent();FottoSync.stop(this);p.edit().putString("eventFottoId:"+old,p.getString("fottoGalleryId","")).putString("eventFottoTitle:"+old,p.getString("fottoGalleryTitle","")).putString("localEventId",id).putString("fottoGalleryId",p.getString("eventFottoId:"+id,"")).putString("fottoGalleryTitle",p.getString("eventFottoTitle:"+id,"")).putBoolean("fottoAuto",false).putString("lastImage","").apply();galleryAlbum="";editSelection.clear();selectionMode=false;galleryOffset=0;resetGalleryAlbum();if(albumButton!=null)albumButton.setText("Álbum: todos");if(eventTitle!=null)eventTitle.setText(database.eventName());gallerySignature="__event_changed__";reviewSignature="__event_changed__";previewGeneration++;requestedUri="";shownUri="";gallery.selected="";gallery.follow=true;preview.setImageDrawable(null);empty.setVisibility(View.VISIBLE);previewTitle.setText("");previewSub.setText("");if(previewFooter!=null)previewFooter.setVisibility(View.GONE);publishLiveSettings();refreshFiles(true);refreshGallery();refreshReview(true);updateFottoStatus();message("Evento selecionado: "+database.eventName()+". Confira o destino na aba Entrega antes de ativar o envio.");}
- void chooseTransport(){if(!requireEvent())return;new AlertDialog.Builder(MainActivity.this).setTitle("Conectar câmera").setItems(new String[]{"Cabo USB","Wi-Fi · experimental"},(d,n)->{if(n==0)choose();else wifiDialog();}).show();}
+ void chooseTransport(){if(!requireEvent())return;new LumoSheet(this,"Conectar câmera","Ligue a câmera e use um cabo de dados USB/OTG. Wi-Fi da câmera desligado.").item("usb",CYAN,"Cabo USB","Recomendado · mais estável e rápido",this::choose).item("wifi",CYAN,"Wi-Fi","Experimental · conecte o aparelho à rede da câmera",this::wifiDialog).show();}
  void wifiDialog(){android.net.ConnectivityManager cm=getSystemService(android.net.ConnectivityManager.class);android.net.Network found=null;String gateway="192.168.0.1";for(android.net.Network n:cm.getAllNetworks()){android.net.NetworkCapabilities caps=cm.getNetworkCapabilities(n);if(caps!=null&&caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)){found=n;android.net.LinkProperties props=cm.getLinkProperties(n);if(props!=null)for(android.net.RouteInfo route:props.getRoutes())if(route.isDefaultRoute()&&route.getGateway() instanceof java.net.Inet4Address)gateway=route.getGateway().getHostAddress();break;}}final android.net.Network wifi=found;LinearLayout box=vertical();box.setPadding(dp(20),dp(8),dp(20),dp(8));label(box,"Na câmera: Wi-Fi → Controle remoto/EOS Utility. Conecte o celular à rede da câmera e autorize o LUMO.",13);EditText ip=new EditText(MainActivity.this);ip.setText(getSharedPreferences("hisho",0).getString("wifiHost",gateway));ip.setTextColor(TEXT);ip.setHint("IP da câmera");ip.setInputType(android.text.InputType.TYPE_CLASS_PHONE);box.addView(ip);AlertDialog dialog=new AlertDialog.Builder(MainActivity.this).setTitle("Conectar por Wi-Fi").setView(box).setPositiveButton("Conectar",null).setNeutralButton("Abrir Wi-Fi",(d,n)->startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))).setNegativeButton("Cancelar",null).create();dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String host=ip.getText().toString().trim();if(!validIp(host)){ip.setError("Informe um IPv4 válido.");return;}if(wifi==null){message("Conecte ao Wi-Fi da câmera primeiro.");return;}getSharedPreferences("hisho",0).edit().putString("wifiHost",host).apply();dialog.dismiss();startCamera(null,host,wifi);}));dialog.show();}
  static boolean validIp(String host){String[] parts=host.split("\\.",-1);if(parts.length!=4)return false;for(String part:parts){if(!part.matches("[0-9]{1,3}"))return false;int v=Integer.parseInt(part);if(v>255)return false;}return true;}
- void choose(){UsbManager m=(UsbManager)getSystemService(USB_SERVICE);ArrayList<UsbDevice> ds=new ArrayList<>();for(UsbDevice d:m.getDeviceList().values())if(d.getVendorId()==0x04a9)ds.add(d);if(ds.isEmpty()){message("Nenhuma Canon encontrada. Conecte um cabo USB/OTG de dados.");return;}if(ds.size()==1){permission(ds.get(0));return;}String[] names=new String[ds.size()];for(int i=0;i<ds.size();i++)names[i]=ds.get(i).getProductName();new AlertDialog.Builder(MainActivity.this).setTitle("Escolha a câmera").setItems(names,(d,n)->permission(ds.get(n))).show();}
+ void choose(){UsbManager m=(UsbManager)getSystemService(USB_SERVICE);ArrayList<UsbDevice> ds=new ArrayList<>();for(UsbDevice d:m.getDeviceList().values())if(d.getVendorId()==0x04a9)ds.add(d);if(ds.isEmpty()){message("Nenhuma Canon encontrada. Conecte um cabo USB/OTG de dados.");return;}if(ds.size()==1){permission(ds.get(0));return;}LumoSheet sheet=new LumoSheet(this,"Escolha a câmera",ds.size()+" câmeras Canon conectadas");for(UsbDevice d:ds)sheet.item("camera",CYAN,d.getProductName()==null?"Câmera Canon":d.getProductName(),d.getManufacturerName(),()->permission(d));sheet.show();}
  void permission(UsbDevice d){UsbManager m=(UsbManager)getSystemService(USB_SERVICE);if(m.hasPermission(d)){start(d);return;}Intent i=new Intent(USB).setPackage(getPackageName());PendingIntent pi=PendingIntent.getBroadcast(MainActivity.this,1,i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_MUTABLE);m.requestPermission(d,pi);}
  void start(UsbDevice d){startCamera(d,null,null);}
  void startCamera(UsbDevice d,String wifiHost,android.net.Network wifiNetwork){if(!requireEvent())return;if(deletingPhotos){message("Aguarde a exclusão terminar.");return;}if(CaptureService.active!=null){message("Serviço já ativo.");return;}try{JSONObject cfg=buildCurrentSettings();getSharedPreferences("hisho",0).edit().putString("liveSettings",cfg.toString()).apply();Intent i=new Intent(MainActivity.this,CaptureService.class).putExtra("settings",cfg.toString());if(d!=null)i.putExtra("device",d);if(wifiHost!=null)i.putExtra("wifiHost",wifiHost).putExtra("wifiNetwork",wifiNetwork);startForegroundService(i);}catch(Exception e){message(e.getMessage());}}

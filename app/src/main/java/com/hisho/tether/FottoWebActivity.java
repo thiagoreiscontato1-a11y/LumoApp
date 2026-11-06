@@ -37,7 +37,7 @@ public class FottoWebActivity extends Activity {
 
  @Override public void onCreate(Bundle saved){
   boolean dark=getSharedPreferences("hisho",0).getBoolean("darkMode",false);
-  setTheme(android.R.style.Theme_Material_NoActionBar);super.onCreate(saved);
+  setTheme(LumoTheme.appTheme(this));super.onCreate(saved);
   getWindow().setStatusBarColor(dark?0xff0d1015:0xfff6f8fb);
   getWindow().getDecorView().setSystemUiVisibility(dark?0:View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
   int bg=dark?0xff0d1015:0xfff6f8fb, card=dark?0xff151a21:Color.WHITE, text=dark?0xfff1f4f8:0xff111827, muted=dark?0xff97a2b1:0xff6b7280;

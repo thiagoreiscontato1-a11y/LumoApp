@@ -92,3 +92,11 @@ jobs:
           git add -A
           git -c user.name="github-actions" -c user.email="actions@github.com" commit -q -m "Capturas Android de ${GITHUB_SHA::7}"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci/android-screenshots
+      - name: Falhar se o app fechou no emulador
+        run: |
+          if [ -s screenshots/crash.txt ]; then
+            cat screenshots/crash.txt
+            echo "::error::O Lumo fechou durante as capturas (veja o log acima)."
+            exit 1
+          fi
+          echo "Nenhum fechamento do app durante as capturas."
