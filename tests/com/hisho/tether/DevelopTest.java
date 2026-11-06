@@ -25,6 +25,13 @@ public class DevelopTest{
  }
 
  public static void main(String[] args)throws Exception{
+  // Memória: 24 MP em resolução original não cabe em 256 MB; o lado é reduzido até caber.
+  long mb=1024L*1024;int fit=Develop.fitEdge(6000,4000,0,256*mb);check(fit>=1024&&fit<6000,"fitEdge 24 MP/256 MB "+fit);
+  long pixels=(long)fit*Math.round(fit*4000/6000.);check(pixels*Develop.BYTES_PER_PIXEL<=256*mb*.8+Develop.BYTES_PER_PIXEL*fit,"fitEdge cabe "+pixels);
+  check(Develop.fitEdge(6000,4000,2560,512*mb)==2560,"fitEdge 2560 cabe em 512 MB");
+  check(Develop.fitEdge(6000,4000,0,4096*mb)==0,"fitEdge original cabe em 4 GB");
+  check(Develop.fitEdge(4000,6000,0,8*mb)==1024,"fitEdge piso de 1024 (retrato)");
+
   // Ajustes zerados: foto idêntica, pixel a pixel.
   int[] img=scene(64,48);check(Arrays.equals(new Develop.Source(img,64,48).render(new Develop.Settings()),img),"identidade");
   Random rnd=new Random(7);int[] noise=new int[4096];for(int i=0;i<noise.length;i++)noise[i]=0xff000000|rnd.nextInt(1<<24);

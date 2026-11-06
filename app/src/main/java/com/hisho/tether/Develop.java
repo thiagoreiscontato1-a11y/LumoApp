@@ -282,6 +282,23 @@ final class Develop{
   * Foto decodificada (ARGB) com os campos que os ajustes locais precisam, calculados uma vez
   * e reaproveitados a cada renderização (prévia ao vivo do editor).
   */
+ /**
+  * Heap Java por pixel numa renderização completa (pixels, saída, luminância, nitidez e
+  * desfoque): ~40 bytes medidos, com folga.
+  */
+ static final int BYTES_PER_PIXEL=48;
+
+ /**
+  * Maior lado com que uma foto w×h cabe em {@code freeBytes} (usa 80%). Devolve {@code edge}
+  * quando já cabe (0 = tamanho original); senão o maior lado que cabe, nunca abaixo de 1024.
+  */
+ static int fitEdge(long w,long h,int edge,long freeBytes){
+  long longSide=Math.max(w,h),shortSide=Math.min(w,h);if(longSide<=0)return edge;
+  if(edge>0&&edge<longSide){shortSide=Math.max(1,Math.round(shortSide*(double)edge/longSide));longSide=edge;}
+  long maxPixels=(long)(freeBytes*.8)/BYTES_PER_PIXEL;if(longSide*shortSide<=maxPixels)return edge;
+  return (int)Math.max(1024,Math.floor(Math.sqrt(maxPixels*(double)longSide/shortSide)));
+ }
+
  static final class Source{
   static final int TONE=0,CLARITY=1,TEXTURE=2,HAZE=3;
   final int w,h;final int[] px;private float[] logY;private final Field[] fields=new Field[4];private double[] auto;

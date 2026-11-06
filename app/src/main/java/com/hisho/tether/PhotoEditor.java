@@ -72,11 +72,25 @@ final class PhotoEditor {
    Bitmap result=bitmap;bitmap=null;return result;
   }finally{if(bitmap!=null)bitmap.recycle();}
  }
+ /**
+  * Exporta a foto editada. O tamanho é limitado ao que cabe na memória livre: em resolução
+  * original uma foto de 24 MP passaria de 1 GB de heap no motor. Se ainda faltar memória,
+  * tenta de novo com 70% do lado.
+  */
  static void edit(File source,File destination,JSONObject options)throws Exception{
-  Bitmap bitmap=null;try{
-   bitmap=decode(source,options.optInt("edge",2560));Develop.Source s=source(bitmap);
-   bitmap.setPixels(render(s,options),0,s.w,0,0,s.w,s.h);
-   try(FileOutputStream output=new FileOutputStream(destination)){if(!bitmap.compress(Bitmap.CompressFormat.JPEG,95,output))throw new IOException("Falha ao gerar JPEG.");output.getFD().sync();}
-  }finally{if(bitmap!=null)bitmap.recycle();}
+  BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.toString(),bounds);
+  int longest=Math.max(bounds.outWidth,bounds.outHeight);Runtime rt=Runtime.getRuntime();
+  int edge=Develop.fitEdge(bounds.outWidth,bounds.outHeight,options.optInt("edge",2560),rt.maxMemory()-(rt.totalMemory()-rt.freeMemory()));
+  for(int attempt=0;;attempt++){
+   Bitmap bitmap=null;try{
+    bitmap=decode(source,edge);Develop.Source s=source(bitmap);
+    bitmap.setPixels(render(s,options),0,s.w,0,0,s.w,s.h);
+    try(FileOutputStream output=new FileOutputStream(destination)){if(!bitmap.compress(Bitmap.CompressFormat.JPEG,95,output))throw new IOException("Falha ao gerar JPEG.");output.getFD().sync();}
+    return;
+   }catch(OutOfMemoryError e){
+    if(bitmap!=null){bitmap.recycle();bitmap=null;}if(attempt>=2||longest<=0)throw e;
+    edge=Math.max(1024,(int)((edge>0?Math.min(edge,longest):longest)*.7));System.gc();
+   }finally{if(bitmap!=null)bitmap.recycle();}
+  }
  }
 }
