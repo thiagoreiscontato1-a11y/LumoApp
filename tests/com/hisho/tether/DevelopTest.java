@@ -30,6 +30,11 @@ public class DevelopTest{
   long pixels=(long)fit*Math.round(fit*4000/6000.);check(pixels*Develop.BYTES_PER_PIXEL<=256*mb*.8+Develop.BYTES_PER_PIXEL*fit,"fitEdge cabe "+pixels);
   check(Develop.fitEdge(6000,4000,2560,512*mb)==2560,"fitEdge 2560 cabe em 512 MB");
   check(Develop.fitEdge(6000,4000,0,4096*mb)==0,"fitEdge original cabe em 4 GB");
+  check(Develop.fitEdge(6000,4000,0,512*mb)==0,"fitEdge: 24 MP em resolução original cabe em 512 MB (largeHeap)");
+  { // Exportação in-place (menos memória) tem que gerar exatamente os mesmos pixels da prévia.
+   int w=301,h=203;Develop.Settings s=preset("Exposure2012",.4,"Highlights2012",-50,"Shadows2012",40,"Clarity2012",30,"Texture",20,"Dehaze",15,"Sharpness",50,"Vibrance",12);
+   int[] a=new Develop.Source(scene(w,h),w,h).render(s),b=new Develop.Source(scene(w,h),w,h).renderInPlace(s);check(Arrays.equals(a,b),"renderInPlace igual a render");
+  }
   check(Develop.fitEdge(4000,6000,0,8*mb)==1024,"fitEdge piso de 1024 (retrato)");
 
   // Ajustes zerados: foto idêntica, pixel a pixel.

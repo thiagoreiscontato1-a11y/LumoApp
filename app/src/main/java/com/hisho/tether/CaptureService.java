@@ -110,7 +110,7 @@ public class CaptureService extends Service{
    while(!abort&&DemoLicense.allowed(this)){String[] item=jobs.next();if(item==null){if(finish&&usbFinished)break;Thread.sleep(300);continue;}
     File output=new File(getCacheDir(),item[0]+".jpg");
     try{
-     jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);
+     jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);cfg.put("edge",PhotoEditor.exportEdge(this));
      PhotoEditor.edit(new File(item[1]),output,cfg);
      boolean curate=cfg.optBoolean("curation",true);SmartCurator.Result quality;
      try{quality=SmartCurator.analyze(output,cfg.optInt("curationSensitivity",1),jobs,item[0]);}catch(Exception e){quality=new SmartCurator.Result(true,1,"Falha na curadoria · "+e.getMessage(),"","","");}
