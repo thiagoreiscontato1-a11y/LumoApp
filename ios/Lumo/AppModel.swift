@@ -39,6 +39,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var fottoLoading = false
     @Published private(set) var uploading = false
     @Published private(set) var importing = false
+    /// Progresso da importação por pasta/arquivos (foto atual e total) e pedido de cancelamento.
+    @Published private(set) var importDone = 0
+    @Published private(set) var importTotal = 0
+    @Published private(set) var importCancelling = false
+    private var importTask: Task<Void, Never>?
     /// Modo de demonstração: foto a abrir no visualizador.
     @Published var demoOpenPhoto: String?
 
@@ -250,7 +255,19 @@ final class AppModel: ObservableObject {
         message = "\(added) foto(s) importada(s) do app Fotos."
     }
 
-    /// Arquivos ou pastas (leitor de cartão USB pelo app Arquivos). Percorre subpastas, só JPEG.
+    /// Inicia a importação em uma tarefa que o botão Cancelar consegue interromper.
+    func startImport(_ urls: [URL]) {
+        guard !importing else { message = "Já há uma importação em andamento."; return }
+        importTask = Task { await importFiles(urls) }
+    }
+
+    /// Para a importação entre uma foto e outra; as já importadas continuam no evento.
+    func cancelImport() {
+        guard importing, !importCancelling else { return }
+        importCancelling = true
+        importTask?.cancel()
+    }
+
     /// Arquivos ou pastas (leitor de cartão pelo app Arquivos). Percorre subpastas.
     /// JPEG é importado direto; RAW só quando não há JPEG com o mesmo nome (RAW+JPEG),
     /// e então é revelado pelo iOS e guardado na pasta RAW do evento.
@@ -268,9 +285,18 @@ final class AppModel: ObservableObject {
         let rawOnly = raws.filter { !stems.contains($0.deletingPathExtension().path.lowercased()) }
         let pairedRaw = raws.count - rawOnly.count
         var added = 0, duplicates = 0
+        let files = (jpegs + rawOnly).sorted(by: { $0.path < $1.path })
+        importDone = 0
+        importTotal = files.count
+        importCancelling = false
         importing = true
-        defer { importing = false }
-        for file in (jpegs + rawOnly).sorted(by: { $0.path < $1.path }) {
+        defer { importing = false; importCancelling = false; importTask = nil }
+        var cancelled = false
+        for file in files {
+            if Task.isCancelled || importCancelling { cancelled = true; break }
+            importDone += 1
+            // Cede a vez para a interface atualizar o progresso e receber o toque em Cancelar.
+            await Task.yield()
             guard let data = try? Data(contentsOf: file) else { continue }
             let size = data.count
             let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
@@ -280,6 +306,13 @@ final class AppModel: ObservableObject {
             } else {
                 duplicates += 1
             }
+        }
+        if cancelled {
+            var text = "Importação cancelada: \(added) foto(s) já estão no evento"
+            if duplicates > 0 { text += " · \(duplicates) já existente(s)" }
+            text += " · \(files.count - importDone) não importada(s)."
+            message = text
+            return
         }
         var text = "\(added) foto(s) importada(s)"
         if !rawOnly.isEmpty { text += " (\(rawOnly.count) RAW revelada(s) pelo iOS)" }

@@ -526,6 +526,56 @@ struct StatTile: View {
     }
 }
 
+// MARK: - Importação em andamento
+
+/// Progresso da importação do cartão/Arquivos com botão para cancelar.
+struct ImportProgressBar: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var confirmCancel = false
+
+    private var label: String {
+        if model.importCancelling { return "Cancelando importação…" }
+        if model.importTotal == 0 { return "Lendo pasta…" }
+        return "Importando · \(min(max(model.importDone, 1), model.importTotal)) de \(model.importTotal)"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(label)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                if model.importTotal > 0 && !model.importCancelling {
+                    ProgressView(value: Double(model.importDone), total: Double(model.importTotal)).tint(Lumo.cyan)
+                } else {
+                    ProgressView().progressViewStyle(.linear).tint(Lumo.cyan)
+                }
+            }
+            Button(role: .destructive) { confirmCancel = true } label: {
+                Label(model.importCancelling ? "Cancelando…" : "Cancelar", systemImage: "xmark")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 44)
+                    .background(Lumo.surfaceStrong, in: Capsule())
+            }
+            .foregroundStyle(Lumo.danger)
+            .disabled(model.importCancelling)
+            .accessibilityLabel("Cancelar importação")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Lumo.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Lumo.stroke))
+        .confirmationDialog("Cancelar importação?", isPresented: $confirmCancel, titleVisibility: .visible) {
+            Button("Cancelar importação", role: .destructive) { model.cancelImport() }
+            Button("Continuar importando", role: .cancel) {}
+        } message: {
+            Text("As fotos já importadas continuam no evento. As demais não serão importadas; ao importar a pasta de novo, as já trazidas são reconhecidas como duplicadas.")
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+}
+
 // MARK: - Ação principal
 
 struct ActionBar: View {
@@ -537,6 +587,14 @@ struct ActionBar: View {
     @State private var showFiles = false
 
     var body: some View {
+        VStack(spacing: 10) {
+            if model.importing { ImportProgressBar() }
+            actions
+        }
+        .animation(.easeInOut(duration: 0.2), value: model.importing)
+    }
+
+    private var actions: some View {
         HStack(spacing: 10) {
             primary
             Menu {
@@ -566,7 +624,7 @@ struct ActionBar: View {
         }
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.folder, .jpeg, .image], allowsMultipleSelection: true) { result in
             switch result {
-            case .success(let urls): Task { await model.importFiles(urls) }
+            case .success(let urls): model.startImport(urls)
             case .failure(let error): model.message = "Acesso a Arquivos falhou: \(error.localizedDescription)"
             }
         }
