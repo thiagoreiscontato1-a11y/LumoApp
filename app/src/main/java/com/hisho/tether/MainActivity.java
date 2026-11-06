@@ -28,7 +28,7 @@ public class MainActivity extends Activity {
  private TextView metricBattery,metricStorage,metricPending,metricProcessed,metricSent;
  private TextView folderLabel,fottoStatus,fottoEventLabel,fottoUploadStatus,fottoProblems;
  private Button connect,resume,settingsButton,themeButton,folderButton,fottoMenu,fottoSend,healthButton,eventModeButton,presetQuick;
- private Button importCard;
+ private LinearLayout importBar;private TextView importBarText;private ProgressBar importBarProgress;private Button importCancelButton;
  private CompoundButton fottoAuto;
  private boolean openEventChooserAfterLoad=false;
  private boolean fottoGalleriesLoading=false;
@@ -60,7 +60,10 @@ public class MainActivity extends Activity {
  private Button clearSelection;
  private TextView[] tileFotos,tileReview,tileFotto;
  static final int REQUEST_VIEWER=52;
- private volatile boolean importingEvent=false;
+ // Estado da importação por pasta é estático: sobrevive à recriação da tela (girar o aparelho) e o botão Cancelar continua valendo.
+ private static volatile boolean importingEvent=false,importCancelRequested=false;
+ private static volatile int importFound=0,importProcessed=0,importTotal=0;
+ private static volatile boolean importScanning=false;
  private Button albumButton;
  private boolean deletingPhotos=false;
  private TextView galleryPageLabel;
@@ -101,6 +104,7 @@ public class MainActivity extends Activity {
   android.content.SharedPreferences prefs=getSharedPreferences("hisho",0);
   if(status!=null){if(running){status.setText(s.status);timing.setText(s.detail.isEmpty()?"Captura e edição em filas independentes":s.detail);report.setText(s.report());setBadge(s.connectionLabel());}else{status.setText(prefs.getString("lastStatus","Pronto para conectar a câmera."));timing.setText("Original preservado · edição e curadoria em segundo plano");report.setText(prefs.getString("lastReport","Nenhuma atividade registrada."));setBadge("SEM CÂMERA");}}
   updateGlobalStatus();
+  updateImportBar();
   FottoSync.watchdog(MainActivity.this);
   refreshGallery();
   long now=SystemClock.elapsedRealtime();if(now-lastUiRefresh>1500){lastUiRefresh=now;if(selected==1)refreshFiles(false);if(selected==2)refreshReview(false);if(selected==3)updateFottoStatus();}
@@ -163,6 +167,7 @@ public class MainActivity extends Activity {
   // Indicadores detalhados (bateria, espaço…) ficam no painel Saúde; mantidos aqui ocultos para atualização.
   LinearLayout header=vertical();flowStatus=text("Canon • Sem câmera",11,MUTED,true);header.addView(flowStatus);buildHeaderMetrics(header);header.setVisibility(View.GONE);root.addView(header);
   if(DemoLicense.isDemo(this)){demoStatus=text(DemoLicense.status(this),12,CYAN,true);demoStatus.setPadding(dp(16),0,dp(16),dp(4));root.addView(demoStatus);}
+  buildImportBar(root);
 
   FrameLayout content=new FrameLayout(MainActivity.this);root.addView(content,new LinearLayout.LayoutParams(-1,0,1));
   for(int i=0;i<4;i++){scrollers[i]=new ScrollView(MainActivity.this);scrollers[i].setFillViewport(true);scrollers[i].setVerticalScrollBarEnabled(false);pages[i]=vertical();pages[i].setPadding(dp(14),dp(12),dp(14),dp(18));scrollers[i].addView(pages[i]);content.addView(scrollers[i],new FrameLayout.LayoutParams(-1,-1));}
@@ -781,6 +786,7 @@ public class MainActivity extends Activity {
   try{startActivityForResult(i,REQUEST_CARD_FOLDER);}catch(Exception e){message("O seletor de pastas não está disponível neste aparelho.");}
  }
  ArrayList<CardPhoto> scanCardFolder(Uri tree,Uri folder,int depth,Set<String> visited)throws IOException{
+  if(importCancelRequested)throw new CancellationException();
   if(depth>24)throw new IOException("A estrutura de pastas do cartão excede o limite de segurança.");
   String folderId=DocumentsContract.getDocumentId(folder);if(!visited.add(folderId))return new ArrayList<>();
   Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,folderId);
@@ -793,30 +799,58 @@ public class MainActivity extends Activity {
     String id=c.getString(idCol),name=nameCol>=0?c.getString(nameCol):"foto";String mime=mimeCol>=0?c.getString(mimeCol):"";
     Uri child=DocumentsContract.buildDocumentUriUsingTree(tree,id);
     if(DocumentsContract.Document.MIME_TYPE_DIR.equals(mime))photos.addAll(scanCardFolder(tree,child,depth+1,visited));
-    else if(isSupportedCardPhoto(name,mime)){long size=sizeCol>=0&&!c.isNull(sizeCol)?c.getLong(sizeCol):-1;long modified=modifiedCol>=0&&!c.isNull(modifiedCol)?c.getLong(modifiedCol):0;photos.add(new CardPhoto(child,name,size,modified,folderId.replaceFirst("^[^:]*:","")));}
+    else if(isSupportedCardPhoto(name,mime)){long size=sizeCol>=0&&!c.isNull(sizeCol)?c.getLong(sizeCol):-1;long modified=modifiedCol>=0&&!c.isNull(modifiedCol)?c.getLong(modifiedCol):0;photos.add(new CardPhoto(child,name,size,modified,folderId.replaceFirst("^[^:]*:","")));importFound++;}
    }
   }catch(SecurityException e){throw new IOException("Acesso ao cartão USB foi negado.",e);}
   return photos;
  }
  static boolean isSupportedCardPhoto(String name,String mime){String n=name==null?"":name.toLowerCase(Locale.ROOT);return mime!=null&&mime.startsWith("image/")||n.matches(".*\\.(jpg|jpeg|cr2|cr3|raw|dng|nef|nrw|arw|raf|rw2|orf|pef|srw|tif|tiff|heic|heif|png)$");}
  static String sha256Text(String value)throws Exception{byte[] bytes=java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8"));StringBuilder b=new StringBuilder();for(byte v:bytes)b.append(String.format(Locale.ROOT,"%02x",v));return b.toString();}
+ /** Barra fixa abaixo do topo durante a importação por pasta: progresso + botão Cancelar. */
+ void buildImportBar(LinearLayout root){
+  importBar=row();importBar.setPadding(dp(14),dp(6),dp(6),dp(6));importBar.setBackground(LumoTheme.card(CARD,dp(16),dp(1)));
+  LinearLayout info=vertical();
+  importBarText=text("Lendo cartão USB…",13,TEXT,true);importBarText.setSingleLine(true);importBarText.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(importBarText);
+  importBarProgress=new ProgressBar(MainActivity.this,null,android.R.attr.progressBarStyleHorizontal);importBarProgress.setIndeterminate(true);importBarProgress.setProgressTintList(ColorStateList.valueOf(CYAN));importBarProgress.setIndeterminateTintList(ColorStateList.valueOf(CYAN));
+  LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(6));pp.topMargin=dp(6);info.addView(importBarProgress,pp);
+  importBar.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+  importCancelButton=compactButton("Cancelar",v->{haptic(v);confirmCancelImport();});importCancelButton.setTextColor(DANGER);leadingIcon(importCancelButton,"close",DANGER);importCancelButton.setContentDescription("Cancelar importação da pasta");
+  LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-2,-2);cp.leftMargin=dp(10);importBar.addView(importCancelButton,cp);
+  importBar.setVisibility(View.GONE);
+  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.leftMargin=dp(14);lp.rightMargin=dp(14);lp.bottomMargin=dp(6);root.addView(importBar,lp);
+ }
+ void updateImportBar(){if(importBar==null)return;
+  boolean show=importingEvent;importBar.setVisibility(show?View.VISIBLE:View.GONE);if(!show)return;
+  boolean cancelling=importCancelRequested;int total=importTotal,processed=importProcessed;
+  String label=cancelling?"Cancelando importação…":importScanning?"Lendo cartão USB… "+importFound+(importFound==1?" foto encontrada":" fotos encontradas"):"Importando do cartão · "+Math.max(1,Math.min(processed,total))+" de "+total;
+  if(!label.contentEquals(importBarText.getText()))importBarText.setText(label);
+  boolean indeterminate=importScanning||cancelling||total<=0;importBarProgress.setIndeterminate(indeterminate);if(!indeterminate){importBarProgress.setMax(total);importBarProgress.setProgress(processed);}
+  importCancelButton.setEnabled(!cancelling);importCancelButton.setAlpha(cancelling?.45f:1f);importCancelButton.setText(cancelling?"Cancelando…":"Cancelar");
+ }
+ void confirmCancelImport(){if(!importingEvent||importCancelRequested)return;
+  new AlertDialog.Builder(MainActivity.this).setTitle("Cancelar importação?").setMessage("As fotos já copiadas continuam no evento e seguem para a edição. As demais da pasta não serão importadas — você pode importar a pasta de novo depois; as já trazidas são reconhecidas como duplicadas.")
+   .setPositiveButton("Cancelar importação",(d,n)->{if(!importingEvent)return;importCancelRequested=true;updateImportBar();})
+   .setNegativeButton("Continuar importando",null).show();
+ }
  void importCard(Uri tree){if(!requireEvent()||importingEvent)return;if(deletingPhotos){message("Aguarde a exclusão terminar.");return;}
   final String importEvent=database.activeEvent();
   final String settings;try{JSONObject cfg=buildCurrentSettings();settings=cfg.toString();getSharedPreferences("hisho",0).edit().putString("liveSettings",settings).apply();}catch(Exception e){message("Não foi possível preparar as configurações de edição.");return;}
   final boolean ownService=CaptureService.active==null;
   if(ownService){try{startForegroundService(new Intent(this,CaptureService.class).setAction("queue_import").putExtra("settings",settings));}catch(Exception e){message("Não foi possível iniciar a fila de edição: "+e.getMessage());return;}}
-  importingEvent=true;
-  if(importCard!=null){importCard.setEnabled(false);importCard.setText("Lendo cartão USB…");}
+  importCancelRequested=false;importFound=0;importProcessed=0;importTotal=0;importScanning=true;importingEvent=true;
+  updateImportBar();
   images.execute(()->{
    int imported=0,duplicates=0,unsupported=0,failed=0;ArrayList<CardPhoto> photos;
    try{String rootId=DocumentsContract.getTreeDocumentId(tree);Uri root=DocumentsContract.buildDocumentUriUsingTree(tree,rootId);photos=scanCardFolder(tree,root,0,new HashSet<>());}
+   catch(CancellationException e){photos=new ArrayList<>();}
    catch(Exception e){photos=new ArrayList<>();failed++;final String error=e.getMessage();handler.post(()->message("Não foi possível ler o cartão: "+error));}
+   importTotal=photos.size();importProcessed=0;importScanning=false;handler.post(this::updateImportBar);
    File spool=new File(getFilesDir(),"queue");if(!spool.exists())spool.mkdirs();
-   for(CardPhoto photo:photos){if(!DemoLicense.allowed(MainActivity.this))break;File temp=null;String insertedId="";try{
+   for(CardPhoto photo:photos){if(importCancelRequested||!DemoLicense.allowed(MainActivity.this))break;importProcessed++;File temp=null;String insertedId="";try{
     String lower=photo.name.toLowerCase(Locale.ROOT);boolean raw=RawPreview.isRaw(lower);if(!(lower.endsWith(".jpg")||lower.endsWith(".jpeg")||raw)){unsupported++;continue;}
     long size=photo.size;long modified=photo.modified;String sourceKey=photo.uri.toString()+"|"+size+"|"+modified;String id=sha256Text("card:"+importEvent+":"+sourceKey);if(database.exists(id)){duplicates++;continue;}
     if(getFilesDir().getUsableSpace()<(size>0?size*3L:64L*1024L*1024L))throw new IOException("Pouco espaço livre no aparelho.");
-    temp=new File(spool,id+".jpg");try(InputStream in=getContentResolver().openInputStream(photo.uri);OutputStream out=new FileOutputStream(temp)){if(in==null)throw new IOException("Foto não disponível no cartão.");byte[] buf=new byte[64*1024];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);}
+    temp=new File(spool,id+".jpg");try(InputStream in=getContentResolver().openInputStream(photo.uri);OutputStream out=new FileOutputStream(temp)){if(in==null)throw new IOException("Foto não disponível no cartão.");byte[] buf=new byte[64*1024];int n;while((n=in.read(buf))!=-1){if(importCancelRequested)throw new CancellationException();out.write(buf,0,n);}}
     String hash=PhotoHash.sha256(temp);if(!database.duplicateByContent(hash).isEmpty()){temp.delete();duplicates++;continue;}
     String pHash="";try{pHash=PhotoHash.perceptualHash(temp);}catch(Exception ignored){}
     String base=photo.name.replaceFirst("\\.[^.]+$","").replaceAll("[^a-zA-Z0-9_-]","_");String outName=base+"_Cartao_"+id.substring(0,10)+".jpg";long captured=modified>0?modified:System.currentTimeMillis();
@@ -824,10 +858,14 @@ public class MainActivity extends Activity {
     database.setAlbum(id,photo.album,photo.name);
     if(raw){String rawName=photo.name.replaceAll("[^a-zA-Z0-9_.-]","_");rawName=rawName.replaceFirst("\\.[^.]+$","")+"_"+id.substring(0,10)+photo.name.substring(photo.name.lastIndexOf('.'));Uri rawUri=database.save(temp,"RAW",rawName,id,"raw_original");File jpeg=new File(spool,id+"_preview.jpg");if(!RawPreview.extract(temp,jpeg)){database.set(id,"rawOnly","original",rawUri.toString());database.history(id,System.currentTimeMillis(),"RAW preservado","Sem prévia JPEG compatível; revelação RAW ainda não disponível.");temp.delete();imported++;continue;}temp.delete();if(!jpeg.renameTo(temp))throw new IOException("Falha ao preparar prévia RAW.");database.history(id,System.currentTimeMillis(),"RAW preservado","Edição utiliza a prévia JPEG embutida.");}
     Uri original=database.save(temp,"Originais",outName,id,"original");database.set(id,"ready","original",original.toString());imported++;
-   }catch(Exception e){if(temp!=null)temp.delete();if(!insertedId.isEmpty())try{database.set(insertedId,"originalError","error",e.toString());}catch(Exception ignored){}failed++;}}
+   }catch(CancellationException e){if(temp!=null)temp.delete();importProcessed--;break;}
+   catch(Exception e){if(temp!=null)temp.delete();if(!insertedId.isEmpty())try{database.set(insertedId,"originalError","error",e.toString());}catch(Exception ignored){}failed++;}}
    if(ownService)try{startService(new Intent(MainActivity.this,CaptureService.class).setAction("finish_import"));}catch(Exception ignored){}
-   final int done=imported,dupes=duplicates,skip=unsupported,errors=failed;
-   handler.post(()->{importingEvent=false;if(importCard!=null){importCard.setEnabled(true);importCard.setText("Importar fotos do cartão USB");}gallerySignature="";filesSignature="";reviewSignature="";if(selected==1)refreshFiles(true);if(selected==2)refreshReview(true);refreshGallery();message("Cartão processado: "+done+" foto(s) na edição, "+dupes+" duplicada(s), "+skip+" arquivo(s) não compatível(is) e "+errors+" erro(s).");});
+   final int done=imported,dupes=duplicates,skip=unsupported,errors=failed;final boolean cancelled=importCancelRequested;final int left=Math.max(0,importTotal-importProcessed);
+   importingEvent=false;importCancelRequested=false;importScanning=false;
+   handler.post(()->{updateImportBar();gallerySignature="";filesSignature="";reviewSignature="";if(selected==1)refreshFiles(true);if(selected==2)refreshReview(true);refreshGallery();
+    if(cancelled)message("Importação cancelada: "+done+" foto(s) já estão na edição"+(dupes>0?", "+dupes+" duplicada(s)":"")+(errors>0?", "+errors+" erro(s)":"")+". "+left+" foto(s) da pasta não foram importadas.");
+    else message("Cartão processado: "+done+" foto(s) na edição, "+dupes+" duplicada(s), "+skip+" arquivo(s) não compatível(is) e "+errors+" erro(s).");});
   });
  }
  static String read(InputStream stream)throws IOException{try(InputStream s=stream;ByteArrayOutputStream b=new ByteArrayOutputStream()){byte[] a=new byte[8192];int n;while((n=s.read(a))!=-1){if(b.size()+n>1024*1024)throw new IOException("Arquivo maior que 1 MB.");b.write(a,0,n);}return b.toString("UTF-8");}}
