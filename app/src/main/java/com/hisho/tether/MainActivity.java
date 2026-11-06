@@ -72,6 +72,8 @@ public class MainActivity extends Activity {
  private String shownUri="",requestedUri="",gallerySignature="",filesSignature="",reviewSignature="";
  private volatile long previewGeneration=0,stripGeneration=0;
  private volatile boolean destroyed=false;
+ /** onCreate mandou para o login antes de montar a tela: onDestroy não deve tocar no que não foi criado. */
+ private boolean gated=false;
  private HorizontalScrollView filmScroll;
  private Button previousPhoto,nextPhoto,livePhoto;
  private final GallerySelection gallery=new GallerySelection();
@@ -149,7 +151,11 @@ public class MainActivity extends Activity {
  }
 
  @Override public void onCreate(Bundle saved){
-  darkMode=true;if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);setTheme(LumoTheme.appTheme(this));super.onCreate(saved);applyPalette();database=new Jobs(MainActivity.this);loadPreset();PresetLibrary.seed(MainActivity.this,presetName,presetData);QueueRecovery.resume(MainActivity.this);
+  darkMode=true;if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);setTheme(LumoTheme.appTheme(this));super.onCreate(saved);
+  // Login: sem sessão Fotto o Lumo abre na tela de entrada. O modo demonstração (capturas do CI) entra sem conta.
+  if(getIntent()!=null&&getIntent().getBooleanExtra("lumoDemo",false))LumoSession.enterDemo(this);
+  if(!LumoSession.signedIn(this)){gated=true;startActivity(new Intent(this,LumoLoginActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));finish();overridePendingTransition(0,0);return;}
+  applyPalette();database=new Jobs(MainActivity.this);loadPreset();PresetLibrary.seed(MainActivity.this,presetName,presetData);QueueRecovery.resume(MainActivity.this);
   if(saved!=null){gallery.follow=saved.getBoolean("follow",true);gallery.selected=saved.getString("photo","");}
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);getWindow().getDecorView().setSystemUiVisibility(0);
   LinearLayout root=vertical();root.setBackgroundColor(BG);root.setOnApplyWindowInsetsListener((v,in)->{v.setPadding(in.getSystemWindowInsetLeft(),in.getSystemWindowInsetTop(),in.getSystemWindowInsetRight(),in.getSystemWindowInsetBottom());return in.consumeSystemWindowInsets();});setContentView(root);
@@ -182,6 +188,7 @@ public class MainActivity extends Activity {
   if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);handler.post(update);
   if(getIntent()!=null&&getIntent().getBooleanExtra("lumoDemo",false)){getSharedPreferences("hisho",0).edit().putBoolean("tourSeen",true).apply();handler.post(this::demoSeed);}
   else if(DemoLicense.allowed(this)&&!getSharedPreferences("hisho",0).getBoolean("tourSeen",false))handler.post(()->showTour(0));
+  if(LumoSession.account(this).isEmpty())refreshAccount();
   if(getIntent()!=null&&getIntent().hasExtra("lumoPage"))handler.post(()->select(getIntent().getIntExtra("lumoPage",0)));
   if(getIntent()!=null&&getIntent().getBooleanExtra("lumoViewer",false))handler.postDelayed(this::openViewerFromLive,2500);
   // Capturas do CI: abre um modal específico (menu, saude, eventos, tour).
@@ -367,8 +374,8 @@ public class MainActivity extends Activity {
  }
 
  void showMainMenu(){
-  android.content.SharedPreferences p=getSharedPreferences("hisho",0);boolean event=p.getBoolean("eventMode",false),presetOn=p.getBoolean("presetEnabled",true);int reviews=database.reviewCount();
-  new LumoSheet(this,"Lumo",database.eventName())
+  android.content.SharedPreferences p=getSharedPreferences("hisho",0);boolean event=p.getBoolean("eventMode",false),presetOn=p.getBoolean("presetEnabled",true);int reviews=database.reviewCount();String account=LumoSession.account(this);boolean lockOn=LumoLock.enabled(this);
+  LumoSheet sheet=new LumoSheet(this,"Lumo",database.eventName())
    .section("Captura")
    .item("tune",CYAN,"Ajustes de captura e edição","Edição automática, resolução, curadoria e fotos anteriores",()->{if(CaptureService.active!=null)message("Encerre a captura para mudar os ajustes.");else captureSettingsDialog();})
    .item("palette",CYAN,"Predefinição",presetOn?presetName:"Desligada",this::showPresetChooser)
@@ -381,7 +388,38 @@ public class MainActivity extends Activity {
    .item("heart",SUCCESS,"Saúde do fluxo","Câmera, bateria, espaço, filas e Fotto",this::showHealthPanel)
    .item("bell",CYAN,"Testar alarme de desconexão","Toca o alerta usado quando a câmera cai",()->DisconnectAlert.test(MainActivity.this))
    .item("help",CYAN,"Tour do Lumo","Rever a apresentação passo a passo",()->showTour(0))
-   .show();
+   .section("Conta")
+   .item("lock",lockOn?SUCCESS:CYAN,lockOn?"Desligar bloqueio com digital":"Bloquear com digital",lockOn?"Ligado · pede a digital ao abrir e após 5 min fora":"Pede a digital ao abrir o Lumo",this::toggleBiometricLock);
+  // APK Demo sem conta: não há do que sair (a tela de entrada mandaria de volta para cá).
+  if(!(DemoLicense.isDemo(this)&&FottoApi.token(this).isEmpty()))sheet.item("person",DANGER,LumoSession.demo(this)?"Sair do modo demonstração":"Sair da conta Fotto",account.isEmpty()?"Volta para a tela de entrada":account,this::confirmSignOut);
+  sheet.show();
+ }
+
+ /** Sair da conta: fotos, eventos e edições ficam no aparelho; a sessão Fotto, o evento de destino e o envio automático são apagados. */
+ void confirmSignOut(){
+  if(CaptureService.active!=null){message("Encerre a captura ou a importação antes de sair da conta.");return;}
+  String gallery=getSharedPreferences("hisho",0).getString("fottoGalleryId","");int pending=gallery.isEmpty()?0:database.fottoPending(gallery);
+  String account=LumoSession.account(this);
+  String body=(account.isEmpty()?"":"Conta: "+account+"\n\n")+"Fotos, eventos e edições continuam neste aparelho. O envio automático para e o evento de destino do Fotto é esquecido. Para usar o Lumo de novo, entre com a conta Fotto."
+   +(pending>0?"\n\n"+(pending==1?"1 foto ainda não foi enviada":pending+" fotos ainda não foram enviadas")+" ao Fotto. Elas ficam na fila e voltam a ser enviadas quando você entrar e escolher o mesmo evento.":"");
+  new AlertDialog.Builder(this).setTitle(LumoSession.demo(this)?"Sair do modo demonstração?":"Sair da conta Fotto?").setMessage(body).setNegativeButton("Cancelar",null)
+   .setPositiveButton("Sair",(d,n)->{LumoSession.signOut(MainActivity.this);boolean demoApk=DemoLicense.isDemo(MainActivity.this);if(demoApk)message("Você saiu da conta Fotto.");startActivity(new Intent(MainActivity.this,demoApk?MainActivity.class:LumoLoginActivity.class).putExtra("signedOut",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));finish();}).show();
+ }
+
+ /** Liga/desliga o bloqueio com digital. Ligar pede a digital antes, para confirmar que funciona neste aparelho. */
+ void toggleBiometricLock(){
+  if(LumoLock.enabled(this)){LumoLock.setEnabled(this,false);message("Bloqueio com digital desligado.");return;}
+  if(!LumoLock.available(this)){
+   new AlertDialog.Builder(this).setTitle("Cadastre uma digital").setMessage("Para bloquear o Lumo, cadastre uma digital (ou um PIN/padrão de tela) nas configurações do Android e volte aqui.").setNegativeButton("Agora não",null)
+    .setPositiveButton("Abrir configurações",(d,n)->{Intent i=Build.VERSION.SDK_INT>=30?new Intent(android.provider.Settings.ACTION_BIOMETRIC_ENROLL).putExtra(android.provider.Settings.EXTRA_BIOMETRIC_AUTHENTICATORS_ALLOWED,android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK|android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL):new Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS);
+     try{startActivity(i);}catch(Exception e){try{startActivity(new Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS));}catch(Exception ignored){message("Abra Configurações > Segurança e cadastre uma digital.");}}}).show();
+   return;
+  }
+  LumoLock.prompt(this,"Ligar bloqueio com digital","Confirme sua digital para ligar",(ok,code,msg)->{
+   if(destroyed)return;
+   if(ok){LumoLock.setEnabled(MainActivity.this,true);message("Bloqueio ligado. O Lumo pede a digital ao abrir e depois de 5 minutos fora do app.");}
+   else if(code!=android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED&&code!=android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_CANCELED)message("Bloqueio não ligado: "+(msg==null?"digital não confirmada":msg));
+  });
  }
 
  void showAddMenu(){
@@ -933,13 +971,15 @@ public class MainActivity extends Activity {
   if(request==REQUEST_VIEWER){gallerySignature="";filesSignature="";reviewSignature="";requestedUri="";thumbCache.evictAll();refreshGallery();refreshFiles(true);refreshReview(true);return;}
   if(request==41&&result==RESULT_OK&&data!=null){final Uri dest=data.getData();images.execute(()->{try(OutputStream out=getContentResolver().openOutputStream(dest,"w")){if(out==null)throw new IOException("Destino indisponível");out.write(database.onlineManifest().getBytes("UTF-8"));handler.post(()->message("Manifesto exportado. Não inclui arquivos de foto nem credenciais."));}catch(Exception e){handler.post(()->message("Falha ao exportar manifesto: "+e.getMessage()));}});return;}
   if(request==REQUEST_CARD_FOLDER){if(result==RESULT_OK&&data!=null&&data.getData()!=null){Uri tree=data.getData();int flags=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);try{getContentResolver().takePersistableUriPermission(tree,flags);importCard(tree);}catch(Exception e){message("Não foi possível acessar o cartão USB: "+e.getMessage());}}return;}
-  if(request==30){if(result==RESULT_OK){getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Conta conectada. Carregando eventos…").apply();loadFottoGalleries();updateFottoStatus();}return;}
+  if(request==30){if(result==RESULT_OK){refreshAccount();getSharedPreferences("hisho",0).edit().putString("fottoLastStatus","Conta conectada. Carregando eventos…").apply();loadFottoGalleries();updateFottoStatus();}return;}
   if(request==20&&result==RESULT_OK&&data!=null&&data.getData()!=null){Uri uri=data.getData();int flags=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);try{getContentResolver().takePersistableUriPermission(uri,flags);getSharedPreferences("hisho",0).edit().putString("exportTreeUri",uri.toString()).apply();updateExportFolder();message("Pasta de exportação salva.");}catch(Exception e){message("Não foi possível manter acesso à pasta: "+e.getMessage());}return;}
   if(request==10&&result==RESULT_OK&&data!=null)try{JSONObject parsed=PhotoEditor.parse(read(getContentResolver().openInputStream(data.getData())));presetData=parsed;presetName="Predefinição importada";try(Cursor c=getContentResolver().query(data.getData(),new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst())presetName=c.getString(0).replaceFirst("(?i)\\.xmp$","");}getSharedPreferences("hisho",0).edit().putString("preset",parsed.toString()).putString("presetName",presetName).putBoolean("presetEnabled",true).apply();PresetLibrary.put(MainActivity.this,presetName,parsed);publishLiveSettings();refreshQuickControls();message("Predefinição "+presetName+" importada.");}catch(Exception e){message("Predefinição anterior mantida: "+e.getMessage());}
  }
+ /** Nome/e-mail da conta Fotto para o menu (contas conectadas antes do login do Lumo ainda não têm). */
+ void refreshAccount(){if(FottoApi.token(this).isEmpty())return;final Context app=getApplicationContext();Thread t=new Thread(()->{try{LumoSession.rememberProfile(app,FottoApi.validateSession(app));}catch(Exception ignored){}},"lumo-account");t.setDaemon(true);t.start();}
  void message(String s){Toast.makeText(MainActivity.this,s,Toast.LENGTH_LONG).show();}
  @Override protected void onResume(){super.onResume();QueueRecovery.resume(MainActivity.this);gallerySignature="";filesSignature="";reviewSignature="";requestedUri="";thumbCache.evictAll();handler.removeCallbacks(update);handler.post(update);}
  @Override protected void onPause(){handler.removeCallbacks(update);super.onPause();}
  @Override protected void onSaveInstanceState(Bundle state){state.putInt("page",selected);state.putBoolean("follow",gallery.follow);state.putString("photo",gallery.selected);super.onSaveInstanceState(state);}
- @Override protected void onDestroy(){destroyed=true;if(tourDialog!=null)tourDialog.dismiss();previewGeneration++;stripGeneration++;handler.removeCallbacksAndMessages(null);thumbnails.shutdownNow();images.shutdownNow();scoring.shutdownNow();fottoNetwork.shutdownNow();galleryWorker.shutdownNow();thumbCache.evictAll();if(previewBitmap!=null)previewBitmap.recycle();database.close();if(registered)unregisterReceiver(receiver);super.onDestroy();}
+ @Override protected void onDestroy(){destroyed=true;if(gated){thumbnails.shutdownNow();images.shutdownNow();scoring.shutdownNow();fottoNetwork.shutdownNow();galleryWorker.shutdownNow();super.onDestroy();return;}if(tourDialog!=null)tourDialog.dismiss();previewGeneration++;stripGeneration++;handler.removeCallbacksAndMessages(null);thumbnails.shutdownNow();images.shutdownNow();scoring.shutdownNow();fottoNetwork.shutdownNow();galleryWorker.shutdownNow();thumbCache.evictAll();if(previewBitmap!=null)previewBitmap.recycle();database.close();if(registered)unregisterReceiver(receiver);super.onDestroy();}
 }
