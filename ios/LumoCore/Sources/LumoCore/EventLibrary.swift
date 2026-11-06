@@ -62,6 +62,8 @@ public struct PhotoRecord: Codable, Identifiable, Hashable {
     public var presetName: String = ""
     /// Ajustes manuais aplicados por cima do automático/preset.
     public var manual: EditControls?
+    /// Ajustes extras do editor (HSL, calibração, efeitos, detalhe), como em `EditOptions.extra`.
+    public var extra: [String: Double]?
     public var upload: UploadStage = .none
     public var fottoGalleryID: String = ""
     public var fottoMediaID: String = ""
@@ -98,6 +100,7 @@ public struct PhotoRecord: Codable, Identifiable, Hashable {
         duplicateOf = try c.decodeIfPresent(String.self, forKey: .duplicateOf) ?? ""
         presetName = try c.decodeIfPresent(String.self, forKey: .presetName) ?? ""
         manual = try c.decodeIfPresent(EditControls.self, forKey: .manual)
+        extra = try c.decodeIfPresent([String: Double].self, forKey: .extra)
         upload = try c.decodeIfPresent(UploadStage.self, forKey: .upload) ?? .none
         fottoGalleryID = try c.decodeIfPresent(String.self, forKey: .fottoGalleryID) ?? ""
         fottoMediaID = try c.decodeIfPresent(String.self, forKey: .fottoMediaID) ?? ""
