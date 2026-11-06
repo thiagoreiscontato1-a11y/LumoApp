@@ -374,8 +374,8 @@ public class MainActivity extends Activity {
  }
 
  void showMainMenu(){
-  android.content.SharedPreferences p=getSharedPreferences("hisho",0);boolean event=p.getBoolean("eventMode",false),presetOn=p.getBoolean("presetEnabled",true);int reviews=database.reviewCount();String account=LumoSession.account(this);
-  new LumoSheet(this,"Lumo",database.eventName())
+  android.content.SharedPreferences p=getSharedPreferences("hisho",0);boolean event=p.getBoolean("eventMode",false),presetOn=p.getBoolean("presetEnabled",true);int reviews=database.reviewCount();String account=LumoSession.account(this);boolean lockOn=LumoLock.enabled(this);
+  LumoSheet sheet=new LumoSheet(this,"Lumo",database.eventName())
    .section("Captura")
    .item("tune",CYAN,"Ajustes de captura e edição","Edição automática, resolução, curadoria e fotos anteriores",()->{if(CaptureService.active!=null)message("Encerre a captura para mudar os ajustes.");else captureSettingsDialog();})
    .item("palette",CYAN,"Predefinição",presetOn?presetName:"Desligada",this::showPresetChooser)
@@ -389,8 +389,10 @@ public class MainActivity extends Activity {
    .item("bell",CYAN,"Testar alarme de desconexão","Toca o alerta usado quando a câmera cai",()->DisconnectAlert.test(MainActivity.this))
    .item("help",CYAN,"Tour do Lumo","Rever a apresentação passo a passo",()->showTour(0))
    .section("Conta")
-   .item("person",DANGER,LumoSession.demo(this)?"Sair do modo demonstração":"Sair da conta Fotto",account.isEmpty()?"Volta para a tela de entrada":account,this::confirmSignOut)
-   .show();
+   .item("lock",lockOn?SUCCESS:CYAN,lockOn?"Desligar bloqueio com digital":"Bloquear com digital",lockOn?"Ligado · pede a digital ao abrir e após 5 min fora":"Pede a digital ao abrir o Lumo",this::toggleBiometricLock);
+  // APK Demo sem conta: não há do que sair (a tela de entrada mandaria de volta para cá).
+  if(!(DemoLicense.isDemo(this)&&FottoApi.token(this).isEmpty()))sheet.item("person",DANGER,LumoSession.demo(this)?"Sair do modo demonstração":"Sair da conta Fotto",account.isEmpty()?"Volta para a tela de entrada":account,this::confirmSignOut);
+  sheet.show();
  }
 
  /** Sair da conta: fotos, eventos e edições ficam no aparelho; a sessão Fotto, o evento de destino e o envio automático são apagados. */
@@ -401,7 +403,23 @@ public class MainActivity extends Activity {
   String body=(account.isEmpty()?"":"Conta: "+account+"\n\n")+"Fotos, eventos e edições continuam neste aparelho. O envio automático para e o evento de destino do Fotto é esquecido. Para usar o Lumo de novo, entre com a conta Fotto."
    +(pending>0?"\n\n"+(pending==1?"1 foto ainda não foi enviada":pending+" fotos ainda não foram enviadas")+" ao Fotto. Elas ficam na fila e voltam a ser enviadas quando você entrar e escolher o mesmo evento.":"");
   new AlertDialog.Builder(this).setTitle(LumoSession.demo(this)?"Sair do modo demonstração?":"Sair da conta Fotto?").setMessage(body).setNegativeButton("Cancelar",null)
-   .setPositiveButton("Sair",(d,n)->{LumoSession.signOut(MainActivity.this);startActivity(new Intent(MainActivity.this,LumoLoginActivity.class).putExtra("signedOut",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));finish();}).show();
+   .setPositiveButton("Sair",(d,n)->{LumoSession.signOut(MainActivity.this);boolean demoApk=DemoLicense.isDemo(MainActivity.this);if(demoApk)message("Você saiu da conta Fotto.");startActivity(new Intent(MainActivity.this,demoApk?MainActivity.class:LumoLoginActivity.class).putExtra("signedOut",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));finish();}).show();
+ }
+
+ /** Liga/desliga o bloqueio com digital. Ligar pede a digital antes, para confirmar que funciona neste aparelho. */
+ void toggleBiometricLock(){
+  if(LumoLock.enabled(this)){LumoLock.setEnabled(this,false);message("Bloqueio com digital desligado.");return;}
+  if(!LumoLock.available(this)){
+   new AlertDialog.Builder(this).setTitle("Cadastre uma digital").setMessage("Para bloquear o Lumo, cadastre uma digital (ou um PIN/padrão de tela) nas configurações do Android e volte aqui.").setNegativeButton("Agora não",null)
+    .setPositiveButton("Abrir configurações",(d,n)->{Intent i=Build.VERSION.SDK_INT>=30?new Intent(android.provider.Settings.ACTION_BIOMETRIC_ENROLL).putExtra(android.provider.Settings.EXTRA_BIOMETRIC_AUTHENTICATORS_ALLOWED,android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK|android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL):new Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS);
+     try{startActivity(i);}catch(Exception e){try{startActivity(new Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS));}catch(Exception ignored){message("Abra Configurações > Segurança e cadastre uma digital.");}}}).show();
+   return;
+  }
+  LumoLock.prompt(this,"Ligar bloqueio com digital","Confirme sua digital para ligar",(ok,code,msg)->{
+   if(destroyed)return;
+   if(ok){LumoLock.setEnabled(MainActivity.this,true);message("Bloqueio ligado. O Lumo pede a digital ao abrir e depois de 5 minutos fora do app.");}
+   else if(code!=android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED&&code!=android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_CANCELED)message("Bloqueio não ligado: "+(msg==null?"digital não confirmada":msg));
+  });
  }
 
  void showAddMenu(){

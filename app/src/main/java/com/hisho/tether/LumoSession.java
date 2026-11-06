@@ -16,9 +16,10 @@ final class LumoSession {
 
  static SharedPreferences prefs(Context c){return c.getSharedPreferences(PREFS,0);}
 
- static boolean signedIn(Context c){return !FottoApi.token(c).isEmpty()||prefs(c).getBoolean(DEMO,false);}
+ /** O APK Demo (pacote .demo, liberado pelo código de 15 dias) entra direto, sem conta Fotto. */
+ static boolean signedIn(Context c){return !FottoApi.token(c).isEmpty()||prefs(c).getBoolean(DEMO,false)||DemoLicense.isDemo(c);}
 
- static boolean demo(Context c){return FottoApi.token(c).isEmpty()&&prefs(c).getBoolean(DEMO,false);}
+ static boolean demo(Context c){return FottoApi.token(c).isEmpty()&&(prefs(c).getBoolean(DEMO,false)||DemoLicense.isDemo(c));}
 
  static void enterDemo(Context c){prefs(c).edit().putBoolean(DEMO,true).apply();}
 

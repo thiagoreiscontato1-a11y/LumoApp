@@ -19,7 +19,9 @@ Corrige o fechamento do modo demonstração quando o Android recria a tela.
 depois do login vai direto para a tela ao vivo e continua abrindo sem internet. Quem já tinha o Fotto conectado não precisa entrar
 de novo. Menu → Conta → **Sair da conta Fotto** apaga a sessão, os cookies do login, o evento de destino e para o envio automático;
 fotos, eventos locais e edições ficam no aparelho. Sessão expirada não tira ninguém do app no meio de um evento: continua o aviso
-“Conectar Fotto novamente”. O modo demonstração das capturas do CI entra sem conta.
+“Conectar Fotto novamente”. O modo demonstração das capturas do CI e o APK Demo entram sem conta.
+**Bloqueio com digital** (Menu → Conta): pede a digital ao abrir e ao voltar depois de 5 minutos fora; o PIN/padrão do celular
+serve de alternativa. Só a tela é bloqueada: captura, edição e envio continuam em segundo plano.
 
 **iOS:** veja [`ios/README.md`](ios/README.md). Os workflows **Lumo Android** e **Lumo iOS** testam, compilam e publicam capturas de tela
 do modo demonstração nas branches `ci/android-screenshots` e `ci/ios-screenshots`.

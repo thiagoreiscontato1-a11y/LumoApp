@@ -6,5 +6,14 @@ Lumo 0.17.0 (Android): login com a conta Fotto.
 - Menu → Conta → "Sair da conta Fotto": mostra nome/e-mail da conta (lidos do /me), pede confirmação, avisa quantas fotos ainda não foram enviadas e bloqueia a saída durante captura/importação. Ao sair: para o envio automático, apaga as chaves do Fotto, o evento de destino e os cookies/armazenamento do WebView (o próximo login pede e-mail e senha de novo). Fotos, eventos locais, edições e a fila ficam no aparelho.
 - Sessão expirada (HTTP 401) não força a saída: o app segue funcionando e o aviso "Conectar Fotto novamente" continua na Saúde do fluxo e na Entrega.
 - Modo demonstração (--ez lumoDemo true, usado pelas capturas do CI) entra sem conta; "Sair do modo demonstração" volta para a tela de entrada.
+- APK Demo (pacote .demo): depois do código de 15 dias entra direto, sem conta Fotto. O Fotto continua opcional na Entrega; "Sair da conta Fotto" só aparece com conta conectada e mantém o app aberto.
+- Bloqueio com digital (Menu → Conta → Bloquear com digital), desligado por padrão:
+  - Ligar pede a digital antes, para confirmar que funciona. Sem digital cadastrada, oferece abrir as configurações do Android.
+  - Pede a digital ao abrir o app (processo novo) e ao voltar depois de 5 minutos fora. Trocar de tela, girar o aparelho ou abrir o seletor de pastas não bloqueia.
+  - Usa o BiometricPrompt do Android; o PIN/padrão de tela do celular é a alternativa se a digital falhar (luva, dedo molhado). A digital nunca passa pelo Lumo.
+  - Só a tela é bloqueada: captura, edição e envio ao Fotto continuam em segundo plano.
+  - Voltar ou Fechar na tela de bloqueio manda o app para segundo plano, sem mostrar as fotos.
+  - Se a digital e o bloqueio de tela forem removidos do celular, a trava se desliga sozinha (avisa) em vez de prender o usuário.
+  - Nova permissão: USE_BIOMETRIC. Novo ícone ic_lock.
 - CI: nova captura 0-login.png (primeira abertura). Novo teste tests/login_contract.py.
 - versionCode 53, versionName 0.17.0.

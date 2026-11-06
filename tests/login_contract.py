@@ -63,6 +63,28 @@ if "signOut" in (SRC / "FottoApi.java").read_text(encoding="utf-8") or "signOut"
 if not (0 <= screens.find("shot 0-login") < screens.find("start --ez lumoDemo true")):
     errors.append("android-screens.sh: capturar 0-login antes de entrar no modo demonstração")
 
+# APK Demo (pacote .demo) entra sem conta Fotto e não oferece "sair" sem conta.
+need(session, "||DemoLicense.isDemo(c);}", "LumoSession.signedIn")
+need(main, "if(!(DemoLicense.isDemo(this)&&FottoApi.token(this).isEmpty()))sheet.item(\"person\"", "menu principal")
+
+# Bloqueio com digital: BiometricPrompt do sistema com PIN do celular como alternativa; nunca prende o usuário.
+lock = (SRC / "LumoLock.java").read_text(encoding="utf-8")
+lockui = (SRC / "LumoLockActivity.java").read_text(encoding="utf-8")
+app = (SRC / "LumoApplication.java").read_text(encoding="utf-8")
+need(manifest, '<uses-permission android:name="android.permission.USE_BIOMETRIC"/>', "AndroidManifest")
+need(manifest, '<activity android:name=".LumoLockActivity" android:exported="false"/>', "AndroidManifest")
+need(lock, "BIOMETRIC_WEAK|BiometricManager.Authenticators.DEVICE_CREDENTIAL", "LumoLock")
+need(lock, "setDeviceCredentialAllowed(true)", "LumoLock (Android 10)")
+need(lock, "static volatile boolean unlocked=false;", "LumoLock (processo novo começa bloqueado)")
+need(lock, "a instanceof LumoLockActivity||a instanceof LumoLoginActivity", "LumoLock.exempt")
+need(app, "LumoLock.needsUnlock(a)", "LumoApplication")
+need(app, "LumoLock.left()", "LumoApplication")
+need(lockui, "if(!LumoLock.available(this)){LumoLock.setEnabled(this,false);", "LumoLockActivity (sem digital nem PIN)")
+need(lockui, "public void onBackPressed(){moveTaskToBack(true);}", "LumoLockActivity (voltar não revela o app)")
+need(lockui, "if(!autoAsked){autoAsked=true;ask();}", "LumoLockActivity (sem laço ao cancelar)")
+need(main, "void toggleBiometricLock()", "MainActivity")
+need(main, '.item("lock",', "menu principal")
+
 if errors:
     print("\n".join(errors)); sys.exit(1)
 print("login: ok")
