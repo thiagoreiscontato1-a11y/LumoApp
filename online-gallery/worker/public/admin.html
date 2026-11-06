@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Painel da galeria</title>
+<style>
+:root {
+  --bg: #f5f3ef; --surface: #ffffff; --surface-2: #ece9e3; --text: #1b1a18; --muted: #6b665e; --line: #dcd7ce;
+  --accent: #1b1a18; --accent-text: #fff; --ok: #1f8a4c; --danger: #c43434; --heart: #e0245e; --focus: #2a6df4;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --surface: #1c1c1c; --surface-2: #262626; --text: #f2efea; --muted: #a39d93; --line: #333; --accent: #f2efea; --accent-text: #121212; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--sans); }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+[hidden] { display: none !important; }
+a { color: inherit; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font: 500 30px/1.15 var(--serif); margin: 0; overflow-wrap: anywhere; }
+h2 { font: 600 17px/1.3 var(--sans); margin: 0 0 12px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.head .grow { flex: 1; min-width: 200px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.btn.danger { color: var(--danger); }
+.btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
+.btn[disabled] { opacity: .5; cursor: default; }
+.field { margin: 0 0 12px; }
+.field label { display: block; font-size: 13px; color: var(--muted); margin: 0 0 5px; }
+.field input, .field select { width: 100%; height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 12px; }
+.check { display: flex; gap: 10px; align-items: center; min-height: 42px; }
+.check input { width: 20px; height: 20px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.error { color: var(--danger); font-size: 14px; min-height: 20px; margin: 8px 0 0; }
+.login { min-height: 100dvh; display: grid; place-items: center; padding: 16px; }
+.login .card { width: min(420px, 100%); padding: 28px 22px; }
+.galleries { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.gcard { display: flex; flex-direction: column; gap: 8px; cursor: pointer; text-align: left; transition: border-color .15s; }
+.gcard:hover { border-color: var(--muted); }
+.gcard h3 { font: 500 21px/1.2 var(--serif); margin: 0; overflow-wrap: anywhere; }
+.stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.stats b { color: var(--text); font-weight: 600; }
+.badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: 1fr; } .row2 { grid-template-columns: 1fr; } }
+.side { display: flex; flex-direction: column; gap: 16px; }
+.link-box { display: flex; gap: 8px; }
+.link-box input { flex: 1; min-width: 0; height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 12px; font-size: 13px; }
+.qr { display: grid; place-items: center; background: #fff; border-radius: 12px; padding: 12px; margin: 12px 0; }
+.qr svg { width: 100%; max-width: 220px; height: auto; display: block; }
+.drop { border: 2px dashed var(--line); border-radius: 16px; padding: 22px; text-align: center; transition: border-color .15s, background .15s; }
+.drop.over { border-color: var(--accent); background: var(--surface-2); }
+.progress { height: 6px; border-radius: 6px; background: var(--surface-2); overflow: hidden; margin-top: 10px; }
+.progress > i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .2s; }
+.tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: 999px; padding: 4px; width: fit-content; margin-bottom: 12px; }
+.tab { border: 0; background: transparent; border-radius: 999px; min-height: 36px; padding: 0 14px; font-weight: 600; color: var(--muted); }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--text); }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.thumb { position: relative; border-radius: 10px; overflow: hidden; background: var(--surface-2); aspect-ratio: 1; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb .tag { position: absolute; left: 6px; top: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 999px; display: inline-flex; gap: 4px; align-items: center; }
+.thumb .tag.fav { background: var(--heart); }
+.thumb .del { position: absolute; right: 6px; top: 6px; width: 32px; height: 32px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; opacity: 0; }
+.thumb:hover .del, .thumb .del:focus { opacity: 1; }
+@media (hover: none) { .thumb .del { opacity: .85; } }
+.thumb .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 6px; font-size: 11px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.65)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb .pending { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: var(--muted); text-align: center; padding: 8px; }
+.favlist { display: flex; flex-direction: column; gap: 8px; }
+.favitem { display: flex; gap: 12px; align-items: center; }
+.favitem img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; flex: none; background: var(--surface-2); }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; background: var(--accent); color: var(--accent-text); padding: 12px 18px; border-radius: 12px; font-size: 14px; max-width: calc(100% - 32px); }
+</style>
+</head>
+<body>
+
+<section class="login" id="login" hidden>
+  <form class="card" id="login-form">
+    <h1 style="margin-bottom:6px">Painel da galeria</h1>
+    <p class="muted" style="margin:0 0 18px">Use a mesma chave de acesso configurada no servidor (ADMIN_TOKEN) e no app Lumo.</p>
+    <div class="field"><label for="token">Chave de acesso</label><input id="token" type="password" autocomplete="current-password" required></div>
+    <button class="btn primary" style="width:100%" type="submit">Entrar</button>
+    <p class="error" id="login-error" role="alert"></p>
+  </form>
+</section>
+
+<div class="wrap" id="home" hidden>
+  <div class="head">
+    <div class="grow"><p class="muted small" style="margin:0" id="studio"></p><h1>Galerias</h1></div>
+    <button class="btn" id="logout">Sair</button>
+  </div>
+  <form class="card" id="new-form" style="margin-bottom:16px">
+    <h2>Nova galeria</h2>
+    <div class="row2">
+      <div class="field"><label for="new-title">Nome do evento</label><input id="new-title" maxlength="120" required placeholder="Ex.: Formatura Medicina 2026"></div>
+      <div class="field"><label for="new-pin">Senha para os convidados (opcional)</label><input id="new-pin" maxlength="32" placeholder="Ex.: 2468" autocomplete="off"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="new-dl" checked> Convidados podem baixar as fotos em alta</label>
+    <button class="btn primary" type="submit">Criar galeria</button>
+    <p class="error" id="new-error" role="alert"></p>
+  </form>
+  <div class="galleries" id="galleries"></div>
+  <p class="muted" id="no-galleries" hidden>Nenhuma galeria ainda. Crie uma acima ou pelo app Lumo (Entrega → Galeria online).</p>
+</div>
+
+<div class="wrap" id="detail" hidden>
+  <div class="head">
+    <button class="btn" id="back">← Galerias</button>
+    <div class="grow"><h1 id="d-title"></h1><div class="stats" id="d-stats" style="margin-top:6px"></div></div>
+    <a class="btn primary" id="d-open" target="_blank" rel="noopener">Abrir como convidado</a>
+  </div>
+  <div class="layout">
+    <div class="side">
+      <div class="card">
+        <h2>Link para os convidados</h2>
+        <div class="link-box"><input id="d-link" readonly aria-label="Link da galeria"><button class="btn" id="d-copy">Copiar</button></div>
+        <div class="qr" id="d-qr" aria-label="QR code do link"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn sm" id="d-qr-png">Baixar QR (PNG)</button>
+          <button class="btn sm" id="d-share" hidden>Compartilhar link</button>
+        </div>
+        <p class="muted small" style="margin:10px 0 0" id="d-pin-note"></p>
+      </div>
+      <form class="card" id="settings">
+        <h2>Configurações</h2>
+        <div class="field"><label for="s-title">Nome</label><input id="s-title" maxlength="120" required></div>
+        <div class="field"><label for="s-pin">Nova senha (deixe vazio para manter)</label><input id="s-pin" maxlength="32" autocomplete="off"></div>
+        <label class="check"><input type="checkbox" id="s-nopin"> Sem senha (qualquer pessoa com o link)</label>
+        <label class="check"><input type="checkbox" id="s-dl"> Permitir download em alta</label>
+        <label class="check"><input type="checkbox" id="s-hidden"> Ocultar galeria (convidados não acessam)</label>
+        <div class="field"><label for="s-order">Ordem padrão</label><select id="s-order"><option value="desc">Mais recentes primeiro</option><option value="asc">Ordem do evento</option></select></div>
+        <div class="field"><label for="s-exp">Expira em (opcional)</label><input id="s-exp" type="date"></div>
+        <button class="btn primary" type="submit">Salvar</button>
+        <p class="muted small" style="margin:8px 0 0">Trocar a senha desconecta quem já entrou.</p>
+        <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+        <button class="btn danger" type="button" id="s-delete">Excluir galeria e todas as fotos</button>
+      </form>
+    </div>
+    <div class="side">
+      <div class="card drop" id="drop">
+        <h2 style="margin-bottom:6px">Enviar fotos pelo computador</h2>
+        <p class="muted small" style="margin:0 0 12px">Arraste JPEGs editados para cá. O app Lumo envia sozinho durante o evento; use isto para fotos de outras fontes.</p>
+        <label class="btn primary"><input type="file" id="files" accept="image/jpeg,image/png,image/webp" multiple hidden>Escolher fotos</label>
+        <div id="up-status" class="small muted" style="margin-top:10px"></div>
+        <div class="progress" id="up-bar" hidden><i></i></div>
+      </div>
+      <div class="card">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" id="t-all" aria-selected="true">Todas as fotos</button>
+          <button class="tab" role="tab" id="t-fav" aria-selected="false">Favoritas dos convidados</button>
+        </div>
+        <div id="p-all"><div class="thumbs" id="thumbs"></div><p class="muted" id="no-photos" hidden>Nenhuma foto ainda.</p><button class="btn" id="more" hidden style="margin-top:12px">Carregar mais</button></div>
+        <div id="p-fav" hidden><div class="favlist" id="favlist"></div><p class="muted" id="no-favs" hidden>Ninguém favoritou ainda.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="/vendor/qrcode.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var token = null;
+  try { token = localStorage.getItem("lumo.admin"); } catch (e) {}
+  var current = null, cursor = null;
+
+  function toast(text) { var t = $("toast"); t.textContent = text; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 3500); }
+  function api(path, init) {
+    init = init || {};
+    var headers = { authorization: "Bearer " + token };
+    if (init.body && typeof init.body !== "string" && !(init.body instanceof Blob)) { init.body = JSON.stringify(init.body); headers["content-type"] = "application/json"; }
+    if (init.body instanceof Blob) headers["content-type"] = "image/jpeg";
+    init.headers = headers;
+    init.credentials = "same-origin";
+    return fetch(path, init).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        if (r.status === 401) { logout(); throw new Error("Chave inválida."); }
+        if (!r.ok) throw new Error(d.error || "Erro " + r.status);
+        return d;
+      });
+    });
+  }
+  function show(id) { ["login", "home", "detail"].forEach(function (x) { $(x).hidden = x !== id; }); window.scrollTo(0, 0); }
+  function logout() { token = null; try { localStorage.removeItem("lumo.admin"); } catch (e) {} show("login"); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function n(v, one, many) { return v + " " + (v === 1 ? one : many); }
+
+  $("login-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    token = $("token").value.trim();
+    api("/v1/me").then(function () { try { localStorage.setItem("lumo.admin", token); } catch (e) {} route(); }).catch(function (e) { $("login-error").textContent = e.message; show("login"); });
+  });
+  $("logout").addEventListener("click", logout);
+  $("back").addEventListener("click", function () { location.hash = ""; });
+  window.addEventListener("hashchange", route);
+
+  function route() {
+    if (!token) return show("login");
+    var id = location.hash.replace(/^#g=/, "");
+    if (id && id !== location.hash) openGallery(id); else loadHome();
+  }
+
+  // ------------------------------------------------------------ lista
+  function loadHome() {
+    show("home");
+    api("/v1/me").then(function (me) { $("studio").textContent = me.studio; });
+    api("/v1/galleries").then(function (r) {
+      var box = $("galleries");
+      box.innerHTML = "";
+      $("no-galleries").hidden = r.galleries.length > 0;
+      r.galleries.forEach(function (g) {
+        var c = document.createElement("button");
+        c.className = "card gcard";
+        c.innerHTML = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (g.status === "hidden" ? '<span class="badge">Oculta</span>' : "") + (g.hasPin ? '<span class="badge">Com senha</span>' : '<span class="badge">Sem senha</span>') + (g.clientKey ? '<span class="badge">App Lumo</span>' : "") + "</div>" +
+          "<h3>" + esc(g.title) + "</h3>" +
+          '<div class="stats"><span><b>' + g.readyCount + "</b> fotos</span><span><b>" + g.favoriteCount + "</b> favoritas</span><span><b>" + g.visitorCount + "</b> visitantes</span></div>" +
+          '<span class="muted small">Criada em ' + new Date(g.createdAt).toLocaleDateString("pt-BR") + "</span>";
+        c.addEventListener("click", function () { location.hash = "g=" + g.id; });
+        box.appendChild(c);
+      });
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  $("new-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    $("new-error").textContent = "";
+    api("/v1/galleries", { method: "POST", body: { title: $("new-title").value, pin: $("new-pin").value.trim() || null, allowDownload: $("new-dl").checked } })
+      .then(function (r) { $("new-form").reset(); $("new-dl").checked = true; location.hash = "g=" + r.gallery.id; })
+      .catch(function (e) { $("new-error").textContent = e.message; });
+  });
+
+  // ------------------------------------------------------------ detalhe
+  function openGallery(id) {
+    show("detail");
+    $("thumbs").innerHTML = ""; $("favlist").innerHTML = "";
+    api("/v1/galleries/" + id).then(function (r) {
+      current = r.gallery;
+      paint();
+      return api("/v1/galleries/" + id + "/preview-session", { method: "POST" });
+    }).then(function () { cursor = null; loadPhotos(true); loadFavs(); }).catch(function (e) { toast(e.message); location.hash = ""; });
+  }
+
+  function paint() {
+    var g = current;
+    document.title = g.title + " · Painel";
+    $("d-title").textContent = g.title;
+    $("d-stats").innerHTML = "<span><b>" + g.readyCount + "</b> fotos publicadas</span>" + (g.photoCount > g.readyCount ? "<span><b>" + (g.photoCount - g.readyCount) + "</b> enviando</span>" : "") + "<span><b>" + g.favoriteCount + "</b> favoritas</span><span><b>" + g.visitorCount + "</b> visitantes</span>" + (g.status === "hidden" ? '<span class="badge">Oculta</span>' : "");
+    $("d-open").href = g.url;
+    $("d-link").value = g.url;
+    $("d-pin-note").textContent = g.hasPin ? "Os convidados precisam da senha para entrar. Ela não aparece aqui: anote ao criar." : "Sem senha: qualquer pessoa com o link vê as fotos.";
+    var qr = qrcode(0, "M"); qr.addData(g.url); qr.make();
+    $("d-qr").innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    $("d-share").hidden = !navigator.share;
+    $("s-title").value = g.title; $("s-pin").value = ""; $("s-nopin").checked = !g.hasPin; $("s-dl").checked = g.allowDownload;
+    $("s-hidden").checked = g.status === "hidden"; $("s-order").value = g.order;
+    $("s-exp").value = g.expiresAt ? new Date(g.expiresAt).toISOString().slice(0, 10) : "";
+  }
+
+  $("d-copy").addEventListener("click", function () {
+    navigator.clipboard.writeText(current.url).then(function () { toast("Link copiado."); }, function () { $("d-link").select(); toast("Selecione e copie o link."); });
+  });
+  $("d-share").addEventListener("click", function () { navigator.share({ title: current.title, text: "Fotos do evento: " + current.title, url: current.url }).catch(function () {}); });
+  $("d-qr-png").addEventListener("click", function () {
+    var svg = $("d-qr").querySelector("svg");
+    var img = new Image();
+    img.onload = function () {
+      var c = document.createElement("canvas"); c.width = c.height = 1200;
+      var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, 1200, 1200); x.imageSmoothingEnabled = false; x.drawImage(img, 0, 0, 1200, 1200);
+      c.toBlob(function (b) { var a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "QR - " + current.title.replace(/[\\/:*?"<>|]/g, "_") + ".png"; a.click(); });
+    };
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+  });
+
+  $("s-nopin").addEventListener("change", function () { $("s-pin").disabled = $("s-nopin").checked; });
+  $("settings").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var body = { title: $("s-title").value, allowDownload: $("s-dl").checked, status: $("s-hidden").checked ? "hidden" : "active", order: $("s-order").value,
+      expiresAt: $("s-exp").value ? new Date($("s-exp").value + "T23:59:59").getTime() : null };
+    if ($("s-nopin").checked) body.pin = null; else if ($("s-pin").value.trim()) body.pin = $("s-pin").value.trim();
+    else if (!current.hasPin) return toast("Informe a senha ou marque “Sem senha”.");
+    api("/v1/galleries/" + current.id, { method: "PATCH", body: body }).then(function (r) {
+      current = r.gallery; paint(); toast("Configurações salvas.");
+      return api("/v1/galleries/" + current.id + "/preview-session", { method: "POST" });
+    }).catch(function (e) { toast(e.message); });
+  });
+  $("s-delete").addEventListener("click", function () {
+    var typed = prompt("Isto apaga a galeria e TODAS as fotos online (as fotos no celular continuam). Digite EXCLUIR para confirmar.");
+    if (typed !== "EXCLUIR") return;
+    api("/v1/galleries/" + current.id, { method: "DELETE" }).then(function () { toast("Galeria excluída."); location.hash = ""; }).catch(function (e) { toast(e.message); });
+  });
+
+  function img(p, variant) { return "/api/g/" + current.slug + "/p/" + (p.id || p.photoId) + "/" + p.v + "/" + variant; }
+
+  function loadPhotos(reset) {
+    if (reset) { $("thumbs").innerHTML = ""; cursor = null; }
+    api("/v1/galleries/" + current.id + "/photos?limit=200" + (cursor ? "&cursor=" + cursor : "")).then(function (r) {
+      r.photos.forEach(function (p) {
+        var d = document.createElement("div");
+        d.className = "thumb";
+        d.innerHTML = (p.ready ? '<img loading="lazy" alt="" src="' + img(p, "thumb") + '">' : '<div class="pending">Enviando…<br>' + esc(p.name) + "</div>") +
+          (p.favorites ? '<span class="tag fav">♥ ' + p.favorites + "</span>" : "") +
+          '<button class="del" title="Excluir foto" aria-label="Excluir ' + esc(p.name) + '">✕</button><div class="cap">' + esc(p.name) + "</div>";
+        d.querySelector(".del").addEventListener("click", function () {
+          if (!confirm("Excluir “" + p.name + "” da galeria online?")) return;
+          api("/v1/photos/" + p.id, { method: "DELETE" }).then(function () { d.remove(); toast("Foto excluída."); }).catch(function (e) { toast(e.message); });
+        });
+        $("thumbs").appendChild(d);
+      });
+      cursor = r.next;
+      $("more").hidden = !r.next;
+      $("no-photos").hidden = $("thumbs").children.length > 0;
+    }).catch(function (e) { toast(e.message); });
+  }
+  $("more").addEventListener("click", function () { loadPhotos(false); });
+
+  function loadFavs() {
+    api("/v1/galleries/" + current.id + "/favorites").then(function (r) {
+      var box = $("favlist"); box.innerHTML = "";
+      $("no-favs").hidden = r.photos.length > 0;
+      r.photos.forEach(function (p) {
+        var d = document.createElement("div");
+        d.className = "favitem";
+        d.innerHTML = '<img loading="lazy" alt="" src="' + img(p, "thumb") + '"><div><b>♥ ' + p.count + "</b> · " + esc(p.name) + '<div class="muted small">' + esc(p.visitors.join(", ")) + "</div></div>";
+        box.appendChild(d);
+      });
+    });
+  }
+
+  $("t-all").addEventListener("click", function () { tab("all"); });
+  $("t-fav").addEventListener("click", function () { tab("fav"); loadFavs(); api("/v1/galleries/" + current.id).then(function (r) { current = r.gallery; paint(); }); });
+  function tab(which) { $("t-all").setAttribute("aria-selected", which === "all"); $("t-fav").setAttribute("aria-selected", which === "fav"); $("p-all").hidden = which !== "all"; $("p-fav").hidden = which !== "fav"; }
+
+  // ------------------------------------------------------------ envio pelo navegador
+  var drop = $("drop");
+  ["dragenter", "dragover"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
+  drop.addEventListener("drop", function (e) { upload([].slice.call(e.dataTransfer.files)); });
+  $("files").addEventListener("change", function () { upload([].slice.call($("files").files)); $("files").value = ""; });
+
+  function hex(buf) { return [].map.call(new Uint8Array(buf), function (b) { return b.toString(16).padStart(2, "0"); }).join(""); }
+  function sha256(blob) { return blob.arrayBuffer().then(function (b) { return crypto.subtle.digest("SHA-256", b); }).then(hex); }
+
+  function resized(bitmap, max, quality) {
+    var scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    var c = document.createElement("canvas");
+    c.width = Math.round(bitmap.width * scale); c.height = Math.round(bitmap.height * scale);
+    var x = c.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(bitmap, 0, 0, c.width, c.height);
+    return new Promise(function (ok) { c.toBlob(ok, "image/jpeg", quality); });
+  }
+
+  // Data da foto (EXIF DateTimeOriginal) para ordenar como no evento.
+  function exifDate(file) {
+    return file.slice(0, 131072).arrayBuffer().then(function (buf) {
+      var v = new DataView(buf);
+      if (v.getUint16(0) !== 0xffd8) return null;
+      var o = 2;
+      while (o + 4 < v.byteLength) {
+        var marker = v.getUint16(o), len = v.getUint16(o + 2);
+        if (marker === 0xffe1 && v.getUint32(o + 4) === 0x45786966) {
+          var t = o + 10, le = v.getUint16(t) === 0x4949;
+          var u16 = function (p) { return v.getUint16(t + p, le); }, u32 = function (p) { return v.getUint32(t + p, le); };
+          var find = function (ifd, tag) { var count = u16(ifd); for (var i = 0; i < count; i++) { var e = ifd + 2 + i * 12; if (u16(e) === tag) return e; } return -1; };
+          var exifPtr = find(u32(4), 0x8769); if (exifPtr < 0) return null;
+          var e = find(u32(exifPtr + 8), 0x9003); if (e < 0) return null;
+          var at = u32(e + 8), s = "";
+          for (var i = 0; i < 19; i++) s += String.fromCharCode(v.getUint8(t + at + i));
+          var m = s.match(/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/);
+          return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : null;
+        }
+        if ((marker & 0xff00) !== 0xff00) return null;
+        o += 2 + len;
+      }
+      return null;
+    }).catch(function () { return null; });
+  }
+
+  function sendOne(file) {
+    var gallery = current;
+    return createImageBitmap(file).then(function (bitmap) {
+      var fullP = file.type === "image/jpeg" ? Promise.resolve(file) : resized(bitmap, 100000, 0.92);
+      return Promise.all([resized(bitmap, 640, 0.8), resized(bitmap, 2048, 0.86), fullP, exifDate(file)]).then(function (r) {
+        var blobs = { thumb: r[0], preview: r[1], full: r[2] };
+        var w = bitmap.width, h = bitmap.height;
+        bitmap.close && bitmap.close();
+        return Promise.all([sha256(blobs.thumb), sha256(blobs.preview), sha256(blobs.full)]).then(function (h3) {
+          var name = file.type === "image/jpeg" ? file.name : file.name.replace(/\.[^.]+$/, "") + ".jpg";
+          var body = { galleryId: gallery.id, clientPhotoId: "web:" + h3[2].slice(0, 32), revision: 1, filename: name, takenAt: r[3] || file.lastModified || Date.now(), width: w, height: h,
+            variants: { thumb: { size: blobs.thumb.size, sha256: h3[0] }, preview: { size: blobs.preview.size, sha256: h3[1] }, full: { size: blobs.full.size, sha256: h3[2] } } };
+          return api("/v1/photos", { method: "POST", body: body }).then(function (plan) {
+            if (plan.ready) return;
+            return plan.uploads.reduce(function (chain, u) { return u.done ? chain : chain.then(function () { return api(u.url, { method: "PUT", body: blobs[u.variant] }); }); }, Promise.resolve())
+              .then(function () { return api(plan.completeUrl, { method: "POST", body: { revision: 1 } }); });
+          });
+        });
+      });
+    });
+  }
+
+  function upload(files) {
+    files = files.filter(function (f) { return /^image\//.test(f.type); });
+    if (!files.length || !current) return;
+    var total = files.length, done = 0, failed = 0, queue = files.slice();
+    $("up-bar").hidden = false; $("up-bar").firstElementChild.style.width = "0";
+    window.onbeforeunload = function () { return "Envio em andamento."; };
+    function status() { $("up-status").textContent = "Enviadas " + done + " de " + total + (failed ? " · " + failed + " com falha" : ""); $("up-bar").firstElementChild.style.width = Math.round(((done + failed) / total) * 100) + "%"; }
+    function worker() {
+      var f = queue.shift();
+      if (!f) return Promise.resolve();
+      return sendOne(f).then(function () { done++; }, function (e) { failed++; console.warn(f.name, e); }).then(function () { status(); return worker(); });
+    }
+    status();
+    Promise.all([worker(), worker(), worker()]).then(function () {
+      window.onbeforeunload = null;
+      $("up-status").textContent = "Concluído: " + n(done, "foto enviada", "fotos enviadas") + (failed ? " · " + failed + " com falha (tente de novo)" : "") + ".";
+      api("/v1/galleries/" + current.id).then(function (r) { current = r.gallery; paint(); });
+      loadPhotos(true);
+    });
+  }
+
+  route();
+})();
+</script>
+</body>
+</html>

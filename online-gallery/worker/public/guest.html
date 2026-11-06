@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#f5f3ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+<title>Galeria de fotos</title>
+<style>
+:root {
+  --bg: #f5f3ef; --surface: #ffffff; --surface-2: #ece9e3; --text: #1b1a18; --muted: #6b665e; --line: #dcd7ce;
+  --accent: #1b1a18; --accent-text: #ffffff; --heart: #e0245e; --focus: #2a6df4; --shadow: 0 10px 40px rgba(0,0,0,.12);
+  --gap: 4px; --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --surface: #1c1c1c; --surface-2: #262626; --text: #f2efea; --muted: #a39d93; --line: #333;
+    --accent: #f2efea; --accent-text: #121212; --shadow: 0 10px 40px rgba(0,0,0,.5); }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 var(--sans); -webkit-text-size-adjust: 100%; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Boas-vindas / senha */
+.welcome { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+.card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 24px 24px; box-shadow: var(--shadow); text-align: center; }
+.eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.card h1 { font: 500 30px/1.15 var(--serif); margin: 0 0 8px; }
+.card p.lead { color: var(--muted); margin: 0 0 24px; }
+.field { text-align: left; margin: 0 0 14px; }
+.field label { display: block; font-size: 14px; color: var(--muted); margin: 0 0 6px; }
+.field input { width: 100%; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); padding: 0 14px; font-size: 17px; }
+.field input.pin { letter-spacing: .3em; text-align: center; font-size: 22px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; text-decoration: none; color: var(--text); white-space: nowrap; }
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.btn.block { width: 100%; }
+.btn[disabled] { opacity: .55; cursor: default; }
+.error { color: #d23b3b; min-height: 22px; font-size: 14px; margin: 10px 0 0; }
+.hint { font-size: 13px; color: var(--muted); margin: 14px 0 0; }
+
+/* Topo */
+header.top { padding: 32px 16px 12px; max-width: 1600px; margin: 0 auto; }
+header.top .eyebrow { margin-bottom: 6px; }
+header.top h1 { font: 500 clamp(28px, 5vw, 44px)/1.1 var(--serif); margin: 0; overflow-wrap: anywhere; }
+.meta { color: var(--muted); margin: 6px 0 0; }
+.bar { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.bar-inner { max-width: 1600px; margin: 0 auto; padding: 8px 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: 999px; padding: 4px; }
+.tab { border: 0; background: transparent; border-radius: 999px; min-height: 40px; padding: 0 16px; font-weight: 600; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.spacer { flex: 1; }
+.order { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; min-height: 40px; padding: 0 14px; font-size: 14px; }
+.notice { max-width: 1600px; margin: 12px auto 0; padding: 0 16px; }
+.notice > div { display: flex; align-items: center; gap: 12px; justify-content: space-between; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 10px 10px 16px; }
+.fav-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.progress { height: 4px; border-radius: 4px; background: var(--surface-2); overflow: hidden; width: 100%; }
+.progress > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+/* Grade */
+main { max-width: 1600px; margin: 0 auto; padding: 12px 16px 48px; }
+.grid { display: flex; flex-direction: column; gap: var(--gap); }
+.row { display: flex; gap: var(--gap); }
+.tile { position: relative; padding: 0; border: 0; background: var(--surface-2); overflow: hidden; border-radius: 4px; flex: none; display: block; }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .3s, transform .4s; }
+.tile img.loaded { opacity: 1; }
+@media (hover: hover) { .tile:hover img { transform: scale(1.02); } }
+.heart { position: absolute; right: 4px; bottom: 4px; width: 40px; height: 40px; border-radius: 50%; border: 0; display: grid; place-items: center; background: rgba(0,0,0,.28); color: #fff; opacity: 0; transition: opacity .15s, transform .15s; }
+.heart svg { width: 22px; height: 22px; }
+.tile:hover .heart, .tile:focus-within .heart, .heart.on { opacity: 1; }
+@media (hover: none) { .heart { opacity: .9; background: rgba(0,0,0,.22); } }
+.heart.on { color: var(--heart); background: rgba(255,255,255,.92); }
+.heart:active { transform: scale(.88); }
+.empty { text-align: center; color: var(--muted); padding: 72px 16px; }
+.empty h2 { font: 500 24px/1.2 var(--serif); color: var(--text); margin: 0 0 8px; }
+footer { text-align: center; color: var(--muted); font-size: 13px; padding: 0 16px 40px; }
+
+/* Visualizador */
+.viewer { position: fixed; inset: 0; z-index: 20; background: #0b0b0b; color: #fff; display: flex; flex-direction: column; touch-action: none; }
+.viewer header, .viewer .actions { display: flex; align-items: center; gap: 8px; padding: 8px 8px; padding-top: max(8px, env(safe-area-inset-top)); }
+.viewer .actions { justify-content: center; padding-bottom: max(12px, env(safe-area-inset-bottom)); flex-wrap: wrap; }
+.viewer .count { flex: 1; text-align: center; font-size: 14px; color: #bbb; font-variant-numeric: tabular-nums; }
+.icon-btn { width: 48px; height: 48px; border-radius: 50%; border: 0; background: transparent; color: #fff; display: grid; place-items: center; flex: none; }
+.icon-btn:hover { background: rgba(255,255,255,.1); }
+.icon-btn svg { width: 24px; height: 24px; }
+.stage { position: relative; flex: 1; overflow: hidden; display: grid; place-items: center; }
+.stage img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; transition: transform .25s ease, opacity .2s; }
+.stage img.dragging { transition: none; }
+.stage .nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,.35); }
+.stage .prev { left: 8px; } .stage .next { right: 8px; }
+@media (hover: none) { .stage .nav { display: none; } }
+.pill { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 999px; border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.08); color: #fff; font-weight: 600; text-decoration: none; }
+.pill svg { width: 20px; height: 20px; }
+.pill.on { color: #fff; background: var(--heart); border-color: var(--heart); }
+.viewer .name { font-size: 12px; color: #888; text-align: center; padding: 0 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spinner { position: absolute; width: 32px; height: 32px; border-radius: 50%; border: 3px solid rgba(255,255,255,.2); border-top-color: #fff; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 40; background: var(--accent); color: var(--accent-text); padding: 12px 18px; border-radius: 12px; box-shadow: var(--shadow); font-size: 15px; max-width: calc(100% - 32px); }
+@media (max-width: 600px) { :root { --gap: 2px; } header.top { padding-top: 22px; } .tab { padding: 0 11px; min-height: 36px; } .bar-inner { flex-wrap: nowrap; gap: 6px; } .order { min-height: 36px; padding: 0 8px; font-size: 13px; max-width: 132px; }
+  .heart { width: 32px; height: 32px; right: 3px; bottom: 3px; } .heart svg { width: 18px; height: 18px; } main { padding-left: 2px; padding-right: 2px; } .tile { border-radius: 0; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-heart" viewBox="0 0 24 24"><path fill="currentColor" d="M12 21s-7.5-4.6-10-9.5C.6 8.6 2.4 4.5 6.3 4.1c2.2-.2 3.9 1 5.7 3 1.8-2 3.5-3.2 5.7-3 3.9.4 5.7 4.5 4.3 7.4C19.5 16.4 12 21 12 21z"/></symbol>
+  <symbol id="i-heart-o" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 20s-7-4.3-9.2-8.8C1.6 8.6 3.2 5.3 6.4 5c2-.2 3.6.9 5.6 3.2C14 5.9 15.6 4.8 17.6 5c3.2.3 4.8 3.6 3.6 6.2C19 15.7 12 20 12 20z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-5-5l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 15V4m-4 4l4-4 4 4M6 12v7a1 1 0 001 1h10a1 1 0 001-1v-7"/></symbol>
+</svg>
+
+<section class="welcome" id="welcome" hidden>
+  <form class="card" id="enter" autocomplete="off">
+    <p class="eyebrow" data-studio></p>
+    <h1 data-title>Galeria de fotos</h1>
+    <p class="lead" id="welcome-lead">Veja, favorite e baixe as suas fotos.</p>
+    <div class="field" id="pin-field" hidden>
+      <label for="pin">Senha da galeria</label>
+      <input id="pin" class="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="32" required>
+    </div>
+    <div class="field">
+      <label for="name">Seu nome <span style="opacity:.7">(opcional — para o fotógrafo saber quem favoritou)</span></label>
+      <input id="name" maxlength="60" autocomplete="given-name">
+    </div>
+    <button class="btn primary block" id="enter-btn" type="submit">Ver fotos</button>
+    <p class="error" id="enter-error" role="alert"></p>
+  </form>
+</section>
+
+<section class="welcome" id="fatal" hidden>
+  <div class="card"><p class="eyebrow" data-studio></p><h1 id="fatal-title">Galeria indisponível</h1><p class="lead" id="fatal-text"></p></div>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <p class="eyebrow" data-studio></p>
+    <h1 data-title></h1>
+    <p class="meta" id="meta"></p>
+  </header>
+  <div class="bar">
+    <div class="bar-inner">
+      <div class="tabs" role="tablist" aria-label="Filtro">
+        <button class="tab" role="tab" id="tab-all" aria-selected="true">Todas</button>
+        <button class="tab" role="tab" id="tab-fav" aria-selected="false"><svg width="16" height="16" aria-hidden="true"><use href="#i-heart"/></svg>Favoritas <span id="fav-count">0</span></button>
+      </div>
+      <span class="spacer"></span>
+      <label class="sr" for="order">Ordem</label>
+      <select class="order" id="order"><option value="desc">Mais recentes</option><option value="asc">Ordem do evento</option></select>
+    </div>
+  </div>
+  <div class="notice" id="new-photos" hidden><div><span id="new-photos-text"></span><button class="btn primary" id="new-photos-btn">Mostrar</button></div></div>
+  <div class="notice" id="fav-bar" hidden>
+    <div>
+      <span id="fav-bar-text"></span>
+      <div class="fav-tools">
+        <button class="btn" id="fav-share" hidden><svg width="18" height="18" aria-hidden="true"><use href="#i-share"/></svg><span>Salvar no celular</span></button>
+        <button class="btn primary" id="fav-zip"><svg width="18" height="18" aria-hidden="true"><use href="#i-down"/></svg><span>Baixar favoritas (.zip)</span></button>
+      </div>
+      <div class="progress" id="zip-progress" hidden><i></i></div>
+    </div>
+  </div>
+  <main>
+    <div class="grid" id="grid" aria-live="polite"></div>
+    <div class="empty" id="empty" hidden></div>
+  </main>
+  <footer>Fotos por <span data-studio></span> · As fotos desta galeria são privadas: compartilhe o link só com quem estava no evento.</footer>
+</div>
+
+<div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Foto" hidden>
+  <header>
+    <button class="icon-btn" id="v-close" aria-label="Fechar"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+    <div class="count" id="v-count"></div>
+    <span style="width:48px"></span>
+  </header>
+  <div class="stage" id="stage">
+    <div class="spinner" id="v-spin"></div>
+    <img id="v-img" alt="">
+    <button class="icon-btn nav prev" id="v-prev" aria-label="Foto anterior"><svg aria-hidden="true"><use href="#i-left"/></svg></button>
+    <button class="icon-btn nav next" id="v-next" aria-label="Próxima foto"><svg aria-hidden="true"><use href="#i-right"/></svg></button>
+  </div>
+  <div class="name" id="v-name"></div>
+  <div class="actions">
+    <button class="pill" id="v-fav"><svg aria-hidden="true"><use href="#i-heart-o"/></svg><span>Favoritar</span></button>
+    <button class="pill" id="v-share" hidden><svg aria-hidden="true"><use href="#i-share"/></svg><span>Salvar no celular</span></button>
+    <a class="pill" id="v-dl" href="#"><svg aria-hidden="true"><use href="#i-down"/></svg><span>Baixar</span></a>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="/zip.js"></script>
+<script>
+(function () {
+  "use strict";
+  var slug = location.pathname.split("/")[2];
+  var api = "/api/g/" + slug;
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { info: null, photos: [], favs: new Set(), filter: "all", order: "desc", loadedAt: 0, viewer: -1, list: [] };
+  var canShareFiles = false;
+  try { canShareFiles = !!(navigator.canShare && navigator.canShare({ files: [new File([""], "a.jpg", { type: "image/jpeg" })] })); } catch (e) {}
+
+  function store(key, value) { try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch (e) { return null; } }
+  function toast(text) { var t = $("toast"); t.textContent = text; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 3200); }
+  function req(path, init) {
+    init = init || {};
+    init.credentials = "same-origin";
+    if (init.body && typeof init.body !== "string") { init.body = JSON.stringify(init.body); init.headers = { "content-type": "application/json" }; }
+    return fetch(api + path, init).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) { if (!r.ok) { var e = new Error(data.error || "Falha de conexão."); e.status = r.status; throw e; } return data; });
+    });
+  }
+  function photoUrl(p, variant) { return api + "/p/" + p.id + "/" + p.v + "/" + variant; }
+  function downloadUrl(p) { return photoUrl(p, "full") + "?dl=1&n=" + encodeURIComponent(p.name); }
+  function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+  function fill(sel, text) { document.querySelectorAll(sel).forEach(function (el) { el.textContent = text; }); }
+
+  function fatal(title, text) { $("welcome").hidden = true; $("app").hidden = true; $("fatal-title").textContent = title; $("fatal-text").textContent = text; $("fatal").hidden = false; }
+
+  function start() {
+    req("/").then(function (info) {
+      state.info = info;
+      state.order = store("lumo.order." + slug) || info.order || "desc";
+      document.title = info.title + " · " + info.studio;
+      fill("[data-title]", info.title);
+      fill("[data-studio]", info.studio);
+      if (info.session) return enterApp();
+      if (!info.needsPin && store("lumo.entered." + slug)) return openSession({}).catch(showWelcome);
+      showWelcome();
+    }).catch(function (e) {
+      if (e.status === 410) fatal("Galeria expirada", e.message);
+      else if (e.status === 404) fatal("Galeria não encontrada", "Confira o link com o fotógrafo.");
+      else fatal("Sem conexão", "Não foi possível abrir a galeria. Verifique a internet e recarregue a página.");
+    });
+  }
+
+  function showWelcome() {
+    var info = state.info;
+    $("pin-field").hidden = !info.needsPin;
+    $("welcome-lead").textContent = info.photoCount ? plural(info.photoCount, "foto", "fotos") + " esperando por você." : "As fotos aparecem aqui assim que o fotógrafo enviar.";
+    $("name").value = store("lumo.name") || "";
+    $("welcome").hidden = false;
+    (info.needsPin ? $("pin") : $("enter-btn")).focus();
+  }
+
+  function openSession(body) {
+    var visitor = store("lumo.visitor");
+    if (visitor) body.visitorId = visitor;
+    return req("/session", { method: "POST", body: body }).then(function (s) {
+      store("lumo.visitor", s.visitorId);
+      store("lumo.entered." + slug, "1");
+      if (body.name) store("lumo.name", body.name);
+      return enterApp();
+    });
+  }
+
+  $("enter").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var btn = $("enter-btn");
+    btn.disabled = true; $("enter-error").textContent = "";
+    openSession({ pin: $("pin").value.trim(), name: $("name").value.trim() }).catch(function (e) {
+      $("enter-error").textContent = e.status === 401 ? "Senha incorreta. Confira com o fotógrafo." : e.message;
+      btn.disabled = false;
+      if (e.status === 401) { $("pin").select(); }
+    });
+  });
+
+  function loadAll() {
+    var all = [];
+    function page(cursor) {
+      return req("/photos?order=" + state.order + "&limit=500" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : "")).then(function (r) {
+        all = all.concat(r.photos);
+        if (!state.loadedAt) state.loadedAt = r.now;
+        if (r.next) return page(r.next);
+        return all;
+      });
+    }
+    state.loadedAt = 0;
+    return page(null);
+  }
+
+  function enterApp() {
+    $("welcome").hidden = true;
+    $("app").hidden = false;
+    $("order").value = state.order;
+    var info = state.info;
+    if (!info.allowDownload) { $("fav-zip").hidden = true; $("v-dl").hidden = true; }
+    return Promise.all([loadAll(), req("/favorites")]).then(function (r) {
+      state.photos = r[0];
+      state.favs = new Set(r[1].ids);
+      render();
+      setInterval(checkNew, 45000);
+    }).catch(function (e) {
+      if (e.status === 401) { $("app").hidden = true; showWelcome(); return; }
+      toast(e.message);
+    });
+  }
+
+  function checkNew() {
+    if (document.hidden || !state.loadedAt) return;
+    req("/updates?since=" + state.loadedAt).then(function (r) {
+      if (!r.count) return;
+      $("new-photos-text").textContent = r.count === 1 ? "1 foto nova chegou." : r.count + " fotos novas chegaram.";
+      $("new-photos").hidden = false;
+    }).catch(function () {});
+  }
+  $("new-photos-btn").addEventListener("click", function () {
+    $("new-photos").hidden = true;
+    loadAll().then(function (list) { state.photos = list; render(); toast("Galeria atualizada."); });
+  });
+
+  // ------------------------------------------------------------ grade justificada
+  function visible() { return state.filter === "fav" ? state.photos.filter(function (p) { return state.favs.has(p.id); }) : state.photos; }
+
+  function render() {
+    var list = visible();
+    state.list = list;
+    var total = state.photos.length;
+    $("meta").textContent = total ? plural(total, "foto", "fotos") : "Nenhuma foto ainda";
+    $("fav-count").textContent = state.favs.size;
+    $("tab-all").setAttribute("aria-selected", state.filter === "all");
+    $("tab-fav").setAttribute("aria-selected", state.filter === "fav");
+    var favMode = state.filter === "fav" && list.length > 0;
+    $("fav-bar").hidden = !favMode || !state.info.allowDownload;
+    if (favMode) {
+      $("fav-bar-text").textContent = plural(list.length, "favorita", "favoritas") + ".";
+      $("fav-share").hidden = !canShareFiles;
+    }
+    var empty = $("empty");
+    if (!list.length) {
+      empty.hidden = false;
+      empty.innerHTML = state.filter === "fav"
+        ? "<h2>Nenhuma favorita ainda</h2><p>Toque no coração das fotos de que mais gostou. Elas ficam guardadas aqui para baixar depois.</p>"
+        : "<h2>As fotos estão chegando</h2><p>O fotógrafo ainda está enviando. Esta página avisa quando houver fotos novas.</p>";
+    } else empty.hidden = true;
+    layout();
+  }
+
+  function layout() {
+    var grid = $("grid");
+    var list = state.list;
+    var width = grid.clientWidth;
+    if (!width) return;
+    var gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap")) || 4;
+    var target = width < 600 ? 130 : width < 1100 ? 200 : 250;
+    var frag = document.createDocumentFragment();
+    var row = [], sum = 0;
+    function flush(last) {
+      if (!row.length) return;
+      var h = (width - gap * (row.length - 1)) / sum;
+      var grow = true;
+      if (last && h > target * 1.4) { h = target; grow = false; }
+      var div = document.createElement("div");
+      div.className = "row";
+      div.style.height = Math.floor(h) + "px";
+      row.forEach(function (item) { div.appendChild(tile(item.p, item.index, item.ratio * h, grow)); });
+      frag.appendChild(div);
+      row = []; sum = 0;
+    }
+    list.forEach(function (p, index) {
+      var ratio = p.w && p.h ? Math.min(3, Math.max(0.4, p.w / p.h)) : 1.5;
+      row.push({ p: p, ratio: ratio, index: index });
+      sum += ratio;
+      if (sum * target + gap * (row.length - 1) >= width) flush(false);
+    });
+    flush(true);
+    grid.replaceChildren(frag);
+  }
+
+  function tile(p, index, width, grow) {
+    var b = document.createElement("div");
+    b.className = "tile";
+    if (grow) b.style.flex = width.toFixed(2) + " 1 0px";
+    else b.style.width = Math.floor(width) + "px";
+    var open = document.createElement("button");
+    open.style.cssText = "all:unset;display:block;width:100%;height:100%;cursor:zoom-in";
+    open.setAttribute("aria-label", "Abrir foto " + (index + 1));
+    var img = document.createElement("img");
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.alt = "";
+    img.onload = function () { img.classList.add("loaded"); };
+    img.src = photoUrl(p, "thumb");
+    open.appendChild(img);
+    open.addEventListener("click", function () { openViewer(index); });
+    b.appendChild(open);
+    var heart = document.createElement("button");
+    heart.className = "heart";
+    heart.dataset.id = p.id;
+    paintHeart(heart, state.favs.has(p.id));
+    heart.addEventListener("click", function (ev) { ev.stopPropagation(); toggleFav(p); });
+    b.appendChild(heart);
+    return b;
+  }
+
+  function paintHeart(el, on) {
+    el.classList.toggle("on", on);
+    el.setAttribute("aria-pressed", on);
+    el.setAttribute("aria-label", on ? "Remover das favoritas" : "Favoritar");
+    el.innerHTML = '<svg aria-hidden="true"><use href="#' + (on ? "i-heart" : "i-heart-o") + '"/></svg>';
+  }
+
+  function toggleFav(p) {
+    var on = !state.favs.has(p.id);
+    setFav(p.id, on);
+    req("/fav/" + p.id, { method: on ? "PUT" : "DELETE" }).catch(function (e) {
+      setFav(p.id, !on);
+      toast(e.status === 401 ? "Sua sessão expirou. Recarregue a página." : "Não foi possível salvar. Tente de novo.");
+    });
+  }
+
+  function setFav(id, on) {
+    if (on) state.favs.add(id); else state.favs.delete(id);
+    document.querySelectorAll('.heart[data-id="' + id + '"]').forEach(function (el) { paintHeart(el, on); });
+    $("fav-count").textContent = state.favs.size;
+    if (state.viewer >= 0) paintViewerFav();
+    if (state.filter === "fav" && state.viewer < 0) render();
+  }
+
+  $("tab-all").addEventListener("click", function () { state.filter = "all"; render(); });
+  $("tab-fav").addEventListener("click", function () { state.filter = "fav"; render(); });
+  $("order").addEventListener("change", function () {
+    state.order = $("order").value; store("lumo.order." + slug, state.order);
+    loadAll().then(function (list) { state.photos = list; render(); });
+  });
+  var resizeTimer;
+  window.addEventListener("resize", function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(layout, 120); });
+
+  // ------------------------------------------------------------ visualizador
+  var lastFocus = null;
+  var prepared = null; // { id, file } para salvar no celular com um toque
+
+  function openViewer(index) {
+    lastFocus = document.activeElement;
+    state.viewer = index;
+    $("viewer").hidden = false;
+    document.body.style.overflow = "hidden";
+    showPhoto();
+    $("v-close").focus();
+  }
+
+  function closeViewer() {
+    $("viewer").hidden = true;
+    document.body.style.overflow = "";
+    state.viewer = -1;
+    if (state.filter === "fav") render();
+    if (lastFocus) lastFocus.focus();
+  }
+
+  function current() { return state.list[state.viewer]; }
+
+  function showPhoto() {
+    var p = current();
+    if (!p) return closeViewer();
+    var img = $("v-img");
+    $("v-spin").hidden = false;
+    img.style.opacity = "0.35";
+    if (!img.classList.contains("dragging")) img.style.transform = "";
+    img.src = photoUrl(p, "thumb");
+    var full = new Image();
+    full.onload = function () { if (current() === p) { img.src = full.src; img.style.opacity = "1"; $("v-spin").hidden = true; } };
+    full.src = photoUrl(p, "preview");
+    $("v-count").textContent = (state.viewer + 1) + " de " + state.list.length;
+    $("v-name").textContent = p.name;
+    $("v-prev").hidden = state.viewer === 0;
+    $("v-next").hidden = state.viewer === state.list.length - 1;
+    $("v-dl").href = downloadUrl(p);
+    $("v-share").hidden = !canShareFiles || !state.info.allowDownload;
+    prepared = null;
+    $("v-share").querySelector("span").textContent = "Salvar no celular";
+    paintViewerFav();
+    [state.viewer - 1, state.viewer + 1].forEach(function (i) { var n = state.list[i]; if (n) new Image().src = photoUrl(n, "preview"); });
+  }
+
+  function paintViewerFav() {
+    var p = current(); if (!p) return;
+    var on = state.favs.has(p.id), b = $("v-fav");
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on);
+    b.innerHTML = '<svg aria-hidden="true"><use href="#' + (on ? "i-heart" : "i-heart-o") + '"/></svg><span>' + (on ? "Favorita" : "Favoritar") + "</span>";
+  }
+
+  // Troca de foto pelo gesto: a nova entra pelo lado do deslize, sem herdar a posição do arrasto.
+  function slide(delta) {
+    var img = $("v-img"), next = state.viewer + delta;
+    if (next < 0 || next >= state.list.length) { img.style.transform = ""; return; }
+    img.classList.add("dragging");
+    step(delta);
+    img.style.transform = "translateX(" + (delta > 0 ? 48 : -48) + "px)";
+    void img.offsetWidth;
+    img.classList.remove("dragging");
+    img.style.transform = "";
+  }
+
+  function step(delta) {
+    var next = state.viewer + delta;
+    if (next < 0 || next >= state.list.length) { $("v-img").style.transform = ""; return; }
+    state.viewer = next;
+    showPhoto();
+  }
+
+  $("v-close").addEventListener("click", closeViewer);
+  $("v-prev").addEventListener("click", function () { step(-1); });
+  $("v-next").addEventListener("click", function () { step(1); });
+  $("v-fav").addEventListener("click", function () { toggleFav(current()); });
+  document.addEventListener("keydown", function (ev) {
+    if ($("viewer").hidden) return;
+    if (ev.key === "Escape") closeViewer();
+    else if (ev.key === "ArrowLeft") step(-1);
+    else if (ev.key === "ArrowRight") step(1);
+    else if (ev.key === "f" || ev.key === "F") toggleFav(current());
+    else if (ev.key === "Tab") {
+      var items = [].slice.call($("viewer").querySelectorAll("button:not([hidden]), a:not([hidden])")).filter(function (el) { return el.offsetParent !== null; });
+      var i = items.indexOf(document.activeElement);
+      if (ev.shiftKey && i <= 0) { ev.preventDefault(); items[items.length - 1].focus(); }
+      else if (!ev.shiftKey && i === items.length - 1) { ev.preventDefault(); items[0].focus(); }
+    }
+  });
+
+  // deslizar com o dedo
+  (function () {
+    var stage = $("stage"), img = $("v-img"), x0 = null, y0 = 0, dx = 0;
+    stage.addEventListener("pointerdown", function (ev) { if (ev.target.closest("button")) return; x0 = ev.clientX; y0 = ev.clientY; dx = 0; img.classList.add("dragging"); });
+    stage.addEventListener("pointermove", function (ev) { if (x0 === null) return; dx = ev.clientX - x0; img.style.transform = "translateX(" + dx + "px)"; });
+    function end(ev) {
+      if (x0 === null) return;
+      var dy = ev.clientY - y0;
+      img.classList.remove("dragging");
+      x0 = null;
+      if (Math.abs(dx) > 60) slide(dx < 0 ? 1 : -1);
+      else if (dy > 120 && Math.abs(dx) < 40) closeViewer();
+      else img.style.transform = "";
+    }
+    stage.addEventListener("pointerup", end);
+    stage.addEventListener("pointercancel", end);
+  })();
+
+  // ------------------------------------------------------------ salvar e baixar
+  function fetchFull(p) {
+    return fetch(photoUrl(p, "full"), { credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) throw new Error(r.status === 403 ? "Download desativado pelo fotógrafo." : "Falha ao baixar " + p.name);
+      return r.arrayBuffer();
+    });
+  }
+
+  // Compartilhar exige um toque "fresco": 1º toque prepara o arquivo, 2º abre o menu do sistema.
+  $("v-share").addEventListener("click", function () {
+    var p = current(), btn = $("v-share"), label = btn.querySelector("span");
+    if (prepared && prepared.id === p.id) {
+      navigator.share({ files: [prepared.file] }).catch(function () {});
+      return;
+    }
+    label.textContent = "Preparando…";
+    btn.disabled = true;
+    fetchFull(p).then(function (buf) {
+      if (current() !== p) return;
+      prepared = { id: p.id, file: new File([buf], p.name, { type: "image/jpeg" }) };
+      label.textContent = "Toque para salvar";
+      btn.disabled = false;
+      navigator.share({ files: [prepared.file] }).catch(function () {});
+    }).catch(function (e) { label.textContent = "Salvar no celular"; btn.disabled = false; toast(e.message); });
+  });
+
+  var SHARE_BATCH = 10;
+  var shareQueue = null;
+  $("fav-share").addEventListener("click", function () {
+    var btn = $("fav-share"), label = btn.querySelector("span");
+    var favs = visible();
+    if (shareQueue && shareQueue.ready) {
+      var files = shareQueue.ready;
+      shareQueue.ready = null;
+      navigator.share({ files: files }).then(function () {
+        if (shareQueue.next >= favs.length) { shareQueue = null; label.textContent = "Salvar no celular"; toast("Pronto! Todas as favoritas foram enviadas."); }
+        else label.textContent = "Preparar próximas";
+      }).catch(function () { shareQueue.ready = files; });
+      return;
+    }
+    if (!shareQueue) shareQueue = { next: 0 };
+    var batch = favs.slice(shareQueue.next, shareQueue.next + SHARE_BATCH);
+    btn.disabled = true;
+    label.textContent = "Preparando " + batch.length + "…";
+    Promise.all(batch.map(function (p) { return fetchFull(p).then(function (buf) { return new File([buf], p.name, { type: "image/jpeg" }); }); })).then(function (files) {
+      shareQueue.next += batch.length;
+      shareQueue.ready = files;
+      btn.disabled = false;
+      label.textContent = "Salvar " + plural(files.length, "foto", "fotos") + (favs.length > SHARE_BATCH ? " (" + shareQueue.next + " de " + favs.length + ")" : "");
+    }).catch(function (e) { btn.disabled = false; label.textContent = "Salvar no celular"; shareQueue = null; toast(e.message); });
+  });
+
+  var ZIP_PART_BYTES = 450 * 1024 * 1024;
+  $("fav-zip").addEventListener("click", function () {
+    var favs = visible(), btn = $("fav-zip"), label = btn.querySelector("span"), bar = $("zip-progress");
+    if (!favs.length) return;
+    btn.disabled = true; bar.hidden = false; bar.firstElementChild.style.width = "0";
+    var done = 0, part = [], partBytes = 0, partNo = 1, index = 0;
+    var title = (state.info.title || "fotos").replace(/[\\/:*?"<>|]/g, "_");
+    function save(last) {
+      if (!part.length) return;
+      var blob = LumoZip.build(part);
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = title + (partNo > 1 || !last ? " - parte " + partNo : "") + ".zip";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 60000);
+      part = []; partBytes = 0; partNo++;
+    }
+    function next() {
+      if (index >= favs.length) { save(true); finish("Download pronto."); return; }
+      var p = favs[index++];
+      label.textContent = "Baixando " + (done + 1) + " de " + favs.length + "…";
+      fetchFull(p).then(function (buf) {
+        if (partBytes + buf.byteLength > ZIP_PART_BYTES && part.length) save(false);
+        part.push({ name: p.name, data: new Uint8Array(buf), date: new Date(p.t) });
+        partBytes += buf.byteLength;
+        done++;
+        bar.firstElementChild.style.width = Math.round((done / favs.length) * 100) + "%";
+        next();
+      }).catch(function (e) { finish(e.message); });
+    }
+    function finish(msg) { btn.disabled = false; label.textContent = "Baixar favoritas (.zip)"; setTimeout(function () { bar.hidden = true; }, 800); toast(msg); }
+    next();
+  });
+
+  start();
+})();
+</script>
+</body>
+</html>
