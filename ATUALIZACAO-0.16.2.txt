@@ -1,0 +1,12 @@
+Lumo 0.16.2: foto editada em resolução original.
+
+Problema: a cópia editada era reduzida para 2560 px no lado maior (padrão "Rápida"), então uma foto de 10 MB da câmera saía com ~1 MB. Mesmo escolhendo "Resolução original", o limite de memória do app reduzia fotos de 24 MP para ~2400 px.
+
+Correção:
+- Padrão agora é "Resolução original (recomendado)". "Reduzida · 2560 px" e "Reduzida · 1920 px" continuam em Ajustes. A preferência usa uma chave nova, então todos passam para original uma vez.
+- A resolução escolhida vale no momento da exportação, inclusive para fotos já na fila e para reedições no editor manual.
+- Motor de revelação renderiza a exportação por cima dos próprios pixels e o desfoque usa um vetor a menos: pico de ~27 para ~16 bytes por pixel, com saída idêntica (teste renderInPlace igual a render).
+- android:largeHeap="true": 24 MP em resolução original cabem num heap de 512 MB. Se ainda faltar memória, o lado é reduzido só o necessário.
+- EXIF da câmera (data/hora, câmera, lente, exposição, GPS) é copiado para a foto editada.
+- JPEG continua com qualidade 95.
+- iOS: padrão "Original (recomendado)"; quem estava no padrão antigo de 2560 px passa para Original uma vez.

@@ -169,10 +169,10 @@ struct SettingsView: View {
                         }
                     }
                     Picker("Tamanho do JPEG editado", selection: $model.settings.edge) {
-                        Text("2048 px").tag(2048)
-                        Text("2560 px").tag(2560)
+                        Text("Original (recomendado)").tag(0)
                         Text("3840 px").tag(3840)
-                        Text("Original").tag(0)
+                        Text("2560 px").tag(2560)
+                        Text("2048 px").tag(2048)
                     }
                 }
                 Section {

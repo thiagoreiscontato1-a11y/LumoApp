@@ -1,6 +1,6 @@
-# LUMO — Android 0.17.0 e iOS 0.4.0
+# LUMO — Android 0.18.0 e iOS 0.4.0
 
-**Android 0.17.0 — Galeria online para os convidados:** em Entrega → Galeria online, o Lumo cria uma galeria para o evento
+**Android 0.18.0 — Galeria online para os convidados:** em Entrega → Galeria online, o Lumo cria uma galeria para o evento
 e publica cada foto aprovada, em paralelo ao Fotto (que continua igual). Os convidados abrem um link ou QR code, veem as fotos,
 favoritam, baixam uma a uma, em `.zip` ou direto na galeria do celular, e recebem aviso de fotos novas. O fotógrafo vê quem
 favoritou o quê. O servidor roda grátis na Cloudflare (`*.workers.dev`, sem domínio). Guia completo em
@@ -20,6 +20,14 @@ do evento sempre visível; telas vazias com ação (importar do cartão, conecta
 Menus, Saúde do fluxo, Eventos e tour em modais novos (folha inferior no celular, cartão central no tablet), com ícones,
 subtítulos e o evento atual marcado; confirmações e formulários seguem o mesmo tema escuro arredondado.
 Corrige o fechamento do modo demonstração quando o Android recria a tela.
+
+**Android 0.17.0 — login com a conta Fotto:** sem sessão Fotto o app abre numa tela de entrada (“Entrar com Fotto”);
+depois do login vai direto para a tela ao vivo e continua abrindo sem internet. Quem já tinha o Fotto conectado não precisa entrar
+de novo. Menu → Conta → **Sair da conta Fotto** apaga a sessão, os cookies do login, o evento de destino e para o envio automático;
+fotos, eventos locais e edições ficam no aparelho. Sessão expirada não tira ninguém do app no meio de um evento: continua o aviso
+“Conectar Fotto novamente”. O modo demonstração das capturas do CI e o APK Demo entram sem conta.
+**Bloqueio com digital** (Menu → Conta): pede a digital ao abrir e ao voltar depois de 5 minutos fora; o PIN/padrão do celular
+serve de alternativa. Só a tela é bloqueada: captura, edição e envio continuam em segundo plano.
 
 **iOS:** veja [`ios/README.md`](ios/README.md). Os workflows **Lumo Android** e **Lumo iOS** testam, compilam e publicam capturas de tela
 do modo demonstração nas branches `ci/android-screenshots` e `ci/ios-screenshots`.
@@ -72,6 +80,12 @@ Atualização sobre a 0.15.5 com duas melhorias principais:
 ---
 
 # LUMO 0.15.5 — Fotto fila longa + correção de build
+
+**Android 0.16.2 — foto editada em resolução original:** a cópia editada deixou de ser reduzida para 2560 px por padrão
+(uma foto de 10 MB caía para ~1 MB). Agora sai no tamanho da câmera, JPEG qualidade 95, com o EXIF da câmera (data, câmera,
+lente, exposição, GPS). O motor de revelação usa ~40% menos memória na exportação (mesmos pixels) e o app pede heap grande,
+então 24 MP cabem sem reduzir. "Reduzida · 2560/1920 px" continua em Ajustes para quem precisa de envio mais leve. No iPhone o
+padrão também passou a ser Original.
 
 Aplicativo Android para captura vinculada Canon, edição automática/manual, curadoria técnica e entrega ao Fotto.
 

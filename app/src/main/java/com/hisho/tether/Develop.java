@@ -251,10 +251,16 @@ final class Develop{
  static float[] blur(float[] src,int w,int h,double sigma){
   if(sigma<.3)return src.clone();int r=(int)Math.ceil(sigma*3);double[] k=new double[2*r+1];double sum=0;
   for(int i=-r;i<=r;i++){k[i+r]=Math.exp(-i*i/(2*sigma*sigma));sum+=k[i+r];}for(int i=0;i<k.length;i++)k[i]/=sum;
-  float[] tmp=new float[w*h],out=new float[w*h];
+  // Só um vetor do tamanho da foto: a passada vertical trabalha em faixas de colunas copiadas
+  // para um buffer pequeno e devolve o resultado no próprio vetor da passada horizontal.
+  float[] tmp=new float[w*h];
   for(int y=0;y<h;y++){int row=y*w;for(int x=0;x<w;x++){double a=0;for(int i=-r;i<=r;i++){int xx=x+i;xx=xx<0?0:xx>=w?w-1:xx;a+=k[i+r]*src[row+xx];}tmp[row+x]=(float)a;}}
-  for(int y=0;y<h;y++)for(int x=0;x<w;x++){double a=0;for(int i=-r;i<=r;i++){int yy=y+i;yy=yy<0?0:yy>=h?h-1:yy;a+=k[i+r]*tmp[yy*w+x];}out[y*w+x]=(float)a;}
-  return out;
+  final int band=64;float[] col=new float[h*Math.min(band,w)];
+  for(int x0=0;x0<w;x0+=band){int n=Math.min(band,w-x0);
+   for(int y=0;y<h;y++)System.arraycopy(tmp,y*w+x0,col,y*n,n);
+   for(int y=0;y<h;y++)for(int c=0;c<n;c++){double a=0;for(int i=-r;i<=r;i++){int yy=y+i;yy=yy<0?0:yy>=h?h-1:yy;a+=k[i+r]*col[yy*n+c];}tmp[y*w+x0+c]=(float)a;}
+  }
+  return tmp;
  }
  /** Ruído de valor determinístico (−1…1) para a granulação. */
  static double noise(double fx,double fy,int seed){
@@ -283,10 +289,11 @@ final class Develop{
   * e reaproveitados a cada renderização (prévia ao vivo do editor).
   */
  /**
-  * Heap Java por pixel numa renderização completa (pixels, saída, luminância, nitidez e
-  * desfoque): ~40 bytes medidos, com folga.
+  * Heap Java por pixel numa exportação ({@link Source#renderInPlace}: pixels, luminância,
+  * nitidez e desfoque): pico de ~16 bytes medido com textura (o caso mais pesado). A folga
+  * fica nos 80% da memória livre e, se faltar, a exportação tenta de novo com 70% do lado.
   */
- static final int BYTES_PER_PIXEL=48;
+ static final int BYTES_PER_PIXEL=16;
 
  /**
   * Maior lado com que uma foto w×h cabe em {@code freeBytes} (usa 80%). Devolve {@code edge}
@@ -314,22 +321,33 @@ final class Develop{
   synchronized Field field(int kind){
    if(fields[kind]!=null)return fields[kind];
    double sigma=sigma(kind),eps=kind==TONE?.25:kind==CLARITY?4:0;int cell=Math.max(1,(int)(sigma/3)),gw=(w+cell-1)/cell,gh=(h+cell-1)/cell,cells=gw*gh;
-   float[] mean=new float[cells],square=new float[cells];int[] count=new int[cells];float[] log=kind==HAZE?null:logY();
-   for(int y=0;y<h;y++)for(int x=0;x<w;x++){int i=y*w+x,g=(y/cell)*gw+x/cell;double v;if(log!=null)v=log[i];else{int p=px[i];v=Math.min(LIN[(p>>16)&255],Math.min(LIN[(p>>8)&255],LIN[p&255]));}mean[g]+=v;square[g]+=v*v;count[g]++;}
-   for(int i=0;i<cells;i++){mean[i]/=count[i];square[i]/=count[i];}
+   float[] mean=new float[cells],square=eps>0?new float[cells]:null;float[] log=kind==HAZE?null:logY();
+   for(int y=0;y<h;y++)for(int x=0;x<w;x++){int i=y*w+x,g=(y/cell)*gw+x/cell;double v;if(log!=null)v=log[i];else{int p=px[i];v=Math.min(LIN[(p>>16)&255],Math.min(LIN[(p>>8)&255],LIN[p&255]));}mean[g]+=v;if(square!=null)square[g]+=v*v;}
+   // Pixels por célula calculados (só as da borda são menores), sem um vetor de contagem.
+   for(int gy=0;gy<gh;gy++){int ch=Math.min(cell,h-gy*cell);for(int gx=0;gx<gw;gx++){int i=gy*gw+gx,n=Math.min(cell,w-gx*cell)*ch;mean[i]/=n;if(square!=null)square[i]/=n;}}
    double s=sigma/cell;mean=blur(mean,gw,gh,s);
    if(eps<=0)return fields[kind]=new Field(mean,null,gw,gh,cell);
-   // Filtro guiado: A = var/(var+eps), B = média·(1−A), ambos suavizados.
-   square=blur(square,gw,gh,s);float[] a=new float[cells],b=new float[cells];
+   // Filtro guiado: A = var/(var+eps), B = média·(1−A), ambos suavizados. A e B ficam nos
+   // próprios vetores (cada célula só lê a si mesma) para a textura em resolução cheia caber.
+   square=blur(square,gw,gh,s);float[] a=square,b=mean;
    for(int i=0;i<cells;i++){double m=mean[i],var=Math.max(0,square[i]-m*m),k=var/(var+eps);a[i]=(float)k;b[i]=(float)(m-k*m);}
-   return fields[kind]=new Field(blur(b,gw,gh,s),blur(a,gw,gh,s),gw,gh,cell);
+   mean=square=null;b=blur(b,gw,gh,s);a=blur(a,gw,gh,s);
+   return fields[kind]=new Field(b,a,gw,gh,cell);
   }
 
   /** Renderiza a foto com os ajustes; devolve pixels ARGB novos. As linhas são divididas entre os núcleos. */
-  int[] render(Settings s){
-   final int[] out=new int[w*h];final Plan plan=new Plan(this,s);
-   if(plan.identity){System.arraycopy(px,0,out,0,out.length);return out;}
+  int[] render(Settings s){return render(s,new int[w*h],false);}
+  /**
+   * Exportação: renderiza por cima dos próprios pixels (cada pixel só lê a si mesmo) e libera a
+   * luminância antes da nitidez. Economiza dois vetores do tamanho da foto, o que deixa a
+   * resolução original caber na memória. A fonte não serve para outra renderização depois.
+   */
+  int[] renderInPlace(Settings s){return render(s,px,true);}
+  private int[] render(Settings s,final int[] out,boolean release){
+   final Plan plan=new Plan(this,s);
+   if(plan.identity){if(out!=px)System.arraycopy(px,0,out,0,out.length);return out;}
    parallel(h,(y0,y1)->plan.rows(y0,y1,out));
+   if(release){plan.logY=null;synchronized(this){logY=null;Arrays.fill(fields,null);}}
    if(plan.sharpen){
     final float[] l=new float[w*h];for(int i=0;i<l.length;i++){int v=out[i];l[i]=(float)(luma((v>>16)&255,(v>>8)&255,v&255)/255);}
     final float[] bl=blur(l,w,h,Math.max(.5,s.sharpenRadius*.8));
@@ -345,7 +363,7 @@ final class Develop{
   final double[] tone,tS,tM,tH,tG,tShadow,calHue,calSat;final double[][] curves;
   final double gr,gg,gb,expo,knee=.6,top,rollPower,dehaze,sh,hl,whites,clarity,texture,sat,vib,mid,width,amount,limit,mask;
   final boolean local,tonal,hsl,calib,mixing,grade,color,sharpen,identity;
-  final float[] logY;final Field toneF,clarityF,textureF,hazeF;final Effects fx;
+  float[] logY;final Field toneF,clarityF,textureF,hazeF;final Effects fx;
   Plan(Source src,Settings s){
    this.src=src;this.s=s;w=src.w;
    // Calibração: gira e satura as cores em volta de cada primário (faixas largas de 120°).
