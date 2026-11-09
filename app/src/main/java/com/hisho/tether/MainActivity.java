@@ -154,6 +154,7 @@ public class MainActivity extends Activity {
   darkMode=true;if(getSharedPreferences("hisho",0).getBoolean("eventMode",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);setTheme(LumoTheme.appTheme(this));super.onCreate(saved);
   // Login: sem sessão Fotto o Lumo abre na tela de entrada. O modo demonstração (capturas do CI) entra sem conta.
   if(getIntent()!=null&&getIntent().getBooleanExtra("lumoDemo",false))LumoSession.enterDemo(this);
+  if(getIntent()!=null&&getIntent().getBooleanExtra("lumoGpuTest",false))new Thread(GpuDevelop::benchmark,"lumo-gpu-bench").start();
   if(!LumoSession.signedIn(this)){gated=true;startActivity(new Intent(this,LumoLoginActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));finish();overridePendingTransition(0,0);return;}
   applyPalette();database=new Jobs(MainActivity.this);loadPreset();PresetLibrary.seed(MainActivity.this,presetName,presetData);QueueRecovery.resume(MainActivity.this);
   if(saved!=null){gallery.follow=saved.getBoolean("follow",true);gallery.selected=saved.getString("photo","");}
@@ -388,10 +389,32 @@ public class MainActivity extends Activity {
    .item("heart",SUCCESS,"Saúde do fluxo","Câmera, bateria, espaço, filas e Fotto",this::showHealthPanel)
    .item("bell",CYAN,"Testar alarme de desconexão","Toca o alerta usado quando a câmera cai",()->DisconnectAlert.test(MainActivity.this))
    .item("help",CYAN,"Tour do Lumo","Rever a apresentação passo a passo",()->showTour(0))
+   .item("warning",CrashReporter.pending(this)>0?WARN:CYAN,"Relatórios de falha",crashSubtitle(),this::showCrashReports)
    .section("Conta")
    .item("lock",lockOn?SUCCESS:CYAN,lockOn?"Desligar bloqueio com digital":"Bloquear com digital",lockOn?"Ligado · pede a digital ao abrir e após 5 min fora":"Pede a digital ao abrir o Lumo",this::toggleBiometricLock);
   // APK Demo sem conta: não há do que sair (a tela de entrada mandaria de volta para cá).
   if(!(DemoLicense.isDemo(this)&&FottoApi.token(this).isEmpty()))sheet.item("person",DANGER,LumoSession.demo(this)?"Sair do modo demonstração":"Sair da conta Fotto",account.isEmpty()?"Volta para a tela de entrada":account,this::confirmSignOut);
+  sheet.show();
+ }
+
+ String crashSubtitle(){
+  if(!CrashReporter.enabled(this))return "Envio desligado · o último relatório fica no aparelho";
+  if(!CrashReporter.configured(this))return "Guardados no aparelho para compartilhar";
+  int n=CrashReporter.pending(this);return n>0?(n==1?"1 relatório aguardando envio":n+" relatórios aguardando envio"):"Ligado · enviado quando o Lumo fecha por erro";
+ }
+
+ /** Relatórios de falha: o que é enviado, ligar/desligar, compartilhar o último e testar o envio. */
+ void showCrashReports(){
+  boolean on=CrashReporter.enabled(this),configured=CrashReporter.configured(this);java.io.File last=CrashReporter.lastReport(this);
+  LumoSheet sheet=new LumoSheet(this,"Relatórios de falha",last.exists()?"Último: "+java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(new java.util.Date(last.lastModified())):"Nenhuma falha registrada")
+   .text("Quando o Lumo fecha por erro ou trava, ele guarda um relatório técnico: modelo do aparelho, versões do Android e do Lumo, onde o erro aconteceu e os últimos passos do app. Nunca entram fotos, a conta ou a senha do Fotto, nomes de eventos ou e-mails.");
+  if(!configured)sheet.banner("info",CYAN,"Esta versão não envia relatórios sozinha. Use Compartilhar para mandar o último ao desenvolvedor.");
+  else if(!on)sheet.banner("warning",WARN,"Envio desligado: os relatórios ficam só neste aparelho.");
+  if(last.exists())sheet.item("share",CYAN,"Compartilhar último relatório","Texto para WhatsApp ou e-mail",()->{try{String text=CrashReporter.readAll(new java.io.FileInputStream(last),200*1024);
+   startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT,"Relatório de falha do Lumo").putExtra(Intent.EXTRA_TEXT,text),"Compartilhar relatório"));}catch(Exception e){message("Não foi possível abrir o relatório.");}});
+  if(configured&&on)sheet.item("upload",CYAN,"Enviar relatório de teste","Confere se os relatórios estão chegando",()->{message("Enviando relatório de teste…");
+   CrashReporter.sendTest(MainActivity.this,()->message(CrashReporter.pending(MainActivity.this)==0?"Relatório de teste enviado.":"Sem conexão com o servidor de relatórios. Ele será enviado depois."));});
+  if(configured)sheet.item(on?"close":"check",on?DANGER:SUCCESS,on?"Desligar envio automático":"Ligar envio automático",on?"Os relatórios passam a ficar só no aparelho":"Envia na próxima abertura do Lumo",()->{CrashReporter.setEnabled(MainActivity.this,!on);message(on?"Envio de relatórios desligado.":"Envio de relatórios ligado.");});
   sheet.show();
  }
 
@@ -567,6 +590,8 @@ public class MainActivity extends Activity {
   Switch preset=settingSwitch(box,"Aplicar predefinição",prefs.getBoolean("presetEnabled",true));preset.setOnCheckedChangeListener((b,c)->{prefs.edit().putBoolean("presetEnabled",c).apply();publishLiveSettings();refreshQuickControls();});
   gap(box,8);box.addView(text("Resolução da cópia editada",13,TEXT,true));Spinner resolution=new Spinner(MainActivity.this);String[] modes={"Resolução original (recomendado)","Reduzida · 2560 px","Reduzida · 1920 px"};resolution.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,modes));resolution.setSelection(Math.max(0,Math.min(2,prefs.getInt("exportResolution",0))));resolution.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){prefs.edit().putInt("exportResolution",pos).apply();publishLiveSettings();}public void onNothingSelected(android.widget.AdapterView<?> p){}});box.addView(resolution,new LinearLayout.LayoutParams(-1,dp(48)));
 
+  Switch gpu=settingSwitch(box,"Revelar na GPU (mais rápido)",prefs.getBoolean("gpuRender",true));gpu.setOnCheckedChangeListener((b,c)->{prefs.edit().putBoolean("gpuRender",c).apply();GpuDevelop.userEnabled=c;});
+  box.addView(text(GpuDevelop.status()+(GpuDevelop.testResult().isEmpty()?"":" · autoteste: "+GpuDevelop.testResult()),12,MUTED,false));gap(box,6);
   Switch curate=settingSwitch(box,"Curadoria automática",prefs.getBoolean("curationEnabled",true));curate.setOnCheckedChangeListener((b,c)->{prefs.edit().putBoolean("curationEnabled",c).apply();publishLiveSettings();});box.addView(text("Sensibilidade da curadoria",13,TEXT,true));Spinner sensitivity=new Spinner(MainActivity.this);String[] cs={"Baixa","Média","Alta"};sensitivity.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,cs));sensitivity.setSelection(Math.max(0,Math.min(2,prefs.getInt("curationSensitivity",1))));sensitivity.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){prefs.edit().putInt("curationSensitivity",pos).apply();publishLiveSettings();}public void onNothingSelected(android.widget.AdapterView<?> p){}});box.addView(sensitivity,new LinearLayout.LayoutParams(-1,dp(48)));
 
   Switch backfill=settingSwitch(box,"Recuperar fotos não baixadas ao reconectar",prefs.getBoolean("backfillEnabled",true));backfill.setOnCheckedChangeListener((b,c)->{prefs.edit().putBoolean("backfillEnabled",c).apply();publishLiveSettings();});

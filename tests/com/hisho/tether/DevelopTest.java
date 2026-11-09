@@ -130,6 +130,14 @@ public class DevelopTest{
   boolean rejected=false;try{parse(XMP.replace("+0.35","9"));}catch(IOException e){rejected=true;}check(rejected,"xmp fora do intervalo");
   rejected=false;try{parse("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>");}catch(IOException e){rejected=e.getMessage().startsWith("Nenhum");}check(rejected,"xmp vazio");
 
+  // Fotos grandes: a cor sai da LUT 3D. Contra o cálculo exato, no máximo 2 níveis e quase tudo idêntico.
+  {int lw=1800,lh=1200;check((long)lw*lh>=Develop.LUT_MIN_PIXELS,"cena grande usa a LUT");int[] big=scene(lw,lh);Develop.Settings fp=fullPreset();
+   int[] withLut=new Develop.Source(big.clone(),lw,lh).render(fp);long keep=Develop.LUT_MIN_PIXELS;Develop.LUT_MIN_PIXELS=Long.MAX_VALUE;
+   int[] exact;try{exact=new Develop.Source(big.clone(),lw,lh).render(fp);}finally{Develop.LUT_MIN_PIXELS=keep;}
+   int worst=0;long same=0;for(int i=0;i<exact.length;i++){int d=Math.max(Math.abs(r(exact[i])-r(withLut[i])),Math.max(Math.abs(g(exact[i])-g(withLut[i])),Math.abs(b(exact[i])-b(withLut[i]))));worst=Math.max(worst,d);if(d==0)same++;}
+   check(worst<=2,"LUT de cor: diferença máxima "+worst);check(same>=exact.length*.85,"LUT de cor: idênticos "+same*100/exact.length+"%");
+   int[] inPlace=new Develop.Source(big.clone(),lw,lh).renderInPlace(fp);check(Arrays.equals(inPlace,withLut),"renderInPlace igual a render (foto grande)");}
+
   // Vetores de paridade com o iOS (Develop.swift): mesma cena, mesmo preset.
   int[] parity=new Develop.Source(scene(48,36),48,36).render(fullPreset());
   StringBuilder sb=new StringBuilder();long sum=0;for(int v:parity)sum+=r(v)+g(v)+b(v);

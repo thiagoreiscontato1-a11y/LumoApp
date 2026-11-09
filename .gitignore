@@ -1,0 +1,7 @@
+# Chave de produção: nunca no repositório (veja ASSINATURA.md)
+*.p12
+*.jks
+lumo-chave-producao/
+# Saída do build.py
+build/
+*.apk

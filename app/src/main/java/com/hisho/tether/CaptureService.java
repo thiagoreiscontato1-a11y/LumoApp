@@ -9,7 +9,7 @@ public class CaptureService extends Service{
  private volatile boolean abort=false,finish=false,usbFinished=true;private Thread usbThread,editThread;private Jobs jobs;private PowerManager.WakeLock wake;
  private final Object originalLock=new Object();private final StringBuilder logs=new StringBuilder();
  public IBinder onBind(Intent i){return null;}
- public void onCreate(){super.onCreate();active=this;IntentFilter filter=new IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED);if(Build.VERSION.SDK_INT>=33)registerReceiver(detach,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(detach,filter);detachRegistered=true;jobs=new Jobs(this);NotificationManager n=getSystemService(NotificationManager.class);n.createNotificationChannel(new NotificationChannel("capture","Captura e edição",NotificationManager.IMPORTANCE_LOW));wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"LUMO:Capture");}
+ public void onCreate(){super.onCreate();active=this;GpuDevelop.warmUp();IntentFilter filter=new IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED);if(Build.VERSION.SDK_INT>=33)registerReceiver(detach,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(detach,filter);detachRegistered=true;jobs=new Jobs(this);NotificationManager n=getSystemService(NotificationManager.class);n.createNotificationChannel(new NotificationChannel("capture","Captura e edição",NotificationManager.IMPORTANCE_LOW));wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"LUMO:Capture");}
  public int onStartCommand(Intent intent,int flags,int startId){
   if(!DemoLicense.allowed(this)){stopSelf();return START_NOT_STICKY;}
   if(intent==null){stopSelf();return START_NOT_STICKY;}
@@ -29,7 +29,7 @@ public class CaptureService extends Service{
   editThread=new Thread(this::editLoop,"LUMO-Editor");editThread.setPriority(Thread.MIN_PRIORITY);editThread.start();return START_NOT_STICKY;
  }
  Notification notification(){Intent stop=new Intent(this,CaptureService.class).setAction("stop");PendingIntent action=PendingIntent.getService(this,3,stop,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);PendingIntent open=PendingIntent.getActivity(this,2,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);return new Notification.Builder(this,"capture").setSmallIcon(android.R.drawable.ic_menu_camera).setContentTitle("LUMO · "+received+" originais / "+edited+" editadas").setContentText(status).setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,"Parar captura",action).build()).build();}
- void log(String message){synchronized(logs){logs.append(new java.text.SimpleDateFormat("HH:mm:ss",Locale.ROOT).format(new Date())).append(" ").append(message).append('\n');if(logs.length()>15000)logs.delete(0,logs.length()-15000);}try{getSystemService(NotificationManager.class).notify(1,notification());}catch(Exception ignored){}}
+ void log(String message){CrashReporter.note("captura · "+message);synchronized(logs){logs.append(new java.text.SimpleDateFormat("HH:mm:ss",Locale.ROOT).format(new Date())).append(" ").append(message).append('\n');if(logs.length()>15000)logs.delete(0,logs.length()-15000);}try{getSystemService(NotificationManager.class).notify(1,notification());}catch(Exception ignored){}}
  public String report(){synchronized(logs){return logs.toString();}}
  public int pending(){return jobs.pending();}
  static String hash(String value)throws Exception{byte[] bytes=MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8"));StringBuilder b=new StringBuilder();for(byte v:bytes)b.append(String.format("%02x",v));return b.toString();}
@@ -111,9 +111,9 @@ public class CaptureService extends Service{
     File output=new File(getCacheDir(),item[0]+".jpg");
     try{
      jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);cfg.put("edge",PhotoEditor.exportEdge(this));
-     PhotoEditor.edit(new File(item[1]),output,cfg);
+     PhotoEditor.Export export=PhotoEditor.edit(new File(item[1]),output,cfg);
      boolean curate=cfg.optBoolean("curation",true);SmartCurator.Result quality;
-     try{quality=SmartCurator.analyze(output,cfg.optInt("curationSensitivity",1),jobs,item[0]);}catch(Exception e){quality=new SmartCurator.Result(true,1,"Falha na curadoria · "+e.getMessage(),"","","");}
+     try{if(export.curation==null)throw export.curationError!=null?export.curationError:new IOException("sem medições");quality=SmartCurator.finish(export.curation,export.sharpness,export.exposure,cfg.optInt("curationSensitivity",1),jobs,item[0],output.length());}catch(Exception e){quality=new SmartCurator.Result(true,1,"Falha na curadoria · "+e.getMessage(),"","","");}
      jobs.setIntelligence(item[0],quality.pHash,quality.duplicateOf,quality.semantic);
      jobs.markEdited(item[0],cfg.optString("presetName",""));
      // O score é calculado sempre; a opção Curadoria controla apenas o bloqueio para Revisão.
@@ -121,7 +121,7 @@ public class CaptureService extends Service{
       jobs.setQuality(item[0],quality.score,quality.reason);Uri uri=jobs.save(output,"Sob Revisao",item[2].replace(".jpg","_REVISAO.jpg"),item[0],"edited");jobs.set(item[0],"review","error",quality.reason);jobs.history(item[0],System.currentTimeMillis(),"Revisão","Bloqueada para envio · "+quality.reason);new File(item[1]).delete();reviewed++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastCurationAt",System.currentTimeMillis()).apply();
       log("CURADORIA · SOB REVISÃO · "+item[2]+" · "+quality.reason+" · envio bloqueado");continue;
      }
-     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: nota informativa");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);jobs.history(item[0],System.currentTimeMillis(),"Aprovada","Liberada para entrega");new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastEditAt",System.currentTimeMillis()).putLong("lastCurationAt",System.currentTimeMillis()).apply();FottoSync.kick(this);log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s · nota "+quality.score+"/10 · "+jobs.pending()+" pendentes");
+     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: nota informativa");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);jobs.history(item[0],System.currentTimeMillis(),"Aprovada","Liberada para entrega");new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastEditAt",System.currentTimeMillis()).putLong("lastCurationAt",System.currentTimeMillis()).apply();FottoSync.kick(this);log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s ("+export.timing+") · nota "+quality.score+"/10 · "+jobs.pending()+" pendentes");
     }catch(Exception|OutOfMemoryError e){jobs.set(item[0],"error","error",e.toString());log("Falha na edição; original preservado: "+e.getMessage());}
     finally{output.delete();}
    }

@@ -1,4 +1,32 @@
-# LUMO — Android 0.18.0 e iOS 0.4.0
+# LUMO — Android 0.19.0 e iOS 0.4.0
+
+**Android 0.19.0 — relatório de falhas, chave de produção e edição mais rápida:**
+- **Relatório de falhas.** Quando o Lumo fecha por erro ou trava, o relatório (aparelho, versões, onde quebrou e os últimos
+  passos, sem fotos, conta ou nomes de eventos) vai para o Sentry na próxima abertura. Em Menu → Ajuda →
+  **Relatórios de falha** dá para compartilhar o último relatório, enviar um teste ou desligar o envio. Configuração em
+  [`RELATORIOS-DE-FALHA.md`](RELATORIOS-DE-FALHA.md).
+- **Chave de produção.** O APK passa a ser assinado com uma chave só sua, guardada nos Secrets do GitHub. Sem ela, o build
+  continua usando a chave de teste e avisa. Passo a passo em [`ASSINATURA.md`](ASSINATURA.md). Atenção: na primeira
+  instalação com a chave nova é preciso desinstalar a versão de teste.
+- **Lumo-Demo.apk.** O release `lumo-latest` também traz o `Lumo-Demo.apk`.
+- **Edição em resolução original mais rápida.** O motor de revelação ficou 1,9 a 2,6× mais rápido em 24 MP: usa todos os
+  núcleos, tabelas no lugar de `pow` e uma tabela 3D de cor nas fotos grandes. A foto não é mais girada numa segunda cópia,
+  a curadoria roda junto com a gravação do JPEG e a foto não é mais decodificada inteira só para o hash. O registro de
+  captura mostra o tempo de cada etapa. Diagnóstico e caminhos para chegar a ~1 s (GPU ou servidor) em
+  [`EDICAO-DESEMPENHO.md`](EDICAO-DESEMPENHO.md).
+- **Curadoria que corrige em vez de recusar.**
+  - **Clara ou escura demais depois do preset:** a exposição é ajustada numa prévia antes de revelar. Só mexe quando o
+    rosto estoura, escurece demais ou uma área grande perde detalhe; preset claro de propósito continua claro.
+  - **Vai para Revisão** só o que a edição não conserta: desfocada, rosto principal cortado na lateral ou embaixo, e
+    foto quase preta ou toda branca. A nitidez é medida na foto original, região por região, então retrato com fundo
+    desfocado passa.
+  - **Deixam de reprovar:** contraste baixo (presets matte), cores fortes, assunto fora do centro e brilho médio.
+    Também saíram os palpites de olhos fechados, rosto virado e expressão, e duplicata reprova só na sensibilidade Alta.
+- **Revelação na GPU (OpenGL ES 3.0).**
+  - O trabalho por pixel roda na GPU do celular; o motor Java fica como reserva.
+  - Um autoteste compara as duas antes da primeira foto, e qualquer falha ou divergência volta para a CPU sozinha.
+  - Em Ajustes, a chave **Revelar na GPU** desliga a GPU e mostra o resultado do autoteste.
+  - O registro de captura mostra qual motor revelou cada foto.
 
 **Android 0.18.0 — Galeria online para os convidados:** em Entrega → Galeria online, o Lumo cria uma galeria para o evento
 e publica cada foto aprovada, em paralelo ao Fotto (que continua igual). Os convidados abrem um link ou QR code, veem as fotos,

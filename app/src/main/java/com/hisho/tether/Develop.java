@@ -253,13 +253,15 @@ final class Develop{
   for(int i=-r;i<=r;i++){k[i+r]=Math.exp(-i*i/(2*sigma*sigma));sum+=k[i+r];}for(int i=0;i<k.length;i++)k[i]/=sum;
   // Só um vetor do tamanho da foto: a passada vertical trabalha em faixas de colunas copiadas
   // para um buffer pequeno e devolve o resultado no próprio vetor da passada horizontal.
-  float[] tmp=new float[w*h];
-  for(int y=0;y<h;y++){int row=y*w;for(int x=0;x<w;x++){double a=0;for(int i=-r;i<=r;i++){int xx=x+i;xx=xx<0?0:xx>=w?w-1:xx;a+=k[i+r]*src[row+xx];}tmp[row+x]=(float)a;}}
-  final int band=64;float[] col=new float[h*Math.min(band,w)];
-  for(int x0=0;x0<w;x0+=band){int n=Math.min(band,w-x0);
-   for(int y=0;y<h;y++)System.arraycopy(tmp,y*w+x0,col,y*n,n);
-   for(int y=0;y<h;y++)for(int c=0;c<n;c++){double a=0;for(int i=-r;i<=r;i++){int yy=y+i;yy=yy<0?0:yy>=h?h-1:yy;a+=k[i+r]*col[yy*n+c];}tmp[y*w+x0+c]=(float)a;}
-  }
+  // As duas passadas são divididas entre os núcleos (linhas na horizontal, faixas de colunas na vertical).
+  final float[] tmp=new float[w*h];final int rr=r;
+  parallel(h,(y0,y1)->{for(int y=y0;y<y1;y++){int row=y*w;for(int x=0;x<w;x++){double a=0;for(int i=-rr;i<=rr;i++){int xx=x+i;xx=xx<0?0:xx>=w?w-1:xx;a+=k[i+rr]*src[row+xx];}tmp[row+x]=(float)a;}}});
+  final int band=64,bands=(w+band-1)/band;
+  parallel(bands,(b0,b1)->{float[] col=new float[h*Math.min(band,w)];
+   for(int b=b0;b<b1;b++){int x0=b*band,n=Math.min(band,w-x0);
+    for(int y=0;y<h;y++)System.arraycopy(tmp,y*w+x0,col,y*n,n);
+    for(int y=0;y<h;y++)for(int c=0;c<n;c++){double a=0;for(int i=-rr;i<=rr;i++){int yy=y+i;yy=yy<0?0:yy>=h?h-1:yy;a+=k[i+rr]*col[yy*n+c];}tmp[y*w+x0+c]=(float)a;}
+   }});
   return tmp;
  }
  /** Ruído de valor determinístico (−1…1) para a granulação. */
@@ -277,12 +279,30 @@ final class Develop{
   * é um filtro guiado (valor = A·I + B): segue as bordas fortes da própria foto, então
   * realces/sombras e claridade não criam halos, como no Lightroom.
   */
- static final class Field{final float[] offset,scale;final int gw,gh,cell;Field(float[] offset,float[] scale,int gw,int gh,int cell){this.offset=offset;this.scale=scale;this.gw=gw;this.gh=gh;this.cell=cell;}
-  double at(int x,int y,double guide){
-   if(cell==1){int i=y*gw+x;return scale==null?offset[i]:scale[i]*guide+offset[i];}
-   double gx=lim((x+.5)/cell-.5,0,gw-1),gy=lim((y+.5)/cell-.5,0,gh-1);int x0=(int)gx,y0=(int)gy,x1=Math.min(gw-1,x0+1),y1=Math.min(gh-1,y0+1);double fx=gx-x0,fy=gy-y0;
-   double o=bilinear(offset,x0,y0,x1,y1,fx,fy);return scale==null?o:bilinear(scale,x0,y0,x1,y1,fx,fy)*guide+o;}
-  double bilinear(float[] d,int x0,int y0,int x1,int y1,double fx,double fy){return (d[y0*gw+x0]*(1-fx)+d[y0*gw+x1]*fx)*(1-fy)+(d[y1*gw+x0]*(1-fx)+d[y1*gw+x1]*fx)*fy;}}
+ static final class Field{final float[] offset,scale;final int gw,gh,cell;
+  // Posição na grade de cada coluna e de cada linha: a mesma conta de antes, feita uma vez por foto e não por pixel.
+  final int[] ax0,ax1,ay0,ay1;final double[] afx,afy;
+  Field(float[] offset,float[] scale,int gw,int gh,int cell,int w,int h){this.offset=offset;this.scale=scale;this.gw=gw;this.gh=gh;this.cell=cell;
+   if(cell==1){ax0=ax1=ay0=ay1=null;afx=afy=null;return;}
+   ax0=new int[w];ax1=new int[w];afx=new double[w];ay0=new int[h];ay1=new int[h];afy=new double[h];
+   for(int x=0;x<w;x++){double gx=lim((x+.5)/cell-.5,0,gw-1);ax0[x]=(int)gx;ax1[x]=Math.min(gw-1,ax0[x]+1);afx[x]=gx-ax0[x];}
+   for(int y=0;y<h;y++){double gy=lim((y+.5)/cell-.5,0,gh-1);ay0[y]=(int)gy;ay1[y]=Math.min(gh-1,ay0[y]+1);afy[y]=gy-ay0[y];}
+  }
+  /** Linha {@code y} já interpolada na vertical (offset e scale lado a lado), para {@link #at(int,double[],double)}. */
+  double[] row(int y,double[] buf){
+   int n=scale==null?gw:2*gw;if(buf==null||buf.length<n)buf=new double[n];
+   if(cell==1){int base=y*gw;for(int i=0;i<gw;i++){buf[i]=offset[base+i];if(scale!=null)buf[gw+i]=scale[base+i];}return buf;}
+   int r0=ay0[y]*gw,r1=ay1[y]*gw;double fy=afy[y],ky=1-fy;
+   for(int i=0;i<gw;i++){buf[i]=offset[r0+i]*ky+offset[r1+i]*fy;if(scale!=null)buf[gw+i]=scale[r0+i]*ky+scale[r1+i]*fy;}
+   return buf;
+  }
+  /** Valor no pixel x da linha preparada por {@link #row}. */
+  double at(int x,double[] row,double guide){
+   if(cell==1)return scale==null?row[x]:row[gw+x]*guide+row[x];
+   int x0=ax0[x],x1=ax1[x];double fx=afx[x],kx=1-fx,o=row[x0]*kx+row[x1]*fx;
+   return scale==null?o:(row[gw+x0]*kx+row[gw+x1]*fx)*guide+o;
+  }
+ }
 
  /**
   * Foto decodificada (ARGB) com os campos que os ajustes locais precisam, calculados uma vez
@@ -313,7 +333,8 @@ final class Develop{
   synchronized double[] autoControls(){if(auto==null)auto=Develop.autoControls(px);return auto.clone();}
   /** log2 da luminância linear de cada pixel. */
   synchronized float[] logY(){
-   if(logY==null){logY=new float[w*h];for(int i=0;i<px.length;i++){int v=px[i];logY[i]=(float)log2(Math.max(1/4096.,luma(LIN[(v>>16)&255],LIN[(v>>8)&255],LIN[v&255])));}}
+   if(logY==null){final float[] l=new float[w*h];final int[] p=px;
+    parallel(h,(y0,y1)->{for(int i=y0*w,end=y1*w;i<end;i++){int v=p[i];l[i]=(float)log2(Math.max(1/4096.,luma(LIN[(v>>16)&255],LIN[(v>>8)&255],LIN[v&255])));}});logY=l;}
    return logY;
   }
   /** Raios relativos ao maior lado, para a prévia e a exportação ficarem iguais. */
@@ -321,18 +342,20 @@ final class Develop{
   synchronized Field field(int kind){
    if(fields[kind]!=null)return fields[kind];
    double sigma=sigma(kind),eps=kind==TONE?.25:kind==CLARITY?4:0;int cell=Math.max(1,(int)(sigma/3)),gw=(w+cell-1)/cell,gh=(h+cell-1)/cell,cells=gw*gh;
-   float[] mean=new float[cells],square=eps>0?new float[cells]:null;float[] log=kind==HAZE?null:logY();
-   for(int y=0;y<h;y++)for(int x=0;x<w;x++){int i=y*w+x,g=(y/cell)*gw+x/cell;double v;if(log!=null)v=log[i];else{int p=px[i];v=Math.min(LIN[(p>>16)&255],Math.min(LIN[(p>>8)&255],LIN[p&255]));}mean[g]+=v;if(square!=null)square[g]+=v*v;}
+   final float[] sumV=new float[cells],sumSq=eps>0?new float[cells]:null;final float[] log=kind==HAZE?null:logY();final int fc=cell,fgw=gw;
+   // Cada faixa de linhas da grade é somada por uma só thread, na mesma ordem de antes (resultado idêntico).
+   parallel(gh,(g0,g1)->{for(int y=g0*fc,ye=Math.min(h,g1*fc);y<ye;y++)for(int x=0;x<w;x++){int i=y*w+x,g=(y/fc)*fgw+x/fc;double v;if(log!=null)v=log[i];else{int p=px[i];v=Math.min(LIN[(p>>16)&255],Math.min(LIN[(p>>8)&255],LIN[p&255]));}sumV[g]+=v;if(sumSq!=null)sumSq[g]+=v*v;}});
+   float[] mean=sumV,square=sumSq;
    // Pixels por célula calculados (só as da borda são menores), sem um vetor de contagem.
    for(int gy=0;gy<gh;gy++){int ch=Math.min(cell,h-gy*cell);for(int gx=0;gx<gw;gx++){int i=gy*gw+gx,n=Math.min(cell,w-gx*cell)*ch;mean[i]/=n;if(square!=null)square[i]/=n;}}
    double s=sigma/cell;mean=blur(mean,gw,gh,s);
-   if(eps<=0)return fields[kind]=new Field(mean,null,gw,gh,cell);
+   if(eps<=0)return fields[kind]=new Field(mean,null,gw,gh,cell,w,h);
    // Filtro guiado: A = var/(var+eps), B = média·(1−A), ambos suavizados. A e B ficam nos
    // próprios vetores (cada célula só lê a si mesma) para a textura em resolução cheia caber.
    square=blur(square,gw,gh,s);float[] a=square,b=mean;
    for(int i=0;i<cells;i++){double m=mean[i],var=Math.max(0,square[i]-m*m),k=var/(var+eps);a[i]=(float)k;b[i]=(float)(m-k*m);}
    mean=square=null;b=blur(b,gw,gh,s);a=blur(a,gw,gh,s);
-   return fields[kind]=new Field(b,a,gw,gh,cell);
+   return fields[kind]=new Field(b,a,gw,gh,cell,w,h);
   }
 
   /** Renderiza a foto com os ajustes; devolve pixels ARGB novos. As linhas são divididas entre os núcleos. */
@@ -349,7 +372,7 @@ final class Develop{
    parallel(h,(y0,y1)->plan.rows(y0,y1,out));
    if(release){plan.logY=null;synchronized(this){logY=null;Arrays.fill(fields,null);}}
    if(plan.sharpen){
-    final float[] l=new float[w*h];for(int i=0;i<l.length;i++){int v=out[i];l[i]=(float)(luma((v>>16)&255,(v>>8)&255,v&255)/255);}
+    final float[] l=new float[w*h];parallel(h,(y0,y1)->{for(int i=y0*w,end=y1*w;i<end;i++){int v=out[i];l[i]=(float)(luma((v>>16)&255,(v>>8)&255,v&255)/255);}});
     final float[] bl=blur(l,w,h,Math.max(.5,s.sharpenRadius*.8));
     parallel(h,(y0,y1)->plan.sharpenRows(y0,y1,out,l,bl));
    }
@@ -360,10 +383,10 @@ final class Develop{
  /** Constantes de uma renderização e o pipeline por pixel. */
  static final class Plan{
   final Source src;final Settings s;final int w;
-  final double[] tone,tS,tM,tH,tG,tShadow,calHue,calSat;final double[][] curves;
+  final double[] tone,tS,tM,tH,tG,tShadow,calHue,calSat,roll;final double[][] curves;
   final double gr,gg,gb,expo,knee=.6,top,rollPower,dehaze,sh,hl,whites,clarity,texture,sat,vib,mid,width,amount,limit,mask;
   final boolean local,tonal,hsl,calib,mixing,grade,color,sharpen,identity;
-  float[] logY;final Field toneF,clarityF,textureF,hazeF;final Effects fx;
+  float[] logY;final Field toneF,clarityF,textureF,hazeF;final Effects fx;final Lut lut;
   Plan(Source src,Settings s){
    this.src=src;this.s=s;w=src.w;
    // Calibração: gira e satura as cores em volta de cada primário (faixas largas de 120°).
@@ -376,6 +399,8 @@ final class Develop{
    // Como no Lightroom, o que a exposição estourou volta comprimido para dentro do branco
    // (brancos negativos baixam esse teto), sem virar cinza.
    expo=e;gr=r;gg=g;gb=b;top=e*exp2(whites<0?whites*.62:0);rollPower=top>1?(top-knee)/(1-knee):1;
+   // 1-(1-q)^p em tabela (o pow por pixel claro era a conta mais cara do tom).
+   if(rollPower>1){roll=new double[TABLE+1];for(int i=0;i<=TABLE;i++)roll[i]=1-Math.pow(1-i/(double)TABLE,rollPower);}else roll=null;
    local=sh!=0||hl!=0||clarity!=0||texture!=0;
    tone=toneTable(s);curves=curveTables(s);
    tonal=rollPower>1||local||whites!=0||tone!=null;
@@ -390,44 +415,60 @@ final class Develop{
    fx=new Effects(s,src.w,src.h);
    identity=!calib&&gr==1&&gg==1&&gb==1&&dehaze==0&&!tonal&&curves==null&&!color&&!sharpen&&!fx.active;
    logY=local&&!identity?src.logY():null;
+   // Fotos grandes: a parte de cor vira uma tabela 3D (65³ nós, interpolação tetraédrica), calculada
+   // uma vez com o mesmo código. Diferença medida contra o cálculo exato: no máximo 1 nível de 255 em
+   // quase todos os pixels. Fotos pequenas (prévia do editor, testes) usam o cálculo exato.
+   lut=(curves!=null||color)&&!identity&&(long)src.w*src.h>=LUT_MIN_PIXELS?new Lut(this):null;
    toneF=(sh!=0||hl!=0)&&!identity?src.field(Source.TONE):null;clarityF=clarity!=0&&!identity?src.field(Source.CLARITY):null;
    textureF=texture!=0&&!identity?src.field(Source.TEXTURE):null;hazeF=dehaze>0&&!identity?src.field(Source.HAZE):null;
   }
 
   void rows(int y0,int y1,int[] out){
-   double[] c=new double[3];int[] px=src.px;
-   for(int y=y0;y<y1;y++)for(int x=0;x<w;x++){
+   double[] c=new double[3],o=new double[3],nz=fx.grain?new double[w]:null;int[] px=src.px;
+   double[] fT=null,fC=null,fX=null,fH=null;
+   for(int y=y0;y<y1;y++){if(nz!=null&&!sharpen)fx.noiseRow(y,nz);
+    if(toneF!=null)fT=toneF.row(y,fT);if(clarityF!=null)fC=clarityF.row(y,fC);if(textureF!=null)fX=textureF.row(y,fX);if(hazeF!=null)fH=hazeF.row(y,fH);
+    for(int x=0;x<w;x++){
     int i=y*w+x,v=px[i];
     double r=LIN[(v>>16)&255],g=LIN[(v>>8)&255],b=LIN[v&255];
     // Balanço de branco e exposição em luz linear.
     r*=gr;g*=gg;b*=gb;
     // Dehaze: modelo de névoa atmosférica com canal escuro borrado.
-    if(dehaze>0){double dark=Math.min(Math.min(r,Math.min(g,b)),hazeF.at(x,y,0)*expo),tr=Math.max(.15,1-.85*dehaze*Math.min(1,dark)),a=1-tr;r=(r-a)/tr;g=(g-a)/tr;b=(b-a)/tr;}
+    if(dehaze>0){double dark=Math.min(Math.min(r,Math.min(g,b)),hazeF.at(x,fH,0)*expo),tr=Math.max(.15,1-.85*dehaze*Math.min(1,dark)),a=1-tr;r=(r-a)/tr;g=(g-a)/tr;b=(b-a)/tr;}
     else if(dehaze<0){double k=-dehaze*.45;r+=(.85-r)*k;g+=(.85-g)*k;b+=(.85-b)*k;}
     if(tonal){
      double lum=luma(r,g,b),yt=lum,ev=0,lp=encode(Math.min(1,yt));
      if(local){
       double ly=log2(Math.max(yt,1e-6)),l0=logY[i];
-      if(toneF!=null){double base=ly-soft(l0-toneF.at(x,y,l0),1),bl=encode(Math.min(1,exp2(base)));
+      if(toneF!=null){double base=ly-soft(l0-toneF.at(x,fT,l0),1),bl=encode(Math.min(1,exp2(base)));
        if(sh!=0)ev+=sh*(sh>0?1.35:1)*(1-smooth(.13,.45,bl))*(.55+.45*smooth(0,.15,bl));
        // Realces poupam o que já está quase branco: a recuperação fica com a compressão abaixo.
        if(hl!=0)ev+=hl*(hl<0?.75:.9)*smooth(.4,.9,bl)*(1-smooth(.85,1,lp));}
-      if(clarityF!=null)ev+=clarity*2*soft(l0-clarityF.at(x,y,l0),1.5)*4*lp*(1-lp);
-      if(textureF!=null)ev+=texture*.6*soft(l0-textureF.at(x,y,l0),1)*(1-smooth(.85,1,lp));
+      if(clarityF!=null)ev+=clarity*2*soft(l0-clarityF.at(x,fC,l0),1.5)*4*lp*(1-lp);
+      if(textureF!=null)ev+=texture*.6*soft(l0-textureF.at(x,fX,l0),1)*(1-smooth(.85,1,lp));
      }
      if(whites!=0)ev+=whites*.62*smooth(.3,1,lp);
      if(ev!=0)yt*=exp2(ev);
      // O que passou do branco é comprimido suavemente em vez de estourar.
-     if(rollPower>1&&yt>knee){double q=(yt-knee)/(top-knee);yt=q>=1?1:knee+(1-knee)*(1-Math.pow(1-q,rollPower));}
+     if(rollPower>1&&yt>knee){double q=(yt-knee)/(top-knee);yt=q>=1?1:knee+(1-knee)*table(roll,q);}
      if(tone!=null)yt=decode(table(tone,encode(Math.min(1,yt))));
      if(lum>1e-9){double k=yt/lum;r*=k;g*=k;b*=k;}else r=g=b=yt;
      // Cores claras e saturadas (pele no sol) ganham um ombro suave no canal mais forte em vez de
      // estourar: o encaixe abaixo tiraria a cor e deixaria a pele branca.
      double vmax=Math.max(r,Math.max(g,b));
-     if(vmax>.8){double vs=(vmax-Math.min(r,Math.min(g,b)))/vmax,f=1-vs*(1-(.8+.2*(1-Math.exp(-(vmax-.8)/.2)))/vmax);r*=f;g*=f;b*=f;}
+     if(vmax>.8){double vs=(vmax-Math.min(r,Math.min(g,b)))/vmax,f=1-vs*(1-(.8+.2*(1-exp2(-(vmax-.8)/.2/LN2)))/vmax);r*=f;g*=f;b*=f;}
     }
     c[0]=r;c[1]=g;c[2]=b;fit(c,luma(r,g,b));
     double R=encode(c[0]),G=encode(c[1]),B=encode(c[2]);
+    if(lut!=null){lut.apply(R,G,B,o);R=o[0];G=o[1];B=o[2];}
+    else if(curves!=null||color){color(R,G,B,c,o);R=o[0];G=o[1];B=o[2];}
+    out[i]=sharpen?pack(R,G,B):fx.apply(R,G,B,x,y,nz==null?0:nz[x]);
+   }}
+  }
+
+
+  /** Curvas e cor (saturação, vibração, HSL, calibração, P&B, color grading): só dependem de R,G,B (sRGB 0–1). */
+  void color(double R,double G,double B,double[] c,double[] o){
     if(curves!=null){R=table(curves[0],R);G=table(curves[1],G);B=table(curves[2],B);}
     if(color){
      double yg=luma(R,G,B);
@@ -472,14 +513,43 @@ final class Develop{
       fit(c,clamp01(l+dl));R=c[0];G=c[1];B=c[2];
      }
     }
-    out[i]=sharpen?pack(R,G,B):fx.apply(R,G,B,x,y);
-   }
+    o[0]=R;o[1]=G;o[2]=B;
   }
 
   /** Nitidez (máscara de nitidez na luminância), depois vinheta e granulação. */
   void sharpenRows(int y0,int y1,int[] out,float[] l,float[] bl){
-   for(int y=y0;y<y1;y++)for(int x=0;x<w;x++){int i=y*w+x,v=out[i];double d=l[i]-bl[i],weight=mask>0?smooth(mask*.5,mask*1.5,Math.abs(d)):1,add=amount*lim(d,-limit,limit)*weight;
-    out[i]=fx.apply(((v>>16)&255)/255.+add,((v>>8)&255)/255.+add,(v&255)/255.+add,x,y);}
+   double[] nz=fx.grain?new double[w]:null;
+   for(int y=y0;y<y1;y++){if(nz!=null)fx.noiseRow(y,nz);for(int x=0;x<w;x++){int i=y*w+x,v=out[i];double d=l[i]-bl[i],weight=mask>0?smooth(mask*.5,mask*1.5,Math.abs(d)):1,add=amount*lim(d,-limit,limit)*weight;
+    out[i]=fx.apply(((v>>16)&255)/255.+add,((v>>8)&255)/255.+add,(v&255)/255.+add,x,y,nz==null?0:nz[x]);}}
+  }
+ }
+
+ static int LUT_SIZE=65;
+ static long LUT_MIN_PIXELS=2_000_000;
+ /** Tabela 3D da etapa de cor ({@link Plan#color}) sobre o cubo sRGB 0–1. */
+ static final class Lut{
+  final int n;final float[] t;
+  Lut(Plan plan){
+   n=LUT_SIZE;t=new float[n*n*n*3];final int m=n-1;
+   parallel(n,(r0,r1)->{double[] c=new double[3],o=new double[3];
+    for(int r=r0;r<r1;r++)for(int g=0;g<n;g++)for(int b=0;b<n;b++){plan.color(r/(double)m,g/(double)m,b/(double)m,c,o);int i=((r*n+g)*n+b)*3;t[i]=(float)o[0];t[i+1]=(float)o[1];t[i+2]=(float)o[2];}});
+  }
+  /** Interpolação tetraédrica: o eixo cinza (R=G=B) só usa nós cinza. */
+  void apply(double R,double G,double B,double[] o){
+   int m=n-1;double fr=clamp01(R)*m,fg=clamp01(G)*m,fb=clamp01(B)*m;int r=Math.min((int)fr,m-1),g=Math.min((int)fg,m-1),b=Math.min((int)fb,m-1);
+   double dr=fr-r,dg=fg-g,db=fb-b;int sr=n*n*3,sg=n*3,sb=3,base=r*sr+g*sg+b*sb;
+   int p1,p2;double w0,w1,w2,w3;
+   if(dr>=dg){
+    if(dg>=db){p1=sr;p2=sr+sg;w0=1-dr;w1=dr-dg;w2=dg-db;w3=db;}
+    else if(dr>=db){p1=sr;p2=sr+sb;w0=1-dr;w1=dr-db;w2=db-dg;w3=dg;}
+    else{p1=sb;p2=sr+sb;w0=1-db;w1=db-dr;w2=dr-dg;w3=dg;}
+   }else{
+    if(db>=dg){p1=sb;p2=sg+sb;w0=1-db;w1=db-dg;w2=dg-dr;w3=dr;}
+    else if(db>=dr){p1=sg;p2=sg+sb;w0=1-dg;w1=dg-db;w2=db-dr;w3=dr;}
+    else{p1=sg;p2=sr+sg;w0=1-dg;w1=dg-dr;w2=dr-db;w3=db;}
+   }
+   int p3=sr+sg+sb;
+   for(int k=0;k<3;k++)o[k]=w0*t[base+k]+w1*t[base+p1+k]+w2*t[base+p2+k]+w3*t[base+p3+k];
   }
  }
 
@@ -492,7 +562,8 @@ final class Develop{
  }
  /** Executa faixas de linhas em paralelo e espera todas. */
  static void parallel(int h,Rows task){
-  int chunks=Math.min(h,THREADS*4);if(chunks<=1||THREADS==1){task.run(0,h);return;}
+  // Dentro do próprio pool roda direto: esperar o pool de dentro dele travaria.
+  int chunks=Math.min(h,THREADS*4);if(chunks<=1||THREADS==1||Thread.currentThread().getName().startsWith("lumo-develop")){task.run(0,h);return;}
   java.util.List<java.util.concurrent.Future<?>> jobs=new java.util.ArrayList<>();
   for(int k=0;k<chunks;k++){final int y0=h*k/chunks,y1=h*(k+1)/chunks;jobs.add(pool().submit(()->task.run(y0,y1)));}
   try{for(java.util.concurrent.Future<?> f:jobs)f.get();}
@@ -511,11 +582,40 @@ final class Develop{
    cx=w/2.;cy=h/2.;hw=w/2.;hh=h/2.;hc=Math.sqrt((double)w*h)/2;
    grainAmount=s.grain/100*.1;grain=grainAmount>0;cell=Math.max(1,(1+s.grainSize/100*3)*Math.max(w,h)/2560.);rough=s.grainRoughness/100;
    active=vignette||grain;
+   // A distância da vinheta separa em coluna + linha: |u|^p só depende de x e |v|^p só de y.
+   if(vignette){du=new double[w];dv=new double[h];
+    for(int x=0;x<w;x++){double u=(x+.5-cx)/hw;if(roundness>0){double k=roundness*roundness;u+=((x+.5-cx)/hc-u)*k;}du[x]=power==2?u*u:Math.pow(Math.abs(u),power);}
+    for(int y=0;y<h;y++){double v=(y+.5-cy)/hh;if(roundness>0){double k=roundness*roundness;v+=((y+.5-cy)/hc-v)*k;}dv[y]=power==2?v*v:Math.pow(Math.abs(v),power);}
+    // Abaixo deste valor a máscara é zero com folga: o centro da foto pula o pow.
+    skip=(power==2?inner*inner:Math.pow(inner,power))*(1-1e-9);
+    double umax=0,vmax=0;for(double d:du)umax=Math.max(umax,d);for(double d:dv)vmax=Math.max(vmax,d);
+    sMax=Math.max(skip+1e-9,umax+vmax);mask=new double[TABLE+1];
+    for(int i=0;i<=TABLE;i++){double sv=skip+(sMax-skip)*i/TABLE,d=power==2?Math.sqrt(sv):Math.pow(sv,1/power);mask[i]=smooth(inner,inner+width,d);}
+   }else{du=dv=mask=null;skip=sMax=0;}
+   // Grão: posição na grade de ruído e suavização de cada coluna/linha, nas duas escalas.
+   if(grain){gx1=new int[w];gx2=new int[w];tx1=new double[w];tx2=new double[w];gy1=new int[h];gy2=new int[h];ty1=new double[h];ty2=new double[h];
+    for(int x=0;x<w;x++){lattice(x/cell,gx1,tx1,x);lattice(x/(cell*.5),gx2,tx2,x);}
+    for(int y=0;y<h;y++){lattice(y/cell,gy1,ty1,y);lattice(y/(cell*.5),gy2,ty2,y);}
+   }else{gx1=gx2=gy1=gy2=null;tx1=tx2=ty1=ty2=null;}
   }
-  int apply(double r,double g,double b,int x,int y){
-   if(vignette){
-    double u=(x+.5-cx)/hw,v=(y+.5-cy)/hh;if(roundness>0){double k=roundness*roundness;u+=((x+.5-cx)/hc-u)*k;v+=((y+.5-cy)/hc-v)*k;}
-    double d=power==2?Math.sqrt(u*u+v*v):Math.pow(Math.pow(Math.abs(u),power)+Math.pow(Math.abs(v),power),1/power),m=smooth(inner,inner+width,d);
+  final double[] du,dv,mask,tx1,tx2,ty1,ty2;final double skip,sMax;final int[] gx1,gx2,gy1,gy2;
+  /** Mesmo cálculo de {@link Develop#noise}: canto inteiro da célula e fração suavizada. */
+  static void lattice(double f,int[] cell,double[] t,int i){double fl=Math.floor(f),tt=f-fl;cell[i]=(int)fl;t[i]=tt*tt*(3-2*tt);}
+  /** Ruído do grão de uma linha inteira (mesma conta de {@link Develop#noise}; os 4 cantos só mudam a cada célula). */
+  void noiseRow(int y,double[] out){
+   int ya=gy1[y],yb=gy2[y];double ta=ty1[y],tb=ty2[y];int la=Integer.MIN_VALUE,lb=Integer.MIN_VALUE;double a1=0,b1=0,c1=0,d1=0,a2=0,b2=0,c2=0,d2=0;
+   for(int x=0;x<out.length;x++){
+    int xa=gx1[x],xb=gx2[x];
+    if(xa!=la){a1=hash(xa,ya,0x5eed);b1=hash(xa+1,ya,0x5eed);c1=hash(xa,ya+1,0x5eed);d1=hash(xa+1,ya+1,0x5eed);la=xa;}
+    if(xb!=lb){a2=hash(xb,yb,0x1ced);b2=hash(xb+1,yb,0x1ced);c2=hash(xb,yb+1,0x1ced);d2=hash(xb+1,yb+1,0x1ced);lb=xb;}
+    double t=tx1[x],n1=(a1+(b1-a1)*t)*(1-ta)+(c1+(d1-c1)*t)*ta;t=tx2[x];double n2=(a2+(b2-a2)*t)*(1-tb)+(c2+(d2-c2)*t)*tb;
+    out[x]=n1*(1-.5*rough)+n2*.5*rough;
+   }
+  }
+  /** {@code nz}: ruído do grão neste pixel ({@link #noiseRow}); ignorado sem grão. */
+  int apply(double r,double g,double b,int x,int y,double nz){
+   if(vignette&&du[x]+dv[y]>skip){
+    double m=table(mask,(du[x]+dv[y]-skip)/(sMax-skip));
     if(m>0){
      if(amount<0){
       if(style==3){double f=1+amount*m*.9;r*=f;g*=f;b*=f;}
@@ -524,7 +624,7 @@ final class Develop{
     }
    }
    if(grain){
-    double l=clamp01(luma(r,g,b)),nz=noise(x/cell,y/cell,0x5eed)*(1-.5*rough)+noise(x/(cell*.5),y/(cell*.5),0x1ced)*.5*rough,a=grainAmount*nz*(.35+.65*4*l*(1-l));
+    double l=clamp01(luma(r,g,b)),a=grainAmount*nz*(.35+.65*4*l*(1-l));
     r+=a;g+=a;b+=a;
    }
    return pack(r,g,b);

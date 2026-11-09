@@ -7,11 +7,11 @@ public class LumoApplication extends Application implements Application.Activity
    boolean redirect=false;for(Activity a:new ArrayList<>(activities))if(!(a instanceof DemoActivationActivity)){redirect=true;a.finish();}
    if(redirect)startActivity(new Intent(LumoApplication.this,DemoActivationActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
   }if(!activities.isEmpty())clock.postDelayed(this,1000);}};
- public void onCreate(){super.onCreate();registerActivityLifecycleCallbacks(this);}
- public void onActivityCreated(Activity a,Bundle b){activities.add(a);}
+ public void onCreate(){super.onCreate();CrashReporter.install(this);GpuDevelop.userEnabled=getSharedPreferences("hisho",0).getBoolean("gpuRender",true);registerActivityLifecycleCallbacks(this);}
+ public void onActivityCreated(Activity a,Bundle b){activities.add(a);CrashReporter.note("tela · "+a.getClass().getSimpleName()+(b==null?" aberta":" recriada"));}
  public void onActivityResumed(Activity a){clock.removeCallbacks(check);clock.post(check);}
  public void onActivityDestroyed(Activity a){activities.remove(a);if(activities.isEmpty())clock.removeCallbacks(check);}
- public void onActivityPaused(Activity a){}
+ public void onActivityPaused(Activity a){CrashReporter.note("tela · "+a.getClass().getSimpleName()+" pausada");}
  // Bloqueio com digital: conta as telas visíveis para saber quando o app saiu e voltou do segundo plano.
  public void onActivityStarted(Activity a){if(started++==0)LumoLock.returned();if(LumoLock.needsUnlock(a)){LumoLock.showing=true;a.startActivity(new Intent(a,LumoLockActivity.class).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION));}}
  public void onActivityStopped(Activity a){if(started>0&&--started==0)LumoLock.left();}public void onActivitySaveInstanceState(Activity a,Bundle b){}
