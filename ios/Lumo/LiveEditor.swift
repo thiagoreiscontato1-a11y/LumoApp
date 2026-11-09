@@ -13,8 +13,16 @@ final class EditorEngine: ObservableObject {
     @Published private(set) var suggested = EditControls()
     /// Preset em uso, para mostrar o valor dos demais sliders.
     @Published private(set) var preset: [String: Double]?
+    /// Histogramas da foto original e da prévia atual.
+    @Published private(set) var beforeHistogram: Histogram?
+    @Published private(set) var histogram: Histogram?
+    /// Máscara de recorte (toque no histograma): realces sem detalhe em vermelho, sombras em azul.
+    @Published private(set) var clipping = false
+    @Published private(set) var beforeClipped: UIImage?
+    @Published private(set) var renderedClipped: UIImage?
 
     private var source: Develop.Source?
+    private var beforePixels: PixelImage?
     private var options = EditOptions()
     private var manual = EditControls()
     private var extra: [String: Double] = [:]
@@ -33,7 +41,10 @@ final class EditorEngine: ObservableObject {
             guard let decoded, !Task.isCancelled else { loading = false; return }
             let source = Develop.Source(decoded)
             self.source = source
+            beforePixels = decoded
             before = Self.image(decoded)
+            beforeHistogram = await Task.detached(priority: .userInitiated) { Histogram(decoded) }.value
+            if clipping { beforeClipped = await Self.clippedImage(decoded) }
             updateSuggested()
             loading = false
             render(self.manual, self.extra)
@@ -68,14 +79,46 @@ final class EditorEngine: ObservableObject {
         var o = options
         o.manual = manual.isNeutral ? nil : manual
         o.extra = extra.isEmpty ? nil : extra
+        let clip = clipping
         renderTask?.cancel()
         renderTask = Task {
-            let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                Self.image(PhotoEditor.render(source, options: o))
+            let frame = await Task.detached(priority: .userInitiated) { () -> (UIImage?, Histogram, UIImage?) in
+                let pixels = PhotoEditor.render(source, options: o)
+                return (Self.image(pixels), Histogram(pixels), clip ? Self.image(Histogram.clipping(pixels)) : nil)
             }.value
-            guard !Task.isCancelled, let image else { return }
+            guard !Task.isCancelled, let image = frame.0 else { return }
             rendered = image
+            histogram = frame.1
+            renderedClipped = frame.2
         }
+    }
+
+    /// Liga ou desliga a máscara de recorte e refaz a prévia com ela.
+    func setClipping(_ on: Bool) {
+        clipping = on
+        if !on {
+            beforeClipped = nil
+            renderedClipped = nil
+            return
+        }
+        if let beforePixels {
+            Task {
+                let image = await Self.clippedImage(beforePixels)
+                if clipping { beforeClipped = image }
+            }
+        }
+        render(manual, extra)
+    }
+
+    /// Imagem na tela: antes ou depois, com a máscara de recorte quando ligada.
+    func displayed(before showBefore: Bool) -> UIImage? {
+        if showBefore { return clipping ? (beforeClipped ?? before) : before }
+        let after = rendered ?? before
+        return clipping ? (renderedClipped ?? beforeClipped ?? after) : after
+    }
+
+    nonisolated static func clippedImage(_ p: PixelImage) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) { Self.image(Histogram.clipping(p)) }.value
     }
 
     nonisolated static func image(_ p: PixelImage) -> UIImage? {
@@ -161,7 +204,7 @@ struct LiveEditor: View {
     private var preview: some View {
         ZStack(alignment: .topLeading) {
             Color.black
-            if let image = showingBefore ? engine.before : (engine.rendered ?? engine.before) {
+            if let image = engine.displayed(before: showingBefore) {
                 Image(uiImage: image).resizable().scaledToFit()
             }
             if engine.loading { ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -177,8 +220,16 @@ struct LiveEditor: View {
         .onLongPressGesture(minimumDuration: 0.05, maximumDistance: 40, pressing: { pressing in
             showingBefore = pressing
         }, perform: {})
+        .overlay(alignment: .topTrailing) {
+            if let histogram = showingBefore ? engine.beforeHistogram : (engine.histogram ?? engine.beforeHistogram) {
+                HistogramView(histogram: histogram, clipping: engine.clipping)
+                    .frame(width: 150, height: 66)
+                    .padding(10)
+                    .onTapGesture { engine.setClipping(!engine.clipping) }
+            }
+        }
         .overlay(alignment: .bottom) {
-            Text("Segure a foto para comparar com o original")
+            Text(engine.clipping ? "Recorte: realces sem detalhe em vermelho, sombras em azul" : "Segure a foto para comparar com o original")
                 .font(.caption2).foregroundStyle(Lumo.tertiary).padding(.bottom, 6)
         }
     }
@@ -377,6 +428,66 @@ struct LiveEditor: View {
             }
             Slider(value: Binding(get: { value }, set: { set($0) }), in: range, step: step)
                 .tint(Lumo.cyan)
+        }
+    }
+}
+
+/// Histograma do editor, no estilo do Lightroom: os três canais somados (onde se sobrepõem fica cinza/branco)
+/// e triângulos de recorte nos cantos, acesos na cor dos canais recortados. Toque para ver o recorte na foto.
+struct HistogramView: View {
+    let histogram: Histogram
+    let clipping: Bool
+    static let channels: [Color] = [Color(red: 0.6, green: 0.11, blue: 0.11), Color(red: 0.11, green: 0.54, blue: 0.17), Color(red: 0.12, green: 0.31, blue: 0.66)]
+
+    var body: some View {
+        Canvas { context, size in
+            let pad: CGFloat = 6, top: CGFloat = 14
+            let w = size.width - 2 * pad, h = size.height - top - pad, bottom = size.height - pad
+            var grid = Path()
+            for i in 1..<4 {
+                let x = pad + w * CGFloat(i) / 4
+                grid.move(to: CGPoint(x: x, y: top)); grid.addLine(to: CGPoint(x: x, y: bottom))
+            }
+            context.stroke(grid, with: .color(.white.opacity(0.13)), lineWidth: 1)
+            let levels = histogram.levels()
+            context.drawLayer { layer in
+                layer.blendMode = .plusLighter
+                for c in 0..<3 {
+                    var path = Path()
+                    path.move(to: CGPoint(x: pad, y: bottom))
+                    for i in 0..<Histogram.bins {
+                        path.addLine(to: CGPoint(x: pad + w * CGFloat(i) / CGFloat(Histogram.bins - 1), y: bottom - h * CGFloat(levels[c][i])))
+                    }
+                    path.addLine(to: CGPoint(x: pad + w, y: bottom))
+                    path.closeSubpath()
+                    layer.fill(path, with: .color(Self.channels[c]))
+                }
+            }
+            triangle(context, x: pad, left: true, color: histogram.shadowWarning)
+            triangle(context, x: size.width - pad, left: false, color: histogram.highlightWarning)
+        }
+        .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(clipping ? 0.8 : 0.12), lineWidth: clipping ? 1.5 : 1))
+        .contentShape(Rectangle())
+        .accessibilityElement()
+        .accessibilityLabel(String(format: "Histograma. Realces sem detalhe %.1f%%, sombras sem detalhe %.1f%%", histogram.highlightFraction * 100, histogram.shadowFraction * 100))
+        .accessibilityHint(clipping ? "Toque para esconder o recorte" : "Toque para mostrar o recorte na foto")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// Triângulo de recorte: aceso na cor dos canais recortados, apagado (contorno) sem recorte.
+    private func triangle(_ context: GraphicsContext, x: CGFloat, left: Bool, color: UInt32) {
+        let s: CGFloat = 9, y: CGFloat = 3
+        var p = Path()
+        p.move(to: CGPoint(x: x, y: y))
+        p.addLine(to: CGPoint(x: left ? x + s : x - s, y: y))
+        p.addLine(to: CGPoint(x: x, y: y + s))
+        p.closeSubpath()
+        if color == 0 {
+            context.stroke(p, with: .color(.white.opacity(0.4)), lineWidth: 1)
+        } else {
+            if clipping { context.stroke(p, with: .color(.white), lineWidth: 2) }
+            context.fill(p, with: .color(Color(red: Double((color >> 16) & 255) / 255, green: Double((color >> 8) & 255) / 255, blue: Double(color & 255) / 255)))
         }
     }
 }

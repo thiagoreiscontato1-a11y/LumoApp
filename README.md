@@ -1,6 +1,14 @@
 # LUMO — Android 0.19.0 e iOS 0.4.0
 
 **Android 0.19.0 — relatório de falhas, chave de produção e edição mais rápida:**
+- **Editor completo e histograma.**
+  - O editor do Android ganhou os grupos do iPhone: **Luz**, **Cor** (balanço de branco, vibração, saturação,
+    mistura de cores nas 8 cores e calibração), **Efeitos** (textura, claridade, desembaçar, **vinheta** e granulação)
+    e **Detalhe** (nitidez). Cada slider mostra o valor final; o número fica azul quando foi alterado e um toque duplo
+    volta ao valor do preset. Copiar/Colar e Aplicar em lote levam também esses ajustes.
+  - **Histograma** no editor do Android e do iPhone, como o do Lightroom: canais R, G e B, triângulos de recorte
+    (sombras à esquerda, realces à direita; brancos quando os três canais recortam) e, com um toque, a máscara de
+    recorte na foto (realces sem detalhe em vermelho, sombras em azul). Mostra a etapa que está na tela.
 - **Relatório de falhas.** Quando o Lumo fecha por erro ou trava, o relatório (aparelho, versões, onde quebrou e os últimos
   passos, sem fotos, conta ou nomes de eventos) vai para o Sentry na próxima abertura. Em Menu → Ajuda →
   **Relatórios de falha** dá para compartilhar o último relatório, enviar um teste ou desligar o envio. Configuração em

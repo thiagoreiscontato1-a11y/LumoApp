@@ -5,7 +5,9 @@ import android.graphics.*;import android.media.ExifInterface;import android.util
  * Edição de fotos do Lumo: decodifica o JPEG, resolve automático + preset XMP + ajuste manual
  * e renderiza tudo de uma vez no {@link Develop} (modelo do pipeline do Lightroom).
  * O ajuste manual é um delta somado aos controles básicos do preset/automático, como mover
- * os sliders do Lightroom depois de aplicar um preset.
+ * os sliders do Lightroom depois de aplicar um preset. Os demais ajustes do editor (HSL, calibração,
+ * efeitos, detalhe) ficam em {@code extra}: chaves Camera Raw com o valor final, que substituem as do preset
+ * (mesmo formato de {@code EditOptions.extra} no iOS).
  */
 final class PhotoEditor {
  static final String[] COLORS=Develop.COLORS;
@@ -36,9 +38,14 @@ final class PhotoEditor {
  /** Automático da foto, já escalado pela intensidade das opções (vazio se desligado). */
  static JSONObject autoValues(Develop.Source source,JSONObject options){return options.optBoolean("auto",true)?scaleControls(controls(source.autoControls()),limit(options.optDouble("autoStrength",1),0,1.5)):new JSONObject();}
 
- /** Ajustes finais: preset completo com os básicos = automático + preset + delta manual. */
+ /** Preset com os ajustes extras do editor por cima (só chaves Camera Raw conhecidas). */
+ static Map<String,Double> merged(JSONObject preset,JSONObject extra){
+  Map<String,Double> m=values(preset);if(extra==null)return m;Iterator<String> it=extra.keys();
+  while(it.hasNext()){String k=it.next();double v=extra.optDouble(k,Double.NaN);if(!Double.isNaN(v)&&Develop.RANGES.containsKey(k))m.put(k,v);}return m;
+ }
+ /** Ajustes finais: preset (com os extras do editor) e os básicos = automático + preset + delta manual. */
  static Develop.Settings settings(Develop.Source source,JSONObject options){
-  JSONObject preset=options.optJSONObject("preset");Develop.Settings s=Develop.Settings.of(values(preset));
+  JSONObject preset=options.optJSONObject("preset");Develop.Settings s=Develop.Settings.of(merged(preset,options.optJSONObject("extra")));
   JSONObject base=sumControls(autoValues(source,options),presetControls(preset));
   s.setBasic(array(sumControls(base,options.optJSONObject("manual"))));return s;
  }
@@ -101,7 +108,7 @@ final class PhotoEditor {
   }catch(Exception ignored){}
  }
  /** Correção de exposição só no automático: desligada com "Correção automática" desligada e em ajuste manual. */
- static boolean exposureFix(JSONObject options){JSONObject manual=options.optJSONObject("manual");return options.optBoolean("auto",true)&&(manual==null||manual.length()==0);}
+ static boolean exposureFix(JSONObject options){JSONObject manual=options.optJSONObject("manual"),extra=options.optJSONObject("extra");return options.optBoolean("auto",true)&&(manual==null||manual.length()==0)&&(extra==null||extra.length()==0);}
  /** Rostos para a correção de exposição: {centro x, centro y, distância entre os olhos, confiança}. */
  static float[][] faces(int[] argb,int w,int h){
   int ew=w&~1;if(ew<32||h<32)return new float[0][];

@@ -306,3 +306,52 @@ final class CuratorTests: XCTestCase {
         XCTAssertEqual(Curator.measure(PixelImage(width: 8, height: 8), sensitivity: 1).score, 1)
     }
 }
+
+/// Histograma e máscara de recorte do editor (mesmos casos de HistogramTest.java).
+final class HistogramTests: XCTestCase {
+    func rgb(_ r: UInt32, _ g: UInt32, _ b: UInt32) -> UInt32 { 0xFF00_0000 | r << 16 | g << 8 | b }
+    func image(_ pixels: [UInt32]) -> PixelImage { PixelImage(width: pixels.count, height: 1, pixels: pixels) }
+
+    func testEmptyAndGray() {
+        let empty = Histogram(pixels: [])
+        XCTAssertEqual(empty.total, 0)
+        XCTAssertEqual(empty.highlightWarning, 0)
+        XCTAssertEqual(empty.shadowWarning, 0)
+        let gray = Histogram(image([UInt32](repeating: rgb(128, 128, 128), count: 1000)))
+        XCTAssertEqual(gray.total, 1000)
+        for c in 0..<3 {
+            XCTAssertEqual(gray.channels[c][128], 1000)
+            XCTAssertEqual(gray.levels()[c][128], 1, accuracy: 1e-9)
+        }
+        XCTAssertEqual(gray.highlightWarning, 0)
+        XCTAssertEqual(gray.shadowWarning, 0)
+    }
+
+    func testClippingWarningsAndLevels() {
+        let px = (0..<400).map { i in i < 300 ? rgb(255, 255, 255) : i < 350 ? rgb(0, 0, 0) : rgb(90, 140, 200) }
+        let h = Histogram(image(px))
+        XCTAssertEqual(h.highlightWarning, Histogram.white)
+        XCTAssertEqual(h.shadowWarning, Histogram.white)
+        XCTAssertEqual(h.highlightFraction, 0.75, accuracy: 1e-9)
+        XCTAssertEqual(h.shadowFraction, 0.125, accuracy: 1e-9)
+        let lv = h.levels()
+        XCTAssertEqual(lv[0][255], 1)
+        XCTAssertEqual(lv[0][0], 1)
+        XCTAssertEqual(lv[0][90], 1, "o mar de branco não achata o pico do meio")
+        XCTAssertTrue(lv.allSatisfy { $0.allSatisfy { $0 >= 0 && $0 <= 1 } })
+
+        let red = Histogram(image([UInt32](repeating: rgb(255, 0, 0), count: 50)))
+        XCTAssertEqual(red.highAll, 0)
+        XCTAssertEqual(red.highlightWarning, 0xFFFF_4040)
+        XCTAssertEqual(red.shadowWarning, 0xFF40_FFFF)
+    }
+
+    func testClippingMask() {
+        let src = image([rgb(255, 255, 255), rgb(254, 255, 254), rgb(0, 0, 0), rgb(1, 0, 1), rgb(255, 0, 0), rgb(30, 60, 90)])
+        let m = Histogram.clipping(src)
+        XCTAssertEqual(Array(m.pixels[0...1]), [Histogram.clipHigh, Histogram.clipHigh])
+        XCTAssertEqual(Array(m.pixels[2...3]), [Histogram.clipLow, Histogram.clipLow])
+        XCTAssertEqual(m.pixels[4], src.pixels[4])
+        XCTAssertEqual(m.pixels[5], src.pixels[5])
+    }
+}

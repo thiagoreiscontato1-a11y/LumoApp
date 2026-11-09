@@ -36,6 +36,15 @@ final class Develop{
   for(String c:COLORS)range(-100,100,"HueAdjustment"+c,"SaturationAdjustment"+c,"LuminanceAdjustment"+c,"GrayMixer"+c);
  }
 
+ /** Valores padrão do Lightroom diferentes de zero (chave ausente no preset), os mesmos de {@link Settings#of}. */
+ static final Map<String,Double> DEFAULTS=new HashMap<>();
+ static{
+  String[] k={"ParametricShadowSplit","ParametricMidtoneSplit","ParametricHighlightSplit","SharpenRadius","SharpenDetail","PostCropVignetteMidpoint","PostCropVignetteFeather","PostCropVignetteStyle","GrainSize","GrainFrequency"};
+  double[] v={25,50,75,1,25,50,50,1,25,50};for(int i=0;i<k.length;i++)DEFAULTS.put(k[i],v[i]);
+ }
+ /** Valor efetivo de uma chave Camera Raw no preset (padrão do Lightroom quando ausente). */
+ static double value(String key,Map<String,Double> preset){Double v=preset==null?null:preset.get(key);if(v!=null&&!v.isNaN()&&!v.isInfinite())return v;Double d=DEFAULTS.get(key);return d==null?0:d;}
+
  // ---------------------------------------------------------------- XMP
 
  /** Lê um preset .xmp do Lightroom/Camera Raw (atributos ou elementos, incluindo curvas rdf:Seq). */
