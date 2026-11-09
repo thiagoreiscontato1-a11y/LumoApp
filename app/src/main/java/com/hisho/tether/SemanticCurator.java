@@ -11,8 +11,14 @@ final class SemanticCurator{
   BitmapFactory.Options b=new BitmapFactory.Options();b.inJustDecodeBounds=true;BitmapFactory.decodeFile(file.toString(),b);if(b.outWidth<32||b.outHeight<32)return new Result(false,0,"",0);
   BitmapFactory.Options o=new BitmapFactory.Options();o.inPreferredConfig=Bitmap.Config.RGB_565;o.inSampleSize=1;while(Math.max(b.outWidth,b.outHeight)/o.inSampleSize>900)o.inSampleSize*=2;
   Bitmap src=BitmapFactory.decodeFile(file.toString(),o);if(src==null)return new Result(false,0,"",0);
+  try{return analyze(src,sensitivity);}finally{src.recycle();}
+ }
+ /** Mesma análise sobre um bitmap já reduzido (~900 px), sem decodificar o JPEG de novo. Não recicla {@code src}. */
+ static Result analyze(Bitmap src,int sensitivity){
+  if(src.getWidth()<32||src.getHeight()<32)return new Result(false,0,"",0);
   Bitmap rgb=null;try{
-   int w=src.getWidth()&~1,h=src.getHeight();if(w<2)return new Result(false,0,"",0);rgb=src.getConfig()==Bitmap.Config.RGB_565&&src.getWidth()==w?src:Bitmap.createBitmap(src,0,0,w,h).copy(Bitmap.Config.RGB_565,false);
+   int w=src.getWidth()&~1,h=src.getHeight();
+   if(src.getConfig()==Bitmap.Config.RGB_565&&src.getWidth()==w)rgb=src;else{Bitmap crop=w==src.getWidth()?src:Bitmap.createBitmap(src,0,0,w,h);rgb=crop.copy(Bitmap.Config.RGB_565,false);if(crop!=src)crop.recycle();}
    FaceDetector detector=new FaceDetector(rgb.getWidth(),rgb.getHeight(),8);FaceDetector.Face[] faces=new FaceDetector.Face[8];int n=detector.findFaces(rgb,faces);
    ArrayList<String> reasons=new ArrayList<>();int penalty=0;
    for(int i=0;i<n;i++){FaceDetector.Face f=faces[i];if(f==null)continue;PointF mid=new PointF();f.getMidPoint(mid);float eye=Math.max(1,f.eyesDistance());float left=mid.x-eye*1.7f,right=mid.x+eye*1.7f,top=mid.y-eye*1.5f,bottom=mid.y+eye*2.3f;
@@ -31,7 +37,7 @@ final class SemanticCurator{
    }
    LinkedHashSet<String> unique=new LinkedHashSet<>(reasons);String note=join(unique);boolean review=penalty>=(sensitivity==0?4:sensitivity==1?2:1);
    return new Result(review,Math.min(4,penalty),note,n);
-  }finally{if(rgb!=null&&rgb!=src)rgb.recycle();src.recycle();}
+  }finally{if(rgb!=null&&rgb!=src)rgb.recycle();}
  }
  static double eyeDarkness(Bitmap b,float cx,float cy,float eye){int y=(int)(cy-eye*.12f),x1=(int)(cx-eye*.75f),x2=(int)(cx+eye*.75f),r=Math.max(2,(int)(eye*.18f));double d1=patchDark(b,x1,y,r),d2=patchDark(b,x2,y,r);return (d1+d2)/2;}
  static double patchDark(Bitmap b,int cx,int cy,int r){long sum=0;int n=0;for(int y=Math.max(0,cy-r);y<Math.min(b.getHeight(),cy+r);y+=2)for(int x=Math.max(0,cx-r);x<Math.min(b.getWidth(),cx+r);x+=2){int c=b.getPixel(x,y);double l=.2126*((c>>16)&255)+.7152*((c>>8)&255)+.0722*(c&255);if(l<65)sum++;n++;}return n==0?0:sum/(double)n;}

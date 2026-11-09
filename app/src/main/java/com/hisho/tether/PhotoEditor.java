@@ -60,23 +60,34 @@ final class PhotoEditor {
  static Bitmap decode(File source,int edge)throws Exception{
   Bitmap bitmap=null;
   try{
+   bitmap=decodeUnrotated(source,edge);
+   int orientation=orientation(source);Matrix matrix=new Matrix();switch(orientation){case 2:matrix.setScale(-1,1);break;case 3:matrix.setRotate(180);break;case 4:matrix.setScale(1,-1);break;case 5:matrix.setRotate(90);matrix.postScale(-1,1);break;case 6:matrix.setRotate(90);break;case 7:matrix.setRotate(-90);matrix.postScale(-1,1);break;case 8:matrix.setRotate(-90);break;}
+   if(orientation>1){Bitmap rotated=Bitmap.createBitmap(bitmap,0,0,bitmap.getWidth(),bitmap.getHeight(),matrix,true);if(rotated!=bitmap)bitmap.recycle();bitmap=rotated;}
+   if(!bitmap.isMutable()){Bitmap mutable=bitmap.copy(Bitmap.Config.ARGB_8888,true);bitmap.recycle();bitmap=mutable;if(bitmap==null)throw new IOException("Memória insuficiente.");}
+   Bitmap result=bitmap;bitmap=null;return result;
+  }finally{if(bitmap!=null)bitmap.recycle();}
+ }
+ static int orientation(File source){try{return new ExifInterface(source.toString()).getAttributeInt(ExifInterface.TAG_ORIENTATION,1);}catch(Exception e){return 1;}}
+ /** JPEG decodificado com o maior lado limitado a {@code edge} (0 = original), na orientação do arquivo (sem girar). */
+ static Bitmap decodeUnrotated(File source,int edge)throws Exception{
+  Bitmap bitmap=null;
+  try{
    BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.toString(),bounds);if(bounds.outWidth<=0)throw new IOException("JPEG inválido.");
    BitmapFactory.Options decode=new BitmapFactory.Options();decode.inMutable=true;decode.inPreferredConfig=Bitmap.Config.ARGB_8888;decode.inSampleSize=1;
    if(edge>0)while(Math.max(bounds.outWidth,bounds.outHeight)/(decode.inSampleSize*2)>=edge)decode.inSampleSize*=2;
    if((long)(bounds.outWidth/decode.inSampleSize)*(bounds.outHeight/decode.inSampleSize)>32000000)throw new IOException("Foto muito grande. Escolha uma resolução reduzida em Ajustes.");
    bitmap=BitmapFactory.decodeFile(source.toString(),decode);if(bitmap==null)throw new IOException("Não foi possível abrir JPEG.");
    if(edge>0&&Math.max(bitmap.getWidth(),bitmap.getHeight())>edge){double scale=edge/(double)Math.max(bitmap.getWidth(),bitmap.getHeight());Bitmap scaled=Bitmap.createScaledBitmap(bitmap,(int)Math.round(bitmap.getWidth()*scale),(int)Math.round(bitmap.getHeight()*scale),true);if(scaled!=bitmap)bitmap.recycle();bitmap=scaled;}
-   int orientation=new ExifInterface(source.toString()).getAttributeInt(ExifInterface.TAG_ORIENTATION,1);Matrix matrix=new Matrix();switch(orientation){case 2:matrix.setScale(-1,1);break;case 3:matrix.setRotate(180);break;case 4:matrix.setScale(1,-1);break;case 5:matrix.setRotate(90);matrix.postScale(-1,1);break;case 6:matrix.setRotate(90);break;case 7:matrix.setRotate(-90);matrix.postScale(-1,1);break;case 8:matrix.setRotate(-90);break;}
-   if(orientation>1){Bitmap rotated=Bitmap.createBitmap(bitmap,0,0,bitmap.getWidth(),bitmap.getHeight(),matrix,true);if(rotated!=bitmap)bitmap.recycle();bitmap=rotated;}
-   if(!bitmap.isMutable()){Bitmap mutable=bitmap.copy(Bitmap.Config.ARGB_8888,true);bitmap.recycle();bitmap=mutable;if(bitmap==null)throw new IOException("Memória insuficiente.");}
    Bitmap result=bitmap;bitmap=null;return result;
   }finally{if(bitmap!=null)bitmap.recycle();}
  }
- /**
-  * Exporta a foto editada, por padrão em resolução original (edge 0). O motor renderiza por
-  * cima dos próprios pixels; só se a foto não couber na memória livre o lado é reduzido, e se
-  * ainda faltar memória tenta de novo com 70% do lado. EXIF da câmera é copiado para a saída.
-  */
+ /** Pixels já na orientação EXIF, copiados linha a linha (sem um segundo bitmap girado). size recebe largura e altura finais. */
+ static int[] orientedPixels(Bitmap b,int orientation,int[] size){
+  int w=b.getWidth(),h=b.getHeight();int[] out=new int[w*h];
+  if(orientation<=1||orientation>8){b.getPixels(out,0,w,0,0,w,h);size[0]=w;size[1]=h;return out;}
+  int[] row=new int[w];for(int y=0;y<h;y++){b.getPixels(row,0,w,0,y,w,1);Orientation.place(row,y,w,h,orientation,out);}
+  boolean swap=Orientation.swaps(orientation);size[0]=swap?h:w;size[1]=swap?w:h;return out;
+ }
  /** Maior lado da cópia editada escolhido em Ajustes (0 = resolução original, o padrão). */
  static int exportEdge(android.content.Context c){int res=Math.max(0,Math.min(2,c.getSharedPreferences("hisho",0).getInt("exportResolution",0)));return res==0?0:res==1?2560:1920;}
  /** Qualidade do JPEG exportado (mesma faixa do "Fine" das câmeras e do Lightroom em 95–100). */
@@ -89,22 +100,48 @@ final class PhotoEditor {
    if(!any)return;out.setAttribute(ExifInterface.TAG_ORIENTATION,String.valueOf(ExifInterface.ORIENTATION_NORMAL));out.saveAttributes();
   }catch(Exception ignored){}
  }
- static void edit(File source,File destination,JSONObject options)throws Exception{
+ /** Resultado da exportação: medições da curadoria (feitas enquanto o JPEG é gravado) e tempos de cada etapa. */
+ static final class Export{SmartCurator.Partial curation;Exception curationError;String timing="";}
+ static final java.util.concurrent.ExecutorService CURATION=java.util.concurrent.Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"lumo-curadoria");t.setDaemon(true);return t;});
+
+ /**
+  * Exporta a foto editada, por padrão em resolução original (edge 0):
+  * decodifica → pixels já orientados (sem bitmap girado) → revela por cima dos próprios pixels →
+  * grava o JPEG enquanto a curadoria mede uma cópia de ~900 px em outra thread → copia o EXIF.
+  * Só se a foto não couber na memória livre o lado é reduzido; se ainda faltar, tenta com 70% do lado.
+  */
+ static Export edit(File source,File destination,JSONObject options)throws Exception{
   BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.toString(),bounds);
   int longest=Math.max(bounds.outWidth,bounds.outHeight);Runtime rt=Runtime.getRuntime();
   int edge=Develop.fitEdge(bounds.outWidth,bounds.outHeight,options.optInt("edge",0),rt.maxMemory()-(rt.totalMemory()-rt.freeMemory()));
+  final int orientation=orientation(source),sensitivity=Math.max(0,Math.min(2,options.optInt("curationSensitivity",1)));
   for(int attempt=0;;attempt++){
-   Bitmap bitmap=null;try{
-    bitmap=decode(source,edge);Develop.Source s=source(bitmap);
-    int[] pixels=s.renderInPlace(settings(s,options));s=null;
-    bitmap.setPixels(pixels,0,bitmap.getWidth(),0,0,bitmap.getWidth(),bitmap.getHeight());pixels=null;
-    try(FileOutputStream output=new FileOutputStream(destination)){if(!bitmap.compress(Bitmap.CompressFormat.JPEG,JPEG_QUALITY,output))throw new IOException("Falha ao gerar JPEG.");output.getFD().sync();}
+   Bitmap bitmap=null,face=null;java.util.concurrent.Future<SmartCurator.Partial> curation=null;
+   try{
+    long t0=android.os.SystemClock.elapsedRealtime();
+    bitmap=decodeUnrotated(source,edge);int[] size=new int[2];int[] pixels=orientedPixels(bitmap,orientation,size);bitmap.recycle();bitmap=null;
+    long t1=android.os.SystemClock.elapsedRealtime();
+    Develop.Source s=new Develop.Source(pixels,size[0],size[1]);s.renderInPlace(settings(s,options));s=null;
+    long t2=android.os.SystemClock.elapsedRealtime();
+    bitmap=Bitmap.createBitmap(size[0],size[1],Bitmap.Config.ARGB_8888);bitmap.setPixels(pixels,0,size[0],0,0,size[0],size[1]);pixels=null;
+    face=SmartCurator.shrink(bitmap,SmartCurator.FACE_EDGE);if(face==bitmap)face=bitmap.copy(Bitmap.Config.ARGB_8888,false);
+    final Bitmap measured=face;curation=CURATION.submit(()->SmartCurator.measure(measured,sensitivity));
+    // O arquivo é temporário (vai para a galeria em seguida): sem fsync.
+    try(FileOutputStream output=new FileOutputStream(destination)){if(!bitmap.compress(Bitmap.CompressFormat.JPEG,JPEG_QUALITY,output))throw new IOException("Falha ao gerar JPEG.");}
     bitmap.recycle();bitmap=null;copyExif(source,destination);
-    return;
+    long t3=android.os.SystemClock.elapsedRealtime();
+    Export result=new Export();
+    try{result.curation=curation.get();}catch(java.util.concurrent.ExecutionException e){Throwable c=e.getCause();result.curationError=c instanceof Exception?(Exception)c:new Exception(String.valueOf(c));}
+    long t4=android.os.SystemClock.elapsedRealtime();
+    result.timing=String.format(Locale.ROOT,"abrir %.2f s · revelar %.2f s · JPEG %.2f s%s · %d×%d",(t1-t0)/1000.,(t2-t1)/1000.,(t3-t2)/1000.,t4-t3>20?String.format(Locale.ROOT," · curadoria +%.2f s",(t4-t3)/1000.):"",size[0],size[1]);
+    return result;
    }catch(OutOfMemoryError e){
     if(bitmap!=null){bitmap.recycle();bitmap=null;}if(attempt>=2||longest<=0)throw e;
     edge=Math.max(1024,(int)((edge>0?Math.min(edge,longest):longest)*.7));System.gc();
-   }finally{if(bitmap!=null)bitmap.recycle();}
+   }finally{
+    if(curation!=null)try{curation.get();}catch(Exception ignored){}
+    if(face!=null)face.recycle();if(bitmap!=null)bitmap.recycle();
+   }
   }
  }
 }

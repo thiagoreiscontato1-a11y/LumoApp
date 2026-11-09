@@ -111,9 +111,9 @@ public class CaptureService extends Service{
     File output=new File(getCacheDir(),item[0]+".jpg");
     try{
      jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);cfg.put("edge",PhotoEditor.exportEdge(this));
-     PhotoEditor.edit(new File(item[1]),output,cfg);
+     PhotoEditor.Export export=PhotoEditor.edit(new File(item[1]),output,cfg);
      boolean curate=cfg.optBoolean("curation",true);SmartCurator.Result quality;
-     try{quality=SmartCurator.analyze(output,cfg.optInt("curationSensitivity",1),jobs,item[0]);}catch(Exception e){quality=new SmartCurator.Result(true,1,"Falha na curadoria · "+e.getMessage(),"","","");}
+     try{if(export.curation==null)throw export.curationError!=null?export.curationError:new IOException("sem medições");quality=SmartCurator.finish(export.curation,cfg.optInt("curationSensitivity",1),jobs,item[0],output.length());}catch(Exception e){quality=new SmartCurator.Result(true,1,"Falha na curadoria · "+e.getMessage(),"","","");}
      jobs.setIntelligence(item[0],quality.pHash,quality.duplicateOf,quality.semantic);
      jobs.markEdited(item[0],cfg.optString("presetName",""));
      // O score é calculado sempre; a opção Curadoria controla apenas o bloqueio para Revisão.
@@ -121,7 +121,7 @@ public class CaptureService extends Service{
       jobs.setQuality(item[0],quality.score,quality.reason);Uri uri=jobs.save(output,"Sob Revisao",item[2].replace(".jpg","_REVISAO.jpg"),item[0],"edited");jobs.set(item[0],"review","error",quality.reason);jobs.history(item[0],System.currentTimeMillis(),"Revisão","Bloqueada para envio · "+quality.reason);new File(item[1]).delete();reviewed++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastCurationAt",System.currentTimeMillis()).apply();
       log("CURADORIA · SOB REVISÃO · "+item[2]+" · "+quality.reason+" · envio bloqueado");continue;
      }
-     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: nota informativa");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);jobs.history(item[0],System.currentTimeMillis(),"Aprovada","Liberada para entrega");new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastEditAt",System.currentTimeMillis()).putLong("lastCurationAt",System.currentTimeMillis()).apply();FottoSync.kick(this);log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s · nota "+quality.score+"/10 · "+jobs.pending()+" pendentes");
+     String qualityNote=quality.reason+(curate?"":" · Curadoria desligada: nota informativa");jobs.setQuality(item[0],quality.score,qualityNote);Uri uri=jobs.save(output,"Editadas",item[2].replace(".jpg","_Editada.jpg"),item[0],"edited");jobs.set(item[0],"done","error",null);jobs.history(item[0],System.currentTimeMillis(),"Aprovada","Liberada para entrega");new File(item[1]).delete();edited++;lastImage=uri.toString();getSharedPreferences("hisho",0).edit().putString("lastImage",lastImage).putLong("lastEditAt",System.currentTimeMillis()).putLong("lastCurationAt",System.currentTimeMillis()).apply();FottoSync.kick(this);log("Editada salva · "+String.format(Locale.ROOT,"%.2f",(SystemClock.elapsedRealtime()-t)/1000.)+" s ("+export.timing+") · nota "+quality.score+"/10 · "+jobs.pending()+" pendentes");
     }catch(Exception|OutOfMemoryError e){jobs.set(item[0],"error","error",e.toString());log("Falha na edição; original preservado: "+e.getMessage());}
     finally{output.delete();}
    }
