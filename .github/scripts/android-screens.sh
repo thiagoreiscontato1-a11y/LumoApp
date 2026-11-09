@@ -44,12 +44,12 @@ ls -l screenshots
 # Revelação na GPU: autoteste contra o motor Java e tempos de 12 MP (no emulador a GPU é por software).
 adb logcat -c
 start --ez lumoDemo true --ez lumoGpuTest true
-for i in $(seq 1 90); do
-  if adb logcat -d -s LUMO-GPU | grep -q "fim do teste da GPU"; then break; fi
+for i in $(seq 1 60); do
+  if timeout 20 adb logcat -d -s LUMO-GPU | grep -q "fim do teste da GPU"; then break; fi
   sleep 5
 done
 sleep 3
-adb logcat -d -s LUMO-GPU | tee screenshots/gpu.txt
+timeout 30 adb logcat -d -s LUMO-GPU | tee screenshots/gpu.txt
 if grep -q "DIVERGE" screenshots/gpu.txt; then cp screenshots/gpu.txt screenshots/gpu-diverge.txt; fi
 echo "===== LOGCAT (erros do app) ====="
 adb logcat -d -b crash | tail -120

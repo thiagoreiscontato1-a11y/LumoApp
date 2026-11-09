@@ -100,12 +100,19 @@ final class GpuDevelop{
   * na GPU e na CPU, com os tempos no logcat. Termina sempre com "fim do teste da GPU".
   */
  static void benchmark(){
+  // A tela pode abrir duas vezes no teste: um só por vez.
+  if(!benchmarking.compareAndSet(false,true))return;
   try{
    selfTest();android.util.Log.i(TAG,"status: "+status()+" · autoteste: "+testResult);
    diagnose();
-   if(disabled==null)bench();
-  }finally{android.util.Log.i(TAG,"fim do teste da GPU");}
+   // Em GPU por software (emulador) o tempo não diz nada e um desenho de 12 MP congela a tela do emulador.
+   if(disabled==null&&!software())bench();else if(disabled==null)android.util.Log.i(TAG,"bench pulado: GPU por software ("+renderer+")");
+  }finally{benchmarking.set(false);android.util.Log.i(TAG,"fim do teste da GPU");}
  }
+ private static final java.util.concurrent.atomic.AtomicBoolean benchmarking=new java.util.concurrent.atomic.AtomicBoolean();
+ /** Nome da GPU informado pelo driver (vazio antes do primeiro uso). */
+ static volatile String renderer="";
+ static boolean software(){String r=renderer.toLowerCase(Locale.ROOT);return r.contains("swiftshader")||r.contains("llvmpipe")||r.contains("softpipe")||r.contains("software");}
 
  /** Uma etapa do motor por vez, para saber qual diverge num driver (não liga nem desliga a GPU). */
  static void diagnose(){
@@ -188,7 +195,8 @@ final class GpuDevelop{
    GLES30.glGenVertexArrays(1,v,0);vao=v[0];
    // Ruído do grão: fica no contexto (não entra na lista de texturas apagadas a cada foto).
    GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT,1);noise=floats(GpuProgram.NOISE,GpuProgram.NOISE,2,GpuProgram.noise());textures.clear();check("textura de ruído");
-   android.util.Log.i(TAG,"OpenGL "+GLES30.glGetString(GLES30.GL_VERSION)+" · "+GLES30.glGetString(GLES30.GL_RENDERER)+" · textura máx "+maxTexture);
+   renderer=String.valueOf(GLES30.glGetString(GLES30.GL_RENDERER));
+   android.util.Log.i(TAG,"OpenGL "+GLES30.glGetString(GLES30.GL_VERSION)+" · "+renderer+" · textura máx "+maxTexture);
   }
   void destroy(){
    try{GLES30.glDeleteTextures(1,new int[]{noise},0);}catch(Exception ignored){}
