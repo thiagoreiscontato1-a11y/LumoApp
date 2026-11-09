@@ -54,7 +54,21 @@ registro de captura. Envie essa linha depois do primeiro teste.
 Com Java no processador do celular, 1 s em 24 MP não é alcançável. Mesmo com o motor perfeito, só abrir e gravar o JPEG de
 24 MP já levam ~0,5 a 0,8 s. Há dois caminhos.
 
-### Caminho A (recomendado): revelar na GPU do celular
+### Caminho A (recomendado, em andamento): revelar na GPU do celular
+
+**Implementado na 0.19.0** (`GpuProgram.java` e `GpuDevelop.java`):
+- **Divisão do trabalho:** a CPU calcula o que é feito uma vez por foto (campos locais, tabela de tons, LUT de cor). A GPU
+  faz o trabalho por pixel em OpenGL ES 3.0: tons e ajustes locais, LUT, nitidez em duas passadas, vinheta e grão.
+- **Autoteste:** antes da primeira foto, a mesma cena é revelada na GPU e na CPU. Se a GPU divergir, faltar OpenGL ES 3
+  ou algo falhar, tudo volta para a CPU sozinho.
+- **Ajustes:** a chave **Revelar na GPU** desliga a GPU; abaixo dela aparece o resultado do autoteste.
+- **Registro de captura:** diz qual motor revelou cada foto, por exemplo `revelar 0.21 s (GPU)`.
+- **Teste no desktop** (`tests/gpu_test.py`): roda os shaders em OpenGL por software (Mesa) e compara com o motor Java em
+  6 presets. Fica 99,9% idêntico, e o resto a 1 nível; só a nitidez extrema tem pixels isolados a até 5 níveis.
+  O CI roda esse teste e também o autoteste no emulador Android.
+- **Ainda falta:** medir no celular de verdade. O tempo da GPU no emulador não vale, porque lá ela é por software.
+
+Plano original:
 O pipeline é quase todo "por pixel", e os campos locais são grades pequenas. Isso encaixa num *fragment shader* OpenGL ES 3
 (o Android 10, mínimo do Lumo, tem ES 3.2 em praticamente todo aparelho).
 - **Tempo esperado:** revelar 24 MP em ~0,1 a 0,2 s na GPU. Com abrir e gravar o JPEG, o total fica em **~0,8 a 1,2 s**.

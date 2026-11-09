@@ -41,6 +41,16 @@ shot 12-tablet-menu 8
 adb shell wm size reset
 adb shell wm density reset
 ls -l screenshots
+# Revelação na GPU: autoteste contra o motor Java e tempos de 12 MP (no emulador a GPU é por software).
+adb logcat -c
+start --ez lumoDemo true --ez lumoGpuTest true
+for i in $(seq 1 60); do
+  if adb logcat -d -s LUMO-GPU | grep -qE "bench 12 MP rodada 1|desligada|DIVERGE|indisponível|bench falhou"; then break; fi
+  sleep 5
+done
+sleep 3
+adb logcat -d -s LUMO-GPU | tee screenshots/gpu.txt
+if grep -q "DIVERGE" screenshots/gpu.txt; then cp screenshots/gpu.txt screenshots/gpu-diverge.txt; fi
 echo "===== LOGCAT (erros do app) ====="
 adb logcat -d -b crash | tail -120
 # Se o app fechou em algum momento, guarda o log; o workflow falha depois de publicar as capturas.

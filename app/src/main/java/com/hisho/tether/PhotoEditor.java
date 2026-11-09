@@ -106,7 +106,7 @@ final class PhotoEditor {
 
  /**
   * Exporta a foto editada, por padrão em resolução original (edge 0):
-  * decodifica → pixels já orientados (sem bitmap girado) → revela por cima dos próprios pixels →
+  * decodifica → pixels já orientados (sem bitmap girado) → revela por cima dos próprios pixels (GPU, ou CPU de reserva) →
   * grava o JPEG enquanto a curadoria mede uma cópia de ~900 px em outra thread → copia o EXIF.
   * Só se a foto não couber na memória livre o lado é reduzido; se ainda faltar, tenta com 70% do lado.
   */
@@ -121,7 +121,10 @@ final class PhotoEditor {
     long t0=android.os.SystemClock.elapsedRealtime();
     bitmap=decodeUnrotated(source,edge);int[] size=new int[2];int[] pixels=orientedPixels(bitmap,orientation,size);bitmap.recycle();bitmap=null;
     long t1=android.os.SystemClock.elapsedRealtime();
-    Develop.Source s=new Develop.Source(pixels,size[0],size[1]);s.renderInPlace(settings(s,options));s=null;
+    Develop.Source s=new Develop.Source(pixels,size[0],size[1]);Develop.Settings developSettings=settings(s,options);
+    StringBuilder why=new StringBuilder();boolean gpu=GpuDevelop.render(s,developSettings,why);
+    if(!gpu)s.renderInPlace(developSettings);s=null;
+    String engine=gpu?"GPU":"CPU"+(why.length()>0&&!"foto pequena".contentEquals(why)?" · "+why:"");
     long t2=android.os.SystemClock.elapsedRealtime();
     bitmap=Bitmap.createBitmap(size[0],size[1],Bitmap.Config.ARGB_8888);bitmap.setPixels(pixels,0,size[0],0,0,size[0],size[1]);pixels=null;
     face=SmartCurator.shrink(bitmap,SmartCurator.FACE_EDGE);if(face==bitmap)face=bitmap.copy(Bitmap.Config.ARGB_8888,false);
@@ -133,8 +136,11 @@ final class PhotoEditor {
     Export result=new Export();
     try{result.curation=curation.get();}catch(java.util.concurrent.ExecutionException e){Throwable c=e.getCause();result.curationError=c instanceof Exception?(Exception)c:new Exception(String.valueOf(c));}
     long t4=android.os.SystemClock.elapsedRealtime();
-    result.timing=String.format(Locale.ROOT,"abrir %.2f s · revelar %.2f s · JPEG %.2f s%s · %d×%d",(t1-t0)/1000.,(t2-t1)/1000.,(t3-t2)/1000.,t4-t3>20?String.format(Locale.ROOT," · curadoria +%.2f s",(t4-t3)/1000.):"",size[0],size[1]);
+    result.timing=String.format(Locale.ROOT,"abrir %.2f s · revelar %.2f s (%s) · JPEG %.2f s%s · %d×%d",(t1-t0)/1000.,(t2-t1)/1000.,engine,(t3-t2)/1000.,t4-t3>20?String.format(Locale.ROOT," · curadoria +%.2f s",(t4-t3)/1000.):"",size[0],size[1]);
     return result;
+   }catch(GpuDevelop.Dirty e){
+    // A GPU falhou depois de escrever parte dos pixels (e já foi desligada): abre a foto de novo e revela na CPU.
+    attempt--;
    }catch(OutOfMemoryError e){
     if(bitmap!=null){bitmap.recycle();bitmap=null;}if(attempt>=2||longest<=0)throw e;
     edge=Math.max(1024,(int)((edge>0?Math.min(edge,longest):longest)*.7));System.gc();

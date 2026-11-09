@@ -37,10 +37,19 @@ jobs:
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: OpenGL por software (Mesa) para o teste dos shaders
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libegl1 libegl-mesa0 libgl1-mesa-dri
+          python -m pip install -q moderngl numpy
       - name: Testes de contrato
+        env:
+          GPU_TEST_REQUIRED: '1'
         run: |
           set -e
-          for t in tests/*.py; do echo "== $t"; python3 "$t"; done
+          for t in tests/*.py; do echo "== $t"; python "$t"; done
       # Chave de produção e Sentry vêm dos Secrets (veja ASSINATURA.md). Sem eles, o build usa a chave de TESTE.
       - name: Compilar APK
         env:
@@ -112,6 +121,11 @@ jobs:
           git add -A
           git -c user.name="github-actions" -c user.email="actions@github.com" commit -q -m "Capturas Android de ${GITHUB_SHA::7}"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci/android-screenshots
+      - name: Revelação na GPU (emulador)
+        run: |
+          cat screenshots/gpu.txt 2>/dev/null || echo "sem registro da GPU"
+          { echo "## Revelação na GPU (emulador)"; echo '```'; cat screenshots/gpu.txt 2>/dev/null || echo "sem registro"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f screenshots/gpu-diverge.txt ]; then echo "::error::A revelação na GPU divergiu do motor Java (veja acima)."; exit 1; fi
       - name: Falhar se o app fechou no emulador
         run: |
           if [ -s screenshots/crash.txt ]; then

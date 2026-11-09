@@ -14,6 +14,11 @@
   a curadoria roda junto com a gravação do JPEG e a foto não é mais decodificada inteira só para o hash. O registro de
   captura mostra o tempo de cada etapa. Diagnóstico e caminhos para chegar a ~1 s (GPU ou servidor) em
   [`EDICAO-DESEMPENHO.md`](EDICAO-DESEMPENHO.md).
+- **Revelação na GPU (OpenGL ES 3.0).**
+  - O trabalho por pixel roda na GPU do celular; o motor Java fica como reserva.
+  - Um autoteste compara as duas antes da primeira foto, e qualquer falha ou divergência volta para a CPU sozinha.
+  - Em Ajustes, a chave **Revelar na GPU** desliga a GPU e mostra o resultado do autoteste.
+  - O registro de captura mostra qual motor revelou cada foto.
 
 **Android 0.18.0 — Galeria online para os convidados:** em Entrega → Galeria online, o Lumo cria uma galeria para o evento
 e publica cada foto aprovada, em paralelo ao Fotto (que continua igual). Os convidados abrem um link ou QR code, veem as fotos,

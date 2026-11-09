@@ -7,7 +7,7 @@ public class LumoApplication extends Application implements Application.Activity
    boolean redirect=false;for(Activity a:new ArrayList<>(activities))if(!(a instanceof DemoActivationActivity)){redirect=true;a.finish();}
    if(redirect)startActivity(new Intent(LumoApplication.this,DemoActivationActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
   }if(!activities.isEmpty())clock.postDelayed(this,1000);}};
- public void onCreate(){super.onCreate();CrashReporter.install(this);registerActivityLifecycleCallbacks(this);}
+ public void onCreate(){super.onCreate();CrashReporter.install(this);GpuDevelop.userEnabled=getSharedPreferences("hisho",0).getBoolean("gpuRender",true);registerActivityLifecycleCallbacks(this);}
  public void onActivityCreated(Activity a,Bundle b){activities.add(a);CrashReporter.note("tela · "+a.getClass().getSimpleName()+(b==null?" aberta":" recriada"));}
  public void onActivityResumed(Activity a){clock.removeCallbacks(check);clock.post(check);}
  public void onActivityDestroyed(Activity a){activities.remove(a);if(activities.isEmpty())clock.removeCallbacks(check);}

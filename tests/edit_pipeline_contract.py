@@ -38,6 +38,14 @@ for token in ("LUT_MIN_PIXELS=2_000_000", "lut=(curves!=null||color)&&!identity&
               "parallel(h,(y0,y1)->{for(int y=y0;y<y1;y++){int row=y*w;", "parallel(gh,(g0,g1)->", "fx.noiseRow(y,nz)", "toneF.row(y,fT)"):
     need(develop, token, "Develop")
 
+# GPU: tenta primeiro e volta para a CPU; falha no meio da leitura refaz a foto na CPU.
+for token in ("boolean gpu=GpuDevelop.render(s,developSettings,why);", "if(!gpu)s.renderInPlace(developSettings);", "catch(GpuDevelop.Dirty e)"):
+    need(edit, token, "PhotoEditor.edit")
+gpu = (SRC / "GpuDevelop.java").read_text(encoding="utf-8")
+for token in ("selfTest();", "if(p1<99||p2<99.9){disable(", "if(wrote[0])throw new Dirty(c);", "throw new Unsupported(\"foto maior que a textura da GPU",
+              "GLES30.glUniform1i(loc,i);", "check(\"primeira faixa\");"):
+    need(gpu, token, "GpuDevelop")
+
 if errors:
     print("\n".join(errors)); sys.exit(1)
 print("contrato da exportação rápida ok")

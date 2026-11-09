@@ -9,7 +9,7 @@ public class CaptureService extends Service{
  private volatile boolean abort=false,finish=false,usbFinished=true;private Thread usbThread,editThread;private Jobs jobs;private PowerManager.WakeLock wake;
  private final Object originalLock=new Object();private final StringBuilder logs=new StringBuilder();
  public IBinder onBind(Intent i){return null;}
- public void onCreate(){super.onCreate();active=this;IntentFilter filter=new IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED);if(Build.VERSION.SDK_INT>=33)registerReceiver(detach,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(detach,filter);detachRegistered=true;jobs=new Jobs(this);NotificationManager n=getSystemService(NotificationManager.class);n.createNotificationChannel(new NotificationChannel("capture","Captura e edição",NotificationManager.IMPORTANCE_LOW));wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"LUMO:Capture");}
+ public void onCreate(){super.onCreate();active=this;GpuDevelop.warmUp();IntentFilter filter=new IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED);if(Build.VERSION.SDK_INT>=33)registerReceiver(detach,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(detach,filter);detachRegistered=true;jobs=new Jobs(this);NotificationManager n=getSystemService(NotificationManager.class);n.createNotificationChannel(new NotificationChannel("capture","Captura e edição",NotificationManager.IMPORTANCE_LOW));wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"LUMO:Capture");}
  public int onStartCommand(Intent intent,int flags,int startId){
   if(!DemoLicense.allowed(this)){stopSelf();return START_NOT_STICKY;}
   if(intent==null){stopSelf();return START_NOT_STICKY;}
