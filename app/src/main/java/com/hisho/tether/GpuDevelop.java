@@ -95,10 +95,47 @@ final class GpuDevelop{
   }
  }
 
- /** Para o CI: autoteste e uma revelação de 12 MP na GPU e na CPU, com os tempos no logcat. */
+ /**
+  * Para o CI: autoteste, diagnóstico por etapa (mesmo com a GPU desligada pelo autoteste) e uma revelação de 12 MP
+  * na GPU e na CPU, com os tempos no logcat. Termina sempre com "fim do teste da GPU".
+  */
  static void benchmark(){
-  selfTest();android.util.Log.i(TAG,"status: "+status()+" · autoteste: "+testResult);
-  if(disabled!=null)return;
+  try{
+   selfTest();android.util.Log.i(TAG,"status: "+status()+" · autoteste: "+testResult);
+   diagnose();
+   if(disabled==null)bench();
+  }finally{android.util.Log.i(TAG,"fim do teste da GPU");}
+ }
+
+ /** Uma etapa do motor por vez, para saber qual diverge num driver (não liga nem desliga a GPU). */
+ static void diagnose(){
+  Object[][] cases={
+   {"base (exposição)","Exposure2012",.3},
+   {"curva de tons","Contrast2012",40,"Blacks2012",-30},
+   {"realces e brancos","Highlights2012",-80,"Whites2012",40,"Exposure2012",.5},
+   {"sombras (campo local)","Shadows2012",70},
+   {"claridade","Clarity2012",50},
+   {"textura","Texture",50},
+   {"dehaze","Dehaze",40},
+   {"cor (LUT)","Vibrance",40,"SaturationAdjustmentBlue",-40,"SplitToningShadowSaturation",30,"SplitToningShadowHue",210},
+   {"nitidez","Sharpness",80},
+   {"vinheta","PostCropVignetteAmount",-40},
+   {"grão","GrainAmount",40},
+  };
+  int w=1800,h=1200;int[] scene=scene(w,h);
+  for(Object[] c:cases){
+   try{Map<String,Double> m=new HashMap<>();for(int i=1;i<c.length;i+=2)m.put((String)c[i],((Number)c[i+1]).doubleValue());Develop.Settings s=Develop.Settings.of(m);
+    int[] cpu=new Develop.Source(scene.clone(),w,h).renderInPlace(s);Develop.Source g=new Develop.Source(scene.clone(),w,h);
+    GpuProgram.Inputs in=new GpuProgram.Inputs(new Develop.Plan(g,s));final int[] px=g.px;
+    GL.submit(()->{if(state==null)state=new State();state.run(in,px,new boolean[1]);return null;}).get(120,TimeUnit.SECONDS);
+    int worst=0;long d1=0,d2=0;double bias=0;
+    for(int i=0;i<cpu.length;i++){int a=cpu[i],b=px[i],d=0;for(int sh=0;sh<=16;sh+=8){int dd=((b>>sh)&255)-((a>>sh)&255);d=Math.max(d,Math.abs(dd));bias+=dd;}worst=Math.max(worst,d);if(d<=1)d1++;if(d<=2)d2++;}
+    android.util.Log.i(TAG,String.format(Locale.ROOT,"diag %-22s máx %d · ≤1 %.2f%% · ≤2 %.2f%% · desvio médio %+.3f",c[0],worst,d1*100./cpu.length,d2*100./cpu.length,bias/(3.*cpu.length)));
+   }catch(Throwable e){android.util.Log.e(TAG,"diag "+c[0]+" falhou: "+e);}
+  }
+ }
+
+ static void bench(){
   try{
    // 12 MP: cabe na memória do emulador com as duas versões lado a lado.
    int w=4000,h=3000;int[] scene=scene(w,h);Develop.Settings s=Develop.Settings.of(testPreset());

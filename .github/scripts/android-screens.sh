@@ -44,8 +44,8 @@ ls -l screenshots
 # Revelação na GPU: autoteste contra o motor Java e tempos de 12 MP (no emulador a GPU é por software).
 adb logcat -c
 start --ez lumoDemo true --ez lumoGpuTest true
-for i in $(seq 1 60); do
-  if adb logcat -d -s LUMO-GPU | grep -qE "bench 12 MP rodada 1|desligada|DIVERGE|indisponível|bench falhou"; then break; fi
+for i in $(seq 1 90); do
+  if adb logcat -d -s LUMO-GPU | grep -q "fim do teste da GPU"; then break; fi
   sleep 5
 done
 sleep 3
