@@ -14,6 +14,14 @@
   a curadoria roda junto com a gravação do JPEG e a foto não é mais decodificada inteira só para o hash. O registro de
   captura mostra o tempo de cada etapa. Diagnóstico e caminhos para chegar a ~1 s (GPU ou servidor) em
   [`EDICAO-DESEMPENHO.md`](EDICAO-DESEMPENHO.md).
+- **Curadoria que corrige em vez de recusar.**
+  - **Clara ou escura demais depois do preset:** a exposição é ajustada numa prévia antes de revelar. Só mexe quando o
+    rosto estoura, escurece demais ou uma área grande perde detalhe; preset claro de propósito continua claro.
+  - **Vai para Revisão** só o que a edição não conserta: desfocada, rosto principal cortado na lateral ou embaixo, e
+    foto quase preta ou toda branca. A nitidez é medida na foto original, região por região, então retrato com fundo
+    desfocado passa.
+  - **Deixam de reprovar:** contraste baixo (presets matte), cores fortes, assunto fora do centro e brilho médio.
+    Também saíram os palpites de olhos fechados, rosto virado e expressão, e duplicata reprova só na sensibilidade Alta.
 - **Revelação na GPU (OpenGL ES 3.0).**
   - O trabalho por pixel roda na GPU do celular; o motor Java fica como reserva.
   - Um autoteste compara as duas antes da primeira foto, e qualquer falha ou divergência volta para a CPU sozinha.

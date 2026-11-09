@@ -46,6 +46,23 @@ for token in ("selfTest();", "if(p1<99||p2<99.9){disable(", "if(wrote[0])throw n
               "GLES30.glUniform1i(loc,i);", "check(\"primeira faixa\");"):
     need(gpu, token, "GpuDevelop")
 
+# Curadoria: nitidez medida na original antes de revelar; exposição corrigida antes de revelar; só reprova o que não tem conserto.
+for token in ("PhotoCheck.shrink(pixels,size[0],size[1],PhotoCheck.DETAIL_EDGE,dsize)", "PhotoCheck.fixExposure(small,psize[0],psize[1],developSettings,PhotoEditor::faces)"):
+    need(edit, token, "PhotoEditor.edit")
+if edit.index("PhotoCheck.shrink(pixels") > edit.index("GpuDevelop.render(") or edit.index("fixExposure(") > edit.index("GpuDevelop.render("):
+    errors.append("nitidez e exposição precisam ser medidas antes de revelar")
+semantic = (SRC / "SemanticCurator.java").read_text(encoding="utf-8")
+for bad in ("eyeDarkness", "faceSideAsymmetry", "mouthAsymmetry", "Possível olhos fechados"):
+    if bad in semantic:
+        errors.append(f"SemanticCurator voltou a usar a heurística retirada: {bad}")
+need(semantic, "PhotoCheck.cutFraction(", "SemanticCurator")
+finish = smart[smart.index("static Result finish("):]
+finish = finish[:finish.index("\n }\n")]
+for bad in ("tech.review", "tech.reason"):
+    if bad in finish:
+        errors.append(f"SmartCurator.finish não pode reprovar por luz/contraste/cor: {bad}")
+need(finish, "if(s>=2)problems.add(\"Possível duplicata de outra foto\");else notes.add(", "SmartCurator.finish")
+
 if errors:
     print("\n".join(errors)); sys.exit(1)
 print("contrato da exportação rápida ok")

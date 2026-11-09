@@ -113,7 +113,7 @@ public class CaptureService extends Service{
      jobs.set(item[0],"editing",null,null);long t=SystemClock.elapsedRealtime();JSONObject cfg=new JSONObject(item[3]);cfg.put("edge",PhotoEditor.exportEdge(this));
      PhotoEditor.Export export=PhotoEditor.edit(new File(item[1]),output,cfg);
      boolean curate=cfg.optBoolean("curation",true);SmartCurator.Result quality;
-     try{if(export.curation==null)throw export.curationError!=null?export.curationError:new IOException("sem medições");quality=SmartCurator.finish(export.curation,cfg.optInt("curationSensitivity",1),jobs,item[0],output.length());}catch(Exception e){quality=new SmartCurator.Result(true,1,"Falha na curadoria · "+e.getMessage(),"","","");}
+     try{if(export.curation==null)throw export.curationError!=null?export.curationError:new IOException("sem medições");quality=SmartCurator.finish(export.curation,export.sharpness,export.exposure,cfg.optInt("curationSensitivity",1),jobs,item[0],output.length());}catch(Exception e){quality=new SmartCurator.Result(true,1,"Falha na curadoria · "+e.getMessage(),"","","");}
      jobs.setIntelligence(item[0],quality.pHash,quality.duplicateOf,quality.semantic);
      jobs.markEdited(item[0],cfg.optString("presetName",""));
      // O score é calculado sempre; a opção Curadoria controla apenas o bloqueio para Revisão.

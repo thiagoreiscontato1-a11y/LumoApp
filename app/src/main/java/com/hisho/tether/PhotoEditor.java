@@ -100,8 +100,18 @@ final class PhotoEditor {
    if(!any)return;out.setAttribute(ExifInterface.TAG_ORIENTATION,String.valueOf(ExifInterface.ORIENTATION_NORMAL));out.saveAttributes();
   }catch(Exception ignored){}
  }
+ /** Correção de exposição só no automático: desligada com "Correção automática" desligada e em ajuste manual. */
+ static boolean exposureFix(JSONObject options){JSONObject manual=options.optJSONObject("manual");return options.optBoolean("auto",true)&&(manual==null||manual.length()==0);}
+ /** Rostos para a correção de exposição: {centro x, centro y, distância entre os olhos, confiança}. */
+ static float[][] faces(int[] argb,int w,int h){
+  int ew=w&~1;if(ew<32||h<32)return new float[0][];
+  Bitmap b=Bitmap.createBitmap(argb,0,w,ew,h,Bitmap.Config.RGB_565);
+  try{android.media.FaceDetector.Face[] found=new android.media.FaceDetector.Face[8];int n=new android.media.FaceDetector(ew,h,8).findFaces(b,found);
+   float[][] out=new float[n][];for(int i=0;i<n;i++){PointF mid=new PointF();found[i].getMidPoint(mid);out[i]=new float[]{mid.x,mid.y,found[i].eyesDistance(),found[i].confidence()};}return out;
+  }finally{b.recycle();}
+ }
  /** Resultado da exportação: medições da curadoria (feitas enquanto o JPEG é gravado) e tempos de cada etapa. */
- static final class Export{SmartCurator.Partial curation;Exception curationError;String timing="";}
+ static final class Export{SmartCurator.Partial curation;Exception curationError;PhotoCheck.Sharpness sharpness;PhotoCheck.Exposure exposure;String timing="";}
  static final java.util.concurrent.ExecutorService CURATION=java.util.concurrent.Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"lumo-curadoria");t.setDaemon(true);return t;});
 
  /**
@@ -116,12 +126,18 @@ final class PhotoEditor {
   int edge=Develop.fitEdge(bounds.outWidth,bounds.outHeight,options.optInt("edge",0),rt.maxMemory()-(rt.totalMemory()-rt.freeMemory()));
   final int orientation=orientation(source),sensitivity=Math.max(0,Math.min(2,options.optInt("curationSensitivity",1)));
   for(int attempt=0;;attempt++){
-   Bitmap bitmap=null,face=null;java.util.concurrent.Future<SmartCurator.Partial> curation=null;
+   Bitmap bitmap=null,face=null;java.util.concurrent.Future<SmartCurator.Partial> curation=null;java.util.concurrent.Future<PhotoCheck.Sharpness> sharp=null;
    try{
     long t0=android.os.SystemClock.elapsedRealtime();
     bitmap=decodeUnrotated(source,edge);int[] size=new int[2];int[] pixels=orientedPixels(bitmap,orientation,size);bitmap.recycle();bitmap=null;
     long t1=android.os.SystemClock.elapsedRealtime();
+    // Nitidez medida na ORIGINAL (~1600 px), em paralelo com a revelação: preset, nitidez e grão não enganam.
+    int[] dsize=new int[2];final int[] detail=PhotoCheck.shrink(pixels,size[0],size[1],PhotoCheck.DETAIL_EDGE,dsize);final int dw=dsize[0],dh=dsize[1];
+    sharp=CURATION.submit(()->PhotoCheck.sharpness(detail,dw,dh));
     Develop.Source s=new Develop.Source(pixels,size[0],size[1]);Develop.Settings developSettings=settings(s,options);
+    // Exposição conferida na foto já com o preset (prévia de 512 px): clara ou escura demais é corrigida aqui.
+    PhotoCheck.Exposure exposure=new PhotoCheck.Exposure();
+    if(exposureFix(options)){int[] psize=new int[2];int[] small=PhotoCheck.shrink(detail,dw,dh,PhotoCheck.PREVIEW_EDGE,psize);exposure=PhotoCheck.fixExposure(small,psize[0],psize[1],developSettings,PhotoEditor::faces);}
     StringBuilder why=new StringBuilder();boolean gpu=GpuDevelop.render(s,developSettings,why);
     if(!gpu)s.renderInPlace(developSettings);s=null;
     String engine=gpu?"GPU":"CPU"+(why.length()>0&&!"foto pequena".contentEquals(why)?" · "+why:"");
@@ -133,10 +149,11 @@ final class PhotoEditor {
     try(FileOutputStream output=new FileOutputStream(destination)){if(!bitmap.compress(Bitmap.CompressFormat.JPEG,JPEG_QUALITY,output))throw new IOException("Falha ao gerar JPEG.");}
     bitmap.recycle();bitmap=null;copyExif(source,destination);
     long t3=android.os.SystemClock.elapsedRealtime();
-    Export result=new Export();
+    Export result=new Export();result.exposure=exposure;
     try{result.curation=curation.get();}catch(java.util.concurrent.ExecutionException e){Throwable c=e.getCause();result.curationError=c instanceof Exception?(Exception)c:new Exception(String.valueOf(c));}
+    try{result.sharpness=sharp.get();}catch(java.util.concurrent.ExecutionException ignored){}
     long t4=android.os.SystemClock.elapsedRealtime();
-    result.timing=String.format(Locale.ROOT,"abrir %.2f s · revelar %.2f s (%s) · JPEG %.2f s%s · %d×%d",(t1-t0)/1000.,(t2-t1)/1000.,engine,(t3-t2)/1000.,t4-t3>20?String.format(Locale.ROOT," · curadoria +%.2f s",(t4-t3)/1000.):"",size[0],size[1]);
+    result.timing=String.format(Locale.ROOT,"abrir %.2f s · revelar %.2f s (%s) · JPEG %.2f s%s%s · %d×%d",(t1-t0)/1000.,(t2-t1)/1000.,engine,(t3-t2)/1000.,t4-t3>20?String.format(Locale.ROOT," · curadoria +%.2f s",(t4-t3)/1000.):"",exposure.ev!=0?String.format(Locale.ROOT," · exposição %+.2f EV",exposure.ev):"",size[0],size[1]);
     return result;
    }catch(GpuDevelop.Dirty e){
     // A GPU falhou depois de escrever parte dos pixels (e já foi desligada): abre a foto de novo e revela na CPU.
@@ -146,6 +163,7 @@ final class PhotoEditor {
     edge=Math.max(1024,(int)((edge>0?Math.min(edge,longest):longest)*.7));System.gc();
    }finally{
     if(curation!=null)try{curation.get();}catch(Exception ignored){}
+    if(sharp!=null)try{sharp.get();}catch(Exception ignored){}
     if(face!=null)face.recycle();if(bitmap!=null)bitmap.recycle();
    }
   }
