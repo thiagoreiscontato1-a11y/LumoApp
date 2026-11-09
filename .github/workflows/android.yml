@@ -41,21 +41,41 @@ jobs:
         run: |
           set -e
           for t in tests/*.py; do echo "== $t"; python3 "$t"; done
+      # Chave de produção e Sentry vêm dos Secrets (veja ASSINATURA.md). Sem eles, o build usa a chave de TESTE.
       - name: Compilar APK
-        run: python3 build.py
+        env:
+          LUMO_KEYSTORE_BASE64: ${{ secrets.LUMO_KEYSTORE_BASE64 }}
+          LUMO_KEYSTORE_PASSWORD: ${{ secrets.LUMO_KEYSTORE_PASSWORD }}
+          LUMO_KEY_ALIAS: ${{ secrets.LUMO_KEY_ALIAS }}
+          LUMO_KEY_PASSWORD: ${{ secrets.LUMO_KEY_PASSWORD }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          set -e
+          python3 build.py
+          LUMO_DEMO=1 python3 build.py
+          if [ -n "$LUMO_KEYSTORE_BASE64" ]; then echo "LUMO_SIGNING=producao" >> "$GITHUB_ENV"; else
+            echo "LUMO_SIGNING=teste" >> "$GITHUB_ENV"
+            echo "::warning::APK assinado com a chave de TESTE. Cadastre LUMO_KEYSTORE_BASE64, LUMO_KEYSTORE_PASSWORD e LUMO_KEY_ALIAS (veja ASSINATURA.md) antes de distribuir a clientes."
+          fi
+          [ -n "$SENTRY_DSN" ] || echo "::notice::SENTRY_DSN não cadastrado: os relatórios de falha ficam só no aparelho (Menu → Relatórios de falha → Compartilhar)."
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: Lumo-Android
-          path: Lumo.apk
+          path: |
+            Lumo.apk
+            Lumo-Demo.apk
           if-no-files-found: error
       - name: Publicar no release lumo-latest (main)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view lumo-latest >/dev/null 2>&1 || gh release create lumo-latest --prerelease --title "Lumo · última versão" --notes "Builds automáticos da main: Lumo.apk (Android, assinado com a chave de teste) e Lumo-iOS-unsigned.ipa (instalar com Sideloadly/AltStore)."
-          gh release upload lumo-latest Lumo.apk --clobber
+          if [ "$LUMO_SIGNING" = producao ]; then key="assinados com a chave de produção"; else key="assinados com a chave de TESTE (não distribuir a clientes)"; fi
+          notes="Builds automáticos da main: Lumo.apk e Lumo-Demo.apk (Android, $key) e Lumo-iOS-unsigned.ipa (instalar com Sideloadly/AltStore)."
+          gh release view lumo-latest >/dev/null 2>&1 || gh release create lumo-latest --prerelease --title "Lumo · última versão" --notes "$notes"
+          gh release upload lumo-latest Lumo.apk Lumo-Demo.apk --clobber
+          gh release edit lumo-latest --notes "$notes"
 
   screenshots:
     name: Capturas no emulador

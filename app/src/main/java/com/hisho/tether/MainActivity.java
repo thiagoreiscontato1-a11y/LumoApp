@@ -388,10 +388,32 @@ public class MainActivity extends Activity {
    .item("heart",SUCCESS,"Saúde do fluxo","Câmera, bateria, espaço, filas e Fotto",this::showHealthPanel)
    .item("bell",CYAN,"Testar alarme de desconexão","Toca o alerta usado quando a câmera cai",()->DisconnectAlert.test(MainActivity.this))
    .item("help",CYAN,"Tour do Lumo","Rever a apresentação passo a passo",()->showTour(0))
+   .item("warning",CrashReporter.pending(this)>0?WARN:CYAN,"Relatórios de falha",crashSubtitle(),this::showCrashReports)
    .section("Conta")
    .item("lock",lockOn?SUCCESS:CYAN,lockOn?"Desligar bloqueio com digital":"Bloquear com digital",lockOn?"Ligado · pede a digital ao abrir e após 5 min fora":"Pede a digital ao abrir o Lumo",this::toggleBiometricLock);
   // APK Demo sem conta: não há do que sair (a tela de entrada mandaria de volta para cá).
   if(!(DemoLicense.isDemo(this)&&FottoApi.token(this).isEmpty()))sheet.item("person",DANGER,LumoSession.demo(this)?"Sair do modo demonstração":"Sair da conta Fotto",account.isEmpty()?"Volta para a tela de entrada":account,this::confirmSignOut);
+  sheet.show();
+ }
+
+ String crashSubtitle(){
+  if(!CrashReporter.enabled(this))return "Envio desligado · o último relatório fica no aparelho";
+  if(!CrashReporter.configured(this))return "Guardados no aparelho para compartilhar";
+  int n=CrashReporter.pending(this);return n>0?(n==1?"1 relatório aguardando envio":n+" relatórios aguardando envio"):"Ligado · enviado quando o Lumo fecha por erro";
+ }
+
+ /** Relatórios de falha: o que é enviado, ligar/desligar, compartilhar o último e testar o envio. */
+ void showCrashReports(){
+  boolean on=CrashReporter.enabled(this),configured=CrashReporter.configured(this);java.io.File last=CrashReporter.lastReport(this);
+  LumoSheet sheet=new LumoSheet(this,"Relatórios de falha",last.exists()?"Último: "+java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(new java.util.Date(last.lastModified())):"Nenhuma falha registrada")
+   .text("Quando o Lumo fecha por erro ou trava, ele guarda um relatório técnico: modelo do aparelho, versões do Android e do Lumo, onde o erro aconteceu e os últimos passos do app. Nunca entram fotos, a conta ou a senha do Fotto, nomes de eventos ou e-mails.");
+  if(!configured)sheet.banner("info",CYAN,"Esta versão não envia relatórios sozinha. Use Compartilhar para mandar o último ao desenvolvedor.");
+  else if(!on)sheet.banner("warning",WARN,"Envio desligado: os relatórios ficam só neste aparelho.");
+  if(last.exists())sheet.item("share",CYAN,"Compartilhar último relatório","Texto para WhatsApp ou e-mail",()->{try{String text=CrashReporter.readAll(new java.io.FileInputStream(last),200*1024);
+   startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT,"Relatório de falha do Lumo").putExtra(Intent.EXTRA_TEXT,text),"Compartilhar relatório"));}catch(Exception e){message("Não foi possível abrir o relatório.");}});
+  if(configured&&on)sheet.item("upload",CYAN,"Enviar relatório de teste","Confere se os relatórios estão chegando",()->{message("Enviando relatório de teste…");
+   CrashReporter.sendTest(MainActivity.this,()->message(CrashReporter.pending(MainActivity.this)==0?"Relatório de teste enviado.":"Sem conexão com o servidor de relatórios. Ele será enviado depois."));});
+  if(configured)sheet.item(on?"close":"check",on?DANGER:SUCCESS,on?"Desligar envio automático":"Ligar envio automático",on?"Os relatórios passam a ficar só no aparelho":"Envia na próxima abertura do Lumo",()->{CrashReporter.setEnabled(MainActivity.this,!on);message(on?"Envio de relatórios desligado.":"Envio de relatórios ligado.");});
   sheet.show();
  }
 

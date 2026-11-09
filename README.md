@@ -1,4 +1,14 @@
-# LUMO — Android 0.18.0 e iOS 0.4.0
+# LUMO — Android 0.19.0 e iOS 0.4.0
+
+**Android 0.19.0 — relatório de falhas e chave de produção:**
+- **Relatório de falhas.** Quando o Lumo fecha por erro ou trava, o relatório (aparelho, versões, onde quebrou e os últimos
+  passos, sem fotos, conta ou nomes de eventos) vai para o Sentry na próxima abertura. Em Menu → Ajuda →
+  **Relatórios de falha** dá para compartilhar o último relatório, enviar um teste ou desligar o envio. Configuração em
+  [`RELATORIOS-DE-FALHA.md`](RELATORIOS-DE-FALHA.md).
+- **Chave de produção.** O APK passa a ser assinado com uma chave só sua, guardada nos Secrets do GitHub. Sem ela, o build
+  continua usando a chave de teste e avisa. Passo a passo em [`ASSINATURA.md`](ASSINATURA.md). Atenção: na primeira
+  instalação com a chave nova é preciso desinstalar a versão de teste.
+- **Lumo-Demo.apk.** O release `lumo-latest` também traz o `Lumo-Demo.apk`.
 
 **Android 0.18.0 — Galeria online para os convidados:** em Entrega → Galeria online, o Lumo cria uma galeria para o evento
 e publica cada foto aprovada, em paralelo ao Fotto (que continua igual). Os convidados abrem um link ou QR code, veem as fotos,
