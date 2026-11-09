@@ -374,7 +374,9 @@ public enum Develop {
         let a = hash(x, y, seed), b = hash(x &+ 1, y, seed), c = hash(x, y &+ 1, seed), d = hash(x &+ 1, y &+ 1, seed)
         return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty
     }
+    /// Repete a cada 1024 células (mais de 2.400 px), igual ao Android (Develop.hash).
     @inline(__always) static func hash(_ x: Int32, _ y: Int32, _ seed: UInt32) -> Double {
+        let x = x & 1023, y = y & 1023
         var h = (UInt32(bitPattern: x) &* 0x27d4_eb2d) ^ (UInt32(bitPattern: y) &* 0x1656_67b1) ^ seed
         h ^= h >> 15; h = h &* 0x85eb_ca6b; h ^= h >> 13; h = h &* 0xc2b2_ae35; h ^= h >> 16
         return Double(h & 0xff_ffff) / 16_777_215 * 2 - 1

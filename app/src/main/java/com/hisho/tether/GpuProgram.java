@@ -55,7 +55,17 @@ final class GpuProgram{
  }
 
  // Unidades de textura
- static final int U_SRC=0,U_TONE=1,U_CLAR=2,U_TEX=3,U_HAZE=4,U_TABLE=5,U_LUT=6,U_IMG=7,U_BLUR=8;
+ static final int U_SRC=0,U_TONE=1,U_CLAR=2,U_TEX=3,U_HAZE=4,U_TABLE=5,U_LUT=6,U_IMG=7,U_BLUR=8,U_NOISE=9;
+ static final int NOISE=1024;
+ private static float[] noise;
+ /**
+  * Os valores do Develop.hash (as duas sementes do grão) numa textura RG32F de 1024×1024. Antes a GPU refazia a
+  * conta com inteiros de 32 bits e alguns drivers (o SwiftShader do emulador) davam outro resultado.
+  */
+ static synchronized float[] noise(){
+  if(noise==null){float[] n=new float[NOISE*NOISE*2];for(int y=0;y<NOISE;y++)for(int x=0;x<NOISE;x++){int i=(y*NOISE+x)*2;n[i]=(float)Develop.hash(x,y,0x5eed);n[i+1]=(float)Develop.hash(x,y,0x1ced);}noise=n;}
+  return noise;
+ }
 
  static final String VERTEX="#version 300 es\n"
   +"void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));gl_Position=vec4(p*2.0-1.0,0.0,1.0);}\n";
@@ -69,9 +79,10 @@ final class GpuProgram{
   +"float luma(vec3 c){return .2126*c.r+.7152*c.g+.0722*c.b;}\n"
   +"float sm(float a,float b,float x){if(x<=a)return 0.0;if(x>=b)return 1.0;float t=(x-a)/(b-a);return t*t*(3.0-2.0*t);}\n"
   +"float exp2c(float x){return exp2(clamp(x,-24.0,8.0));}\n"
-  +"float hashi(int x,int y,uint seed){uint h=(uint(x)*0x27d4eb2du)^(uint(y)*0x165667b1u)^seed;h^=h>>15u;h*=0x85ebca6bu;h^=h>>13u;h*=0xc2b2ae35u;h^=h>>16u;return float(h&0xffffffu)/16777215.0*2.0-1.0;}\n"
-  +"float noise(float fx,float fy,uint seed){float ix=floor(fx),iy=floor(fy),tx=fx-ix,ty=fy-iy;int x=int(ix),y=int(iy);tx=tx*tx*(3.0-2.0*tx);ty=ty*ty*(3.0-2.0*ty);\n"
-  +" float a=hashi(x,y,seed),b=hashi(x+1,y,seed),c=hashi(x,y+1,seed),d=hashi(x+1,y+1,seed);return (a+(b-a)*tx)*(1.0-ty)+(c+(d-c)*tx)*ty;}\n"
+  +"uniform sampler2D uNoise;\n"
+  +"float hashi(int x,int y,int k){vec2 v=texelFetch(uNoise,ivec2(x&1023,y&1023),0).rg;return k==0?v.r:v.g;}\n"
+  +"float noise(float fx,float fy,int k){float ix=floor(fx),iy=floor(fy),tx=fx-ix,ty=fy-iy;int x=int(ix),y=int(iy);tx=tx*tx*(3.0-2.0*tx);ty=ty*ty*(3.0-2.0*ty);\n"
+  +" float a=hashi(x,y,k),b=hashi(x+1,y,k),c=hashi(x,y+1,k),d=hashi(x+1,y+1,k);return (a+(b-a)*tx)*(1.0-ty)+(c+(d-c)*tx)*ty;}\n"
   // Develop.Effects.apply: vinheta pós-corte e granulação.
   +"vec3 effects(vec3 c,ivec2 p){\n"
   +" if(uVig>0.5){float x=float(p.x)+0.5-uVigGeo.x,y=float(p.y)+0.5-uVigGeo.y,u=x/uVigGeo.z,v=y/uVigGeo.w;\n"
@@ -80,7 +91,7 @@ final class GpuProgram{
   +"  if(m>0.0){if(uVigAmount<0.0){if(uVigStyle==3.0){c*=1.0+uVigAmount*m*0.9;}else{float l=clamp(luma(c),0.0,1.0),f=exp2c(uVigAmount*m*1.5);f=1.0-(1.0-f)*(1.0-uVigHigh*sm(0.5,1.0,l));c*=f;}}\n"
   +"   else{float k=uVigAmount*m*(uVigStyle==3.0?0.9:0.75);c+=(1.0-c)*k;}}}\n"
   +" if(uGrain>0.5){float l=clamp(luma(c),0.0,1.0),fx=float(p.x),fy=float(p.y);\n"
-  +"  float nz=noise(fx/uGrainCell,fy/uGrainCell,0x5eedu)*(1.0-0.5*uGrainRough)+noise(fx/(uGrainCell*0.5),fy/(uGrainCell*0.5),0x1cedu)*0.5*uGrainRough;\n"
+  +"  float nz=noise(fx/uGrainCell,fy/uGrainCell,0)*(1.0-0.5*uGrainRough)+noise(fx/(uGrainCell*0.5),fy/(uGrainCell*0.5),1)*0.5*uGrainRough;\n"
   +"  c+=vec3(uGrainAmount*nz*(0.35+0.65*4.0*l*(1.0-l)));}\n"
   +" return c;}\n"
   +"vec4 store(vec3 c){c=clamp(c,0.0,1.0);return vec4(c.b,c.g,c.r,1.0);}\n";

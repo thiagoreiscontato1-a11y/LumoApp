@@ -172,7 +172,7 @@ final class GpuDevelop{
 
  /** Contexto EGL sem tela, programas compilados e a execução de uma revelação. */
  private static final class State{
-  EGLDisplay display;EGLContext context;EGLSurface surface;int maxTexture,max3d,vao,develop,blurH,blurV;
+  EGLDisplay display;EGLContext context;EGLSurface surface;int maxTexture,max3d,vao,develop,blurH,blurV,noise;
   State(){
    display=EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);int[] version=new int[2];
    if(display==EGL14.EGL_NO_DISPLAY||!EGL14.eglInitialize(display,version,0,version,1))throw new IllegalStateException("EGL indisponível");
@@ -186,9 +186,12 @@ final class GpuDevelop{
    int[] v=new int[1];GLES30.glGetIntegerv(GLES30.GL_MAX_TEXTURE_SIZE,v,0);maxTexture=v[0];GLES30.glGetIntegerv(GLES30.GL_MAX_3D_TEXTURE_SIZE,v,0);max3d=v[0];
    develop=program(GpuProgram.DEVELOP);blurH=program(GpuProgram.BLUR_H);blurV=program(GpuProgram.BLUR_V);
    GLES30.glGenVertexArrays(1,v,0);vao=v[0];
+   // Ruído do grão: fica no contexto (não entra na lista de texturas apagadas a cada foto).
+   GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT,1);noise=floats(GpuProgram.NOISE,GpuProgram.NOISE,2,GpuProgram.noise());textures.clear();check("textura de ruído");
    android.util.Log.i(TAG,"OpenGL "+GLES30.glGetString(GLES30.GL_VERSION)+" · "+GLES30.glGetString(GLES30.GL_RENDERER)+" · textura máx "+maxTexture);
   }
   void destroy(){
+   try{GLES30.glDeleteTextures(1,new int[]{noise},0);}catch(Exception ignored){}
    try{EGL14.eglMakeCurrent(display,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_CONTEXT);EGL14.eglDestroySurface(display,surface);EGL14.eglDestroyContext(display,context);}catch(Exception ignored){}
   }
 
@@ -222,7 +225,7 @@ final class GpuDevelop{
   static FloatBuffer floatBuffer(float[] d){FloatBuffer b=ByteBuffer.allocateDirect(d.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer();b.put(d).position(0);return b;}
   static void check(String where){int e=GLES30.glGetError();if(e!=GLES30.GL_NO_ERROR)throw new IllegalStateException("erro OpenGL 0x"+Integer.toHexString(e)+" em "+where);}
 
-  static final String[] SAMPLERS={"uSrc","uFTone","uFClar","uFTex","uFHaze","uTable","uLut","uImg","uBlur"};
+  static final String[] SAMPLERS={"uSrc","uFTone","uFClar","uFTex","uFHaze","uTable","uLut","uImg","uBlur","uNoise"};
   /** Uniforms do GpuProgram e cada sampler na sua unidade (dois tipos na mesma unidade invalidam o desenho). */
   void use(int program,GpuProgram.Inputs in,float originY){
    GLES30.glUseProgram(program);
@@ -273,7 +276,7 @@ final class GpuDevelop{
     GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER,stripFbo);
     for(int y0=0;y0<h;y0+=STRIP){int rows=Math.min(STRIP,h-y0);
      use(finalProgram,in,y0);
-     if(in.sharpen){bind(7,GLES30.GL_TEXTURE_2D,image);bind(8,GLES30.GL_TEXTURE_2D,src);}else bindInputs(src,tone,clarity,texture,haze,table,lut);
+     if(in.sharpen){bind(7,GLES30.GL_TEXTURE_2D,image);bind(8,GLES30.GL_TEXTURE_2D,src);bind(GpuProgram.U_NOISE,GLES30.GL_TEXTURE_2D,noise);}else bindInputs(src,tone,clarity,texture,haze,table,lut);
      GLES30.glViewport(0,0,w,rows);draw();
      strip.position(0);GLES30.glReadPixels(0,0,w,rows,GLES30.GL_RGBA,GLES30.GL_UNSIGNED_BYTE,strip);
      if(y0==0)check("primeira faixa");
@@ -289,7 +292,7 @@ final class GpuDevelop{
   }
   void bindInputs(int src,int tone,int clarity,int texture,int haze,int table,int lut){
    bind(GpuProgram.U_SRC,GLES30.GL_TEXTURE_2D,src);bind(GpuProgram.U_TONE,GLES30.GL_TEXTURE_2D,tone);bind(GpuProgram.U_CLAR,GLES30.GL_TEXTURE_2D,clarity);
-   bind(GpuProgram.U_TEX,GLES30.GL_TEXTURE_2D,texture);bind(GpuProgram.U_HAZE,GLES30.GL_TEXTURE_2D,haze);bind(GpuProgram.U_TABLE,GLES30.GL_TEXTURE_2D,table);bind(GpuProgram.U_LUT,GLES30.GL_TEXTURE_3D,lut);
+   bind(GpuProgram.U_TEX,GLES30.GL_TEXTURE_2D,texture);bind(GpuProgram.U_HAZE,GLES30.GL_TEXTURE_2D,haze);bind(GpuProgram.U_TABLE,GLES30.GL_TEXTURE_2D,table);bind(GpuProgram.U_LUT,GLES30.GL_TEXTURE_3D,lut);bind(GpuProgram.U_NOISE,GLES30.GL_TEXTURE_2D,noise);
   }
  }
  private GpuDevelop(){}

@@ -22,7 +22,7 @@ public class GpuDump{
   Path out=Paths.get(a[0]);int w=Integer.parseInt(a[1]),h=Integer.parseInt(a[2]);Files.createDirectories(out);
   int[] base=DevelopTest.scene(w,h);Random rnd=new Random(7);
   for(int i=0;i<base.length;i++){int v=base[i],n=rnd.nextInt(13)-6;base[i]=0xff000000|Math.max(0,Math.min(255,((v>>16)&255)+n))<<16|Math.max(0,Math.min(255,((v>>8)&255)+n))<<8|Math.max(0,Math.min(255,(v&255)+n));}
-  ints(out.resolve("src.bin"),base);
+  ints(out.resolve("src.bin"),base);floats(out.resolve("noise.bin"),GpuProgram.noise());
   write(out.resolve("develop.glsl"),GpuProgram.DEVELOP);write(out.resolve("blur_h.glsl"),GpuProgram.BLUR_H);write(out.resolve("blur_v.glsl"),GpuProgram.BLUR_V);write(out.resolve("vertex.glsl"),GpuProgram.VERTEX);
   StringBuilder index=new StringBuilder("{");
   for(Map.Entry<String,Map<String,Double>> c:CASES.entrySet()){

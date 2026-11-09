@@ -270,7 +270,8 @@ final class Develop{
   double a=hash(x,y,seed),b=hash(x+1,y,seed),c=hash(x,y+1,seed),d=hash(x+1,y+1,seed);
   return (a+(b-a)*tx)*(1-ty)+(c+(d-c)*tx)*ty;
  }
- static double hash(int x,int y,int seed){int h=x*0x27d4eb2d^y*0x165667b1^seed;h^=h>>>15;h*=0x85ebca6b;h^=h>>>13;h*=0xc2b2ae35;h^=h>>>16;return (h&0xffffff)/16777215.*2-1;}
+ /** Hash do grão. Repete a cada 1024 células (mais de 2.400 px), o que não se vê, e cabe numa textura da GPU. */
+ static double hash(int x,int y,int seed){x&=1023;y&=1023;int h=x*0x27d4eb2d^y*0x165667b1^seed;h^=h>>>15;h*=0x85ebca6b;h^=h>>>13;h*=0xc2b2ae35;h^=h>>>16;return (h&0xffffff)/16777215.*2-1;}
 
  // ---------------------------------------------------------------- Imagem de origem
 

@@ -17,7 +17,7 @@ except Exception as e:  # noqa: BLE001
     print(f"gpu_test pulado: sem OpenGL local ({e.__class__.__name__}: {e})")
     sys.exit(0)
 
-SAMPLERS = {"uSrc": 0, "uFTone": 1, "uFClar": 2, "uFTex": 3, "uFHaze": 4, "uTable": 5, "uLut": 6, "uImg": 7, "uBlur": 8}
+SAMPLERS = {"uSrc": 0, "uFTone": 1, "uFClar": 2, "uFTex": 3, "uFHaze": 4, "uTable": 5, "uLut": 6, "uImg": 7, "uBlur": 8, "uNoise": 9}
 W, H, STRIP = int(os.environ.get("GPU_TEST_W", 1800)), int(os.environ.get("GPU_TEST_H", 1200)), 256
 
 
@@ -30,7 +30,7 @@ def run(case_dir: pathlib.Path, common: pathlib.Path):
     def tex2d(size, comps, data, dtype):
         t = ctx.texture(size, comps, data, dtype=dtype); t.filter = (moderngl.NEAREST, moderngl.NEAREST); t.repeat_x = t.repeat_y = False; return t
     src = tex2d((w, h), 4, (common / "src.bin").read_bytes(), "f1")
-    units = {"uSrc": (0, src)}
+    units = {"uSrc": (0, src), "uNoise": (9, tex2d((1024, 1024), 2, (common / "noise.bin").read_bytes(), "f4"))}
     for name, unit, uni in (("tone", 1, "uFTone"), ("clarity", 2, "uFClar"), ("texture", 3, "uFTex"), ("haze", 4, "uFHaze")):
         f = meta["fields"].get(name)
         if f: units[uni] = (unit, tex2d((f["gw"], f["gh"]), f["comps"], (case_dir / f"{name}.bin").read_bytes(), "f4"))
