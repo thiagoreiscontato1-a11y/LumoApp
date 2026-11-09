@@ -18,8 +18,26 @@ final class PhotoEditor {
  static JSONObject parse(String xml)throws Exception{
   if(xml.length()>1024*1024||xml.contains("<!DOCTYPE")||xml.contains("<!ENTITY"))throw new IOException("XMP inválido ou maior que 1 MB.");
   XmlPullParser p=Xml.newPullParser();p.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES,true);p.setInput(new StringReader(xml));
-  JSONObject result=new JSONObject();for(Map.Entry<String,Double> e:Develop.parse(p).entrySet())result.put(e.getKey(),(double)e.getValue());return result;
+  Map<String,String> look=new HashMap<>();
+  JSONObject result=new JSONObject();for(Map.Entry<String,Double> e:Develop.parse(p,look).entrySet())result.put(e.getKey(),(double)e.getValue());
+  JSONObject ref=lookReference(look);if(ref!=null)result.put("Look",ref);else result.remove("LookAmount");
+  return result;
  }
+ /**
+  * Perfil criativo do XMP: guarda as tabelas (uma vez, pelo MD5) e devolve a referência que vai no preset,
+  * ou null se o preset não tem perfil com tabela legível.
+  */
+ static JSONObject lookReference(Map<String,String> look)throws JSONException{
+  String rgb=look.get("RGBTable"),lt=look.get("LookTable");boolean any=false;JSONObject ref=new JSONObject();
+  for(String key:new String[]{rgb,lt}){if(key==null)continue;String text=look.get("Table_"+key);if(text==null)continue;try{CreativeProfile.store(key,text);any=true;}catch(IOException ignored){}}
+  if(!any)return null;
+  ref.put("name",look.containsKey("Name")?look.get("Name"):"Perfil criativo");
+  if(rgb!=null&&CreativeProfile.load(rgb)!=null){ref.put("rgbTable",rgb.toUpperCase(Locale.ROOT));ref.put("rgbAmount",number(look.get("RGBTableAmount"),1));}
+  if(lt!=null&&CreativeProfile.load(lt)!=null)ref.put("lookTable",lt.toUpperCase(Locale.ROOT));
+  String g=look.get("ConvertToGrayscale");if(g!=null&&g.equalsIgnoreCase("true"))ref.put("grayscale",true);
+  return ref;
+ }
+ static double number(String s,double def){if(s==null)return def;try{double v=Double.parseDouble(s.trim());return Double.isNaN(v)||Double.isInfinite(v)?def:v;}catch(NumberFormatException e){return def;}}
  /** Preset salvo (JSON de chaves Camera Raw) como mapa numérico. */
  static Map<String,Double> values(JSONObject preset){
   Map<String,Double> m=new HashMap<>();if(preset==null)return m;Iterator<String> it=preset.keys();
@@ -38,10 +56,38 @@ final class PhotoEditor {
  /** Automático da foto, já escalado pela intensidade das opções (vazio se desligado). */
  static JSONObject autoValues(Develop.Source source,JSONObject options){return options.optBoolean("auto",true)?scaleControls(controls(source.autoControls()),limit(options.optDouble("autoStrength",1),0,1.5)):new JSONObject();}
 
- /** Preset com os ajustes extras do editor por cima (só chaves Camera Raw conhecidas). */
+ /**
+  * Preset com os ajustes extras do editor por cima (só chaves Camera Raw conhecidas). Uma curva de pontos no
+  * extra ({@code ToneCurvePV2012.0}, {@code .1}…) substitui a curva inteira do preset.
+  */
  static Map<String,Double> merged(JSONObject preset,JSONObject extra){
-  Map<String,Double> m=values(preset);if(extra==null)return m;Iterator<String> it=extra.keys();
-  while(it.hasNext()){String k=it.next();double v=extra.optDouble(k,Double.NaN);if(!Double.isNaN(v)&&Develop.RANGES.containsKey(k))m.put(k,v);}return m;
+  Map<String,Double> m=values(preset);if(extra==null)return m;
+  for(String c:Develop.CURVES)if(extra.has(c+".0")){Iterator<String> old=new ArrayList<>(m.keySet()).iterator();while(old.hasNext()){String k=old.next();if(k.startsWith(c+"."))m.remove(k);}}
+  Iterator<String> it=extra.keys();
+  while(it.hasNext()){String k=it.next();double v=extra.optDouble(k,Double.NaN);if(Double.isNaN(v))continue;if(Develop.RANGES.containsKey(k))m.put(k,v);else if(curveKey(k))m.put(k,Math.max(0,Math.min(255,v)));}return m;
+ }
+ /** Chave de ponto de curva ({@code ToneCurvePV2012Red.4}…). */
+ static boolean curveKey(String k){int dot=k.lastIndexOf('.');if(dot<0)return false;String base=k.substring(0,dot),n=k.substring(dot+1);if(n.isEmpty()||n.length()>3)return false;for(char ch:n.toCharArray())if(ch<'0'||ch>'9')return false;for(String c:Develop.CURVES)if(c.equals(base))return true;return false;}
+
+ // ---------------------------------------------------------------- Recorte e perfil criativo
+
+ /** Recorte da foto ({@code options.crop}) ou null. */
+ static Crop crop(JSONObject options){
+  JSONObject c=options==null?null:options.optJSONObject("crop");if(c==null)return null;
+  Crop k=new Crop(c.optDouble("angle",0),c.optDouble("left",0),c.optDouble("top",0),c.optDouble("right",1),c.optDouble("bottom",1));return k.isIdentity()?null:k;
+ }
+ static JSONObject cropJson(Crop c)throws JSONException{if(c==null||c.isIdentity())return null;JSONObject o=new JSONObject();o.put("angle",c.angle);o.put("left",c.left);o.put("top",c.top);o.put("right",c.right);o.put("bottom",c.bottom);return o;}
+ /** Perfil criativo do preset, com a intensidade do editor ({@code LookAmount} no extra) por cima. */
+ static CreativeProfile.Profile profile(JSONObject options){
+  JSONObject preset=options==null?null:options.optJSONObject("preset");JSONObject look=preset==null?null:preset.optJSONObject("Look");if(look==null)return null;
+  double amount=Develop.value("LookAmount",merged(preset,options.optJSONObject("extra")));
+  return CreativeProfile.resolve(look.optString("rgbTable",null),look.optDouble("rgbAmount",1),look.optString("lookTable",null),amount,look.optBoolean("grayscale",false));
+ }
+ /** Pixels prontos para revelar: recortados/endireitados e com o perfil criativo. {@code size} entra e sai com largura e altura. */
+ static int[] prepare(int[] px,int[] size,JSONObject options){
+  Crop c=crop(options);if(c!=null){int[] o=new int[2];c=c.constrained(size[0],size[1]);px=c.apply(px,size[0],size[1],o);size[0]=o[0];size[1]=o[1];}
+  CreativeProfile.Profile p=profile(options);if(p!=null)CreativeProfile.apply(px,size[0],size[1],p);
+  return px;
  }
  /** Ajustes finais: preset (com os extras do editor) e os básicos = automático + preset + delta manual. */
  static Develop.Settings settings(Develop.Source source,JSONObject options){
@@ -137,10 +183,12 @@ final class PhotoEditor {
    try{
     long t0=android.os.SystemClock.elapsedRealtime();
     bitmap=decodeUnrotated(source,edge);int[] size=new int[2];int[] pixels=orientedPixels(bitmap,orientation,size);bitmap.recycle();bitmap=null;
+    Crop crop=crop(options);if(crop!=null){int[] o=new int[2];pixels=crop.constrained(size[0],size[1]).apply(pixels,size[0],size[1],o);size[0]=o[0];size[1]=o[1];}
     long t1=android.os.SystemClock.elapsedRealtime();
     // Nitidez medida na ORIGINAL (~1600 px), em paralelo com a revelação: preset, nitidez e grão não enganam.
     int[] dsize=new int[2];final int[] detail=PhotoCheck.shrink(pixels,size[0],size[1],PhotoCheck.DETAIL_EDGE,dsize);final int dw=dsize[0],dh=dsize[1];
     sharp=CURATION.submit(()->PhotoCheck.sharpness(detail,dw,dh));
+    CreativeProfile.Profile look=profile(options);if(look!=null)CreativeProfile.apply(pixels,size[0],size[1],look);
     Develop.Source s=new Develop.Source(pixels,size[0],size[1]);Develop.Settings developSettings=settings(s,options);
     // Exposição conferida na foto já com o preset (prévia de 512 px): clara ou escura demais é corrigida aqui.
     PhotoCheck.Exposure exposure=new PhotoCheck.Exposure();

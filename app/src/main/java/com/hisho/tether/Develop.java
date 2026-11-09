@@ -32,31 +32,57 @@ final class Develop{
   range(0,100,"ParametricShadowSplit","ParametricMidtoneSplit","ParametricHighlightSplit","SplitToningShadowSaturation","SplitToningHighlightSaturation","ColorGradeMidtoneSat","ColorGradeGlobalSat",
    "ColorGradeBlending","SharpenDetail","SharpenEdgeMasking","PostCropVignetteMidpoint","PostCropVignetteFeather","PostCropVignetteHighlightContrast","GrainAmount","GrainSize","GrainFrequency");
   range(0,360,"SplitToningShadowHue","SplitToningHighlightHue","ColorGradeMidtoneHue","ColorGradeGlobalHue");
-  range(0,150,"Sharpness");range(0.5,3,"SharpenRadius");range(1,3,"PostCropVignetteStyle");range(0,1,"ConvertToGrayscale");
+  range(0,200,"LookAmount");range(0,150,"Sharpness");range(0.5,3,"SharpenRadius");range(1,3,"PostCropVignetteStyle");range(0,1,"ConvertToGrayscale");
   for(String c:COLORS)range(-100,100,"HueAdjustment"+c,"SaturationAdjustment"+c,"LuminanceAdjustment"+c,"GrayMixer"+c);
  }
 
  /** Valores padrão do Lightroom diferentes de zero (chave ausente no preset), os mesmos de {@link Settings#of}. */
  static final Map<String,Double> DEFAULTS=new HashMap<>();
  static{
-  String[] k={"ParametricShadowSplit","ParametricMidtoneSplit","ParametricHighlightSplit","SharpenRadius","SharpenDetail","PostCropVignetteMidpoint","PostCropVignetteFeather","PostCropVignetteStyle","GrainSize","GrainFrequency"};
-  double[] v={25,50,75,1,25,50,50,1,25,50};for(int i=0;i<k.length;i++)DEFAULTS.put(k[i],v[i]);
+  String[] k={"ParametricShadowSplit","ParametricMidtoneSplit","ParametricHighlightSplit","SharpenRadius","SharpenDetail","PostCropVignetteMidpoint","PostCropVignetteFeather","PostCropVignetteStyle","GrainSize","GrainFrequency","LookAmount"};
+  double[] v={25,50,75,1,25,50,50,1,25,50,100};for(int i=0;i<k.length;i++)DEFAULTS.put(k[i],v[i]);
  }
  /** Valor efetivo de uma chave Camera Raw no preset (padrão do Lightroom quando ausente). */
- static double value(String key,Map<String,Double> preset){Double v=preset==null?null:preset.get(key);if(v!=null&&!v.isNaN()&&!v.isInfinite())return v;Double d=DEFAULTS.get(key);return d==null?0:d;}
+ static double value(String key,Map<String,Double> preset){
+  Double v=preset==null?null:preset.get(key);if(v!=null&&!v.isNaN()&&!v.isInfinite())return v;
+  // Mistura da gradação: 50 no Lightroom 10+, 100 nos presets antigos só de Split Toning (mesma regra de Settings.of).
+  if("ColorGradeBlending".equals(key)){if(preset!=null)for(String k:preset.keySet())if(k.startsWith("ColorGrade"))return 50;return 100;}
+  Double d=DEFAULTS.get(key);return d==null?0:d;
+ }
 
  // ---------------------------------------------------------------- XMP
 
  /** Lê um preset .xmp do Lightroom/Camera Raw (atributos ou elementos, incluindo curvas rdf:Seq). */
- static Map<String,Double> parse(XmlPullParser p)throws Exception{
-  Map<String,Double> out=new TreeMap<>();Map<String,List<double[]>> curves=new HashMap<>();
+ static Map<String,Double> parse(XmlPullParser p)throws Exception{return parse(p,null);}
+ /** Atributos do perfil criativo (crs:Look) guardados em {@code look}: Name, Amount, RGBTable, RGBTableAmount, LookTable, ConvertToGrayscale. */
+ static final Set<String> LOOK_KEYS=new HashSet<>(Arrays.asList("Name","Amount","RGBTable","RGBTableAmount","LookTable","ConvertToGrayscale"));
+ static final Set<String> TABLE_KEYS=new HashSet<>(Arrays.asList("RGBTable","RGBTableAmount","LookTable"));
+ /**
+  * Como {@link #parse(XmlPullParser)}; o conteúdo de crs:Look (perfil criativo) não entra nos ajustes: vai para {@code look}
+  * (se não for nulo), junto com as tabelas {@code Table_<MD5>}. A intensidade do perfil fica em {@code LookAmount} (0–200).
+  */
+ static Map<String,Double> parse(XmlPullParser p,Map<String,String> look)throws Exception{
+  Map<String,Double> out=new TreeMap<>();Map<String,List<double[]>> curves=new HashMap<>();int lookDepth=-1;
   for(int e=p.getEventType();e!=XmlPullParser.END_DOCUMENT;e=p.next()){
+   if(e==XmlPullParser.END_TAG&&lookDepth>=0&&p.getDepth()==lookDepth){lookDepth=-1;continue;}
    if(e!=XmlPullParser.START_TAG)continue;
-   for(int i=0;i<p.getAttributeCount();i++)if(NS.equals(p.getAttributeNamespace(i)))store(out,p.getAttributeName(i),p.getAttributeValue(i));
+   boolean inLook=lookDepth>=0;
+   for(int i=0;i<p.getAttributeCount();i++){
+    if(!NS.equals(p.getAttributeNamespace(i)))continue;String an=p.getAttributeName(i);
+    if(an.startsWith("Table_")){if(look!=null)look.put(an,p.getAttributeValue(i));continue;}
+    if(inLook){if(look!=null&&LOOK_KEYS.contains(an))look.put(an,p.getAttributeValue(i).trim());continue;}
+    // Perfil (.xmp de perfil, PresetType="Look"): as tabelas ficam no topo, junto dos ajustes.
+    if(TABLE_KEYS.contains(an)){if(look!=null)look.put(an,p.getAttributeValue(i).trim());continue;}
+    store(out,an,p.getAttributeValue(i));
+   }
    if(!NS.equals(p.getNamespace()))continue;
    String name=p.getName();
+   if(inLook){if(look!=null&&LOOK_KEYS.contains(name)&&!"Name".equals(name))look.put(name,p.nextText().trim());continue;}
+   if("Look".equals(name)){lookDepth=p.getDepth();continue;}
+   if(name.startsWith("Table_")||TABLE_KEYS.contains(name)){String t=p.nextText();if(look!=null)look.put(name,t.trim());continue;}
    if(isCurve(name))curves.put(name,readCurve(p));else if(RANGES.containsKey(name))store(out,name,p.nextText());
   }
+  if(look!=null&&(look.containsKey("RGBTable")||look.containsKey("LookTable"))){double a=1;try{a=Double.parseDouble(look.getOrDefault("Amount","1"));}catch(NumberFormatException ignored){}out.put("LookAmount",Math.max(0,Math.min(200,a*100)));}
   for(int i=0;i<4;i++){List<double[]> c=curves.containsKey(CURVES[i])?curves.get(CURVES[i]):curves.get(LEGACY_CURVES[i]);if(c==null||c.size()<2)continue;for(int j=0;j<c.size();j++){out.put(CURVES[i]+"."+(2*j),c.get(j)[0]);out.put(CURVES[i]+"."+(2*j+1),c.get(j)[1]);}}
   if(out.isEmpty())throw new IOException("Nenhum ajuste compatível encontrado no XMP.");
   return out;
