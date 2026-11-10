@@ -50,6 +50,7 @@ final class AppModel: ObservableObject {
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         library = EventLibrary(root: docs.appendingPathComponent("Lumo", isDirectory: true))
+        CreativeProfile.directory = docs.appendingPathComponent("Lumo/Perfis", isDirectory: true)
         pipeline = PhotoPipeline(library: library)
         let credential = Keychain.fottoCredential
         client = FottoClient(credential: credential)
@@ -346,17 +347,21 @@ final class AppModel: ObservableObject {
         if let custom = photo.customPreset {
             o.presetName = custom
             o.preset = custom.isEmpty ? nil : presets.preset(named: custom)
+            o.look = custom.isEmpty ? nil : presets.look(named: custom)
         }
+        o.crop = photo.crop
         return o
     }
 
     /// Salva ajustes manuais e/ou preset próprio e reedita a partir do original.
     /// `extra` e `customPreset` nil mantêm o que a foto já tem.
-    func reprocess(_ photo: PhotoRecord, manual: EditControls?, extra: [String: Double]?? = nil, customPreset: String?? = nil) async {
+    func reprocess(_ photo: PhotoRecord, manual: EditControls?, extra: [String: Double]?? = nil, customPreset: String?? = nil,
+                   crop: Crop?? = nil) async {
         guard let event = currentEvent else { return }
         var p = library.photo(id: photo.id, in: event) ?? photo
         p.manual = manual
         if let extra { p.extra = extra }
+        if let crop { p.crop = crop }
         if let customPreset { p.customPreset = customPreset }
         processing += 1
         defer { processing -= 1 }
@@ -459,14 +464,33 @@ final class AppModel: ObservableObject {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-            let values = try XMPPreset.parse(try Data(contentsOf: url))
+            let parsed = try XMPPreset.parseWithLook(try Data(contentsOf: url))
+            var values = parsed.values
             let name = url.deletingPathExtension().lastPathComponent
-            presets.put(name, values)
+            let look = Self.creativeLook(parsed.look, name: name)
+            if look == nil { values["LookAmount"] = nil }
+            presets.put(name, values, look: look)
             settings.presetName = name
             message = "Preset “\(name)” importado (\(values.count) ajustes)."
         } catch {
             message = "Preset inválido: \(error.localizedDescription)"
         }
+    }
+
+    /// Perfil criativo do XMP: guarda as tabelas (uma vez, pelo MD5) e devolve a referência, ou nil sem tabela legível.
+    static func creativeLook(_ look: [String: String], name: String) -> CreativeLook? {
+        let rgb = look["RGBTable"], lt = look["LookTable"]
+        var stored = false
+        for key in [rgb, lt].compactMap({ $0 }) {
+            guard let text = look["Table_" + key] else { continue }
+            if (try? CreativeProfile.store(key, text)) != nil { stored = true }
+        }
+        guard stored else { return nil }
+        var ref = CreativeLook(name: look["Name"] ?? name)
+        if let rgb, CreativeProfile.load(rgb) != nil { ref.rgbTable = rgb.uppercased(); ref.rgbAmount = Double(look["RGBTableAmount"] ?? "1") ?? 1 }
+        if let lt, CreativeProfile.load(lt) != nil { ref.lookTable = lt.uppercased() }
+        ref.grayscale = look["ConvertToGrayscale"]?.lowercased() == "true"
+        return ref
     }
 
     func removePreset(_ name: String) {

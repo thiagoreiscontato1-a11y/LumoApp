@@ -37,6 +37,7 @@ public enum Develop {
                        "PostCropVignetteHighlightContrast", "GrainAmount", "GrainSize", "GrainFrequency"])
         range(0, 360, ["SplitToningShadowHue", "SplitToningHighlightHue", "ColorGradeMidtoneHue", "ColorGradeGlobalHue"])
         range(0, 150, ["Sharpness"])
+        range(0, 200, ["LookAmount"])
         range(0.5, 3, ["SharpenRadius"])
         range(1, 3, ["PostCropVignetteStyle"])
         range(0, 1, ["ConvertToGrayscale"])
@@ -48,9 +49,15 @@ public enum Develop {
     public static let defaults: [String: Double] = [
         "ParametricShadowSplit": 25, "ParametricMidtoneSplit": 50, "ParametricHighlightSplit": 75, "SharpenRadius": 1, "SharpenDetail": 25,
         "PostCropVignetteMidpoint": 50, "PostCropVignetteFeather": 50, "PostCropVignetteStyle": 1, "GrainSize": 25, "GrainFrequency": 50,
+        "LookAmount": 100,
     ]
     /// Valor efetivo de uma chave Camera Raw no preset (padrão do Lightroom quando ausente).
-    public static func value(_ key: String, in preset: [String: Double]?) -> Double { preset?[key] ?? defaults[key] ?? 0 }
+    public static func value(_ key: String, in preset: [String: Double]?) -> Double {
+        if let v = preset?[key], v.isFinite { return v }
+        // Mistura da gradação: 50 no Lightroom 10+, 100 nos presets antigos só de Split Toning (mesma regra de Settings).
+        if key == "ColorGradeBlending" { return (preset ?? [:]).keys.contains { $0.hasPrefix("ColorGrade") } ? 50 : 100 }
+        return defaults[key] ?? 0
+    }
 
     // MARK: Ajustes
 

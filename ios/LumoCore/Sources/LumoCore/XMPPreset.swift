@@ -31,7 +31,15 @@ public enum XMPPreset {
         return try parse(data)
     }
 
-    public static func parse(_ data: Data) throws -> [String: Double] {
+    public static func parse(_ data: Data) throws -> [String: Double] { try parseWithLook(data).values }
+
+    /// Atributos do perfil criativo guardados à parte (dentro de crs:Look, e as tabelas também no topo dos .xmp de perfil).
+    static let lookKeys: Set<String> = ["Name", "Amount", "RGBTable", "RGBTableAmount", "LookTable", "ConvertToGrayscale"]
+    static let tableKeys: Set<String> = ["RGBTable", "RGBTableAmount", "LookTable"]
+
+    /// Como `parse`; o conteúdo de crs:Look não entra nos ajustes: vai para `look`, junto com as tabelas `Table_<MD5>`.
+    /// A intensidade do perfil fica em `LookAmount` (0–200). Mesma regra de `Develop.parse` no Android.
+    public static func parseWithLook(_ data: Data) throws -> (values: [String: Double], look: [String: String]) {
         guard data.count <= 1024 * 1024 else { throw XMPPresetError.invalid }
         if let text = String(data: data, encoding: .utf8), text.contains("<!DOCTYPE") || text.contains("<!ENTITY") {
             throw XMPPresetError.invalid
@@ -52,8 +60,12 @@ public enum XMPPreset {
                 result["\(Develop.curves[i]).\(2 * j + 1)"] = p.1
             }
         }
+        let look = delegate.look
+        if look["RGBTable"] != nil || look["LookTable"] != nil {
+            result["LookAmount"] = max(0, min(200, (number(look["Amount"] ?? "1") ?? 1) * 100))
+        }
         guard !result.isEmpty else { throw XMPPresetError.empty }
-        return result
+        return (result, look)
     }
 
     static func validated(_ key: String, _ text: String) throws -> Double? {
@@ -87,7 +99,10 @@ public enum XMPPreset {
     private final class Delegate: NSObject, XMLParserDelegate {
         var result: [String: Double] = [:]
         var curves: [String: [(Double, Double)]] = [:]
+        var look: [String: String] = [:]
         var error: XMPPresetError?
+        private var depth = 0
+        private var lookDepth = -1
         private var element: String?
         private var curve: String?
         private var inItem = false
@@ -95,12 +110,26 @@ public enum XMPPreset {
 
         func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
                     qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+            depth += 1
+            let inLook = lookDepth >= 0
             // Conforme a plataforma, o XMLParser entrega atributos com ou sem o
             // prefixo ("crs:Exposure2012" ou "Exposure2012"); os nomes são exclusivos do Camera Raw.
             for (name, value) in attributeDict {
                 let local = name.split(separator: ":").last.map(String.init) ?? name
+                if local.hasPrefix("Table_") { look[local] = value.trimmingCharacters(in: .whitespacesAndNewlines); continue }
+                if inLook {
+                    if XMPPreset.lookKeys.contains(local) { look[local] = value.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    continue
+                }
+                if XMPPreset.tableKeys.contains(local) { look[local] = value.trimmingCharacters(in: .whitespacesAndNewlines); continue }
                 guard Develop.ranges[local] != nil else { continue }
                 store(local, value, parser)
+            }
+            if inLook { element = nil; return }
+            if namespaceURI == XMPPreset.namespace, elementName == "Look", curve == nil {
+                lookDepth = depth
+                element = nil
+                return
             }
             if curve != nil {
                 if elementName == "li" { inItem = true; text = "" }
@@ -123,6 +152,11 @@ public enum XMPPreset {
         }
 
         func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+            defer { depth -= 1 }
+            if lookDepth >= 0 {
+                if depth == lookDepth { lookDepth = -1 }
+                return
+            }
             if let name = curve {
                 if inItem && elementName == "li" {
                     inItem = false

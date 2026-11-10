@@ -85,6 +85,7 @@ actor PhotoPipeline {
             var opts = options
             opts.manual = record.manual
             opts.extra = record.extra
+            opts.crop = record.crop
             PhotoEditor.edit(&image, options: opts)
 
             let small = image.downsampled(maxEdge: 720)
