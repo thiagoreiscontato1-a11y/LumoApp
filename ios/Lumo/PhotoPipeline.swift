@@ -81,46 +81,65 @@ actor PhotoPipeline {
         var record = input
         let previousEdited = library.editedURL(record, in: event)
         do {
-            var image = try ImageBridge.decode(original, maxEdge: options.edge)
+            let t0 = Date()
+            let decoded = try ImageBridge.decode(original, maxEdge: options.edge)
             var opts = options
             opts.manual = record.manual
             opts.extra = record.extra
             opts.crop = record.crop
-            PhotoEditor.edit(&image, options: opts)
+            let sensitivity = options.curationSensitivity
+            // Nitidez medida na ORIGINAL (~1600 px, já recortada), antes de perfil, preset, nitidez e grão.
+            let cropped = PhotoEditor.cropped(decoded, options: opts)
+            let detail = PhotoCheck.shrink(cropped, maxEdge: PhotoCheck.detailEdge)
+            let sharp = PhotoCheck.sharpness(detail)
+            let source = Develop.Source(PhotoEditor.withProfile(cropped, options: opts))
+            var settings = PhotoEditor.settings(source, options: opts)
+            // Exposição conferida na foto já com o preset (prévia de 512 px): clara ou escura demais é corrigida aqui.
+            var exposure = PhotoCheck.Exposure()
+            if PhotoCheck.exposureFix(opts) {
+                exposure = PhotoCheck.fixExposure(PhotoCheck.shrink(detail, maxEdge: PhotoCheck.previewEdge), settings: &settings,
+                                                  faces: { SemanticCurator.faces($0) })
+            }
+            let t1 = Date()
+            var engine = ""
+            let image = source.render(settings, engine: &engine)
+            let t2 = Date()
 
             let small = image.downsampled(maxEdge: 720)
-            let quality = Curator.measure(small, sensitivity: options.curationSensitivity)
+            let quality = Curator.measure(small, sensitivity: sensitivity)
             let hash = PhotoHash.perceptual(small)
             record.perceptualHash = hash
             let dup = library.visualDuplicate(of: record, hash: hash, in: event)
             record.duplicateOf = dup?.id ?? ""
-            var score = quality.score - (dup == nil ? 0 : 3)
-            score = max(1, min(10, score))
-            // Pessoas: rosto cortado, encoberto, olhos fechados (Vision).
+            // Pessoas: rosto principal cortado na lateral ou embaixo (Vision), na foto editada.
             var semantic = SemanticCurator.Result()
-            if let cg = try? ImageBridge.cgImage(small) {
-                semantic = SemanticCurator.analyze(cg, sensitivity: options.curationSensitivity)
+            if let cg = try? ImageBridge.cgImage(image.downsampled(maxEdge: 900)) {
+                semantic = SemanticCurator.analyze(cg, sensitivity: sensitivity)
             }
-            score = max(1, min(10, score - semantic.penalty))
-            var reasons: [String] = []
-            if quality.review { reasons.append(quality.reason) }
-            if !semantic.note.isEmpty { reasons.append(semantic.note) }
-            if dup != nil { reasons.append("Possível duplicata de outra foto") }
-            var review = options.curation && (quality.review || semantic.review || (dup != nil && options.curationSensitivity > 0))
+            let decision = PhotoCheck.decide(tech: quality, faceReview: semantic.review, faceNote: semantic.note, sharp: sharp,
+                                             exposure: exposure, duplicate: dup != nil, sensitivity: sensitivity)
+            var review = options.curation && decision.review
             // Uma aprovação manual vale até o fotógrafo mudar de ideia.
             if input.stage == .approved && input.reason.hasPrefix("Aprovada manualmente") { review = false }
-            record.score = score
-            record.reason = !review && input.reason.hasPrefix("Aprovada manualmente") ? input.reason
-                : reasons.isEmpty ? "Aprovada · nota \(score)/10" : reasons.joined(separator: " · ")
+            record.score = decision.score
+            record.reason = !review && input.reason.hasPrefix("Aprovada manualmente") ? input.reason : decision.reason
             if !options.curation { record.reason += " · Curadoria desligada: nota informativa" }
             record.stage = review ? .review : .approved
             record.presetName = options.presetName
+            let posix = Locale(identifier: "en_US_POSIX")
+            let prepare = String(format: "%.2f", locale: posix, t1.timeIntervalSince(t0))
+            let develop = String(format: "%.2f", locale: posix, t2.timeIntervalSince(t1))
+            var timing = "abrir+medir \(prepare) s · revelar \(develop) s (\(engine))"
+            if exposure.ev != 0 { timing += String(format: " · exposição %+.2f EV", locale: posix, exposure.ev) }
+            record.timing = timing + " · \(image.width)×\(image.height)"
 
             let target = library.editedURL(record, in: event)
             try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             try ImageBridge.writeJPEG(image, to: target, metadataFrom: original)
             if previousEdited != target { try? FileManager.default.removeItem(at: previousEdited) }
             if record.stage == .approved, record.upload == .failed { record.upload = .none; record.uploadError = "" }
+            // Nova edição: a galeria online recebe a versão nova (nova revisão, pela data do arquivo).
+            record.onlineSignature = ""
         } catch {
             record.stage = .failed
             record.reason = "Falha na edição · \(error.localizedDescription)"

@@ -66,6 +66,9 @@ e a chave `GALLERY_ADMIN_TOKEN`. Depois toque em **Criar galeria deste evento**,
 as fotos aprovadas passam a ser publicadas. Use **Compartilhar link** para mandar pelo WhatsApp, ou abra o
 **Painel no navegador** para baixar o QR code e imprimir na mesa do evento.
 
+No iPhone (Lumo iOS 0.5.0+): **Entrega → Galeria online → Conectar servidor da galeria**, com o mesmo endereço e a
+mesma chave. A galeria fica ligada ao evento local de cada aparelho.
+
 ## No dia do evento
 
 1. Crie o evento no Lumo e a galeria dele (passo 4).

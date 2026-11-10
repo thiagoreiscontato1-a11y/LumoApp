@@ -29,6 +29,9 @@ struct PhotoDetailView: View {
                 Section("Edição") {
                     LabeledContent("Preset", value: photo.presetName.isEmpty ? "Nenhum" : photo.presetName)
                     LabeledContent("Ajuste manual", value: photo.manual == nil && photo.extra == nil ? "Não" : "Sim")
+                    if !photo.timing.isEmpty {
+                        Text(photo.timing).font(.caption).foregroundStyle(.secondary)
+                    }
                     Button { editing = true } label: { Label("Editar manualmente", systemImage: "slider.horizontal.3") }
                     if photo.stage != .failed {
                         ShareLink(item: edited) { Label("Compartilhar JPEG", systemImage: "square.and.arrow.up") }

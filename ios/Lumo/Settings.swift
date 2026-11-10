@@ -23,6 +23,14 @@ struct LumoSettings: Codable, Equatable {
     var disconnectAlarm = true
     var workProfile = "Personalizado"
     var tourSeen = false
+    /// Revelar fotos grandes na GPU (Metal); desligado, tudo vai para a CPU.
+    var gpuEnabled = true
+    /// Pede Face ID/Touch ID (ou o código do iPhone) ao abrir e ao voltar depois de 5 minutos fora.
+    var lockEnabled = false
+    /// Envia o relatório de falhas na próxima abertura.
+    var crashReports = true
+    /// Publica automaticamente cada foto aprovada na galeria online do evento.
+    var onlineAuto = true
 
     static let key = "lumo.settings.v1"
 
@@ -50,6 +58,10 @@ struct LumoSettings: Codable, Equatable {
         disconnectAlarm = try c.decodeIfPresent(Bool.self, forKey: .disconnectAlarm) ?? d.disconnectAlarm
         workProfile = try c.decodeIfPresent(String.self, forKey: .workProfile) ?? d.workProfile
         tourSeen = try c.decodeIfPresent(Bool.self, forKey: .tourSeen) ?? d.tourSeen
+        gpuEnabled = try c.decodeIfPresent(Bool.self, forKey: .gpuEnabled) ?? d.gpuEnabled
+        lockEnabled = try c.decodeIfPresent(Bool.self, forKey: .lockEnabled) ?? d.lockEnabled
+        crashReports = try c.decodeIfPresent(Bool.self, forKey: .crashReports) ?? d.crashReports
+        onlineAuto = try c.decodeIfPresent(Bool.self, forKey: .onlineAuto) ?? d.onlineAuto
     }
 
     /// Perfis de trabalho (mesmos valores do Android `WorkProfiles.java`).

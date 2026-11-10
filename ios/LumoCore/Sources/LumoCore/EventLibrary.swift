@@ -75,6 +75,11 @@ public struct PhotoRecord: Codable, Identifiable, Hashable {
     public var customPreset: String?
     /// Arquivo RAW original guardado em `RAW` (o JPEG de trabalho fica em Originais).
     public var rawFileName: String?
+    /// Tempos da última edição e motor usado (CPU/GPU), para o registro da foto.
+    public var timing: String = ""
+    /// Galeria online onde a foto editada foi publicada (id da galeria) e a assinatura do arquivo publicado.
+    public var onlineGalleryID: String = ""
+    public var onlineSignature: String = ""
 
     public init(id: String, eventID: String, source: PhotoSource, originalName: String, baseName: String,
                 capturedAt: Date, receivedAt: Date = Date(), size: Int, sha256: String) {
@@ -111,6 +116,9 @@ public struct PhotoRecord: Codable, Identifiable, Hashable {
         favorite = try c.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
         customPreset = try c.decodeIfPresent(String.self, forKey: .customPreset)
         rawFileName = try c.decodeIfPresent(String.self, forKey: .rawFileName)
+        timing = try c.decodeIfPresent(String.self, forKey: .timing) ?? ""
+        onlineGalleryID = try c.decodeIfPresent(String.self, forKey: .onlineGalleryID) ?? ""
+        onlineSignature = try c.decodeIfPresent(String.self, forKey: .onlineSignature) ?? ""
     }
 
     public var isSent: Bool { upload == .uploaded || upload == .confirmed }

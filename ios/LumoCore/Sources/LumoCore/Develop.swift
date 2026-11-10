@@ -506,15 +506,30 @@ public enum Develop {
             return f
         }
 
-        /// Renderiza a foto com os ajustes. As linhas são divididas entre os núcleos.
+        /// Renderiza a foto com os ajustes. Fotos grandes vão para a GPU (`GpuDevelop`); na CPU as linhas são
+        /// divididas entre os núcleos.
         public func render(_ s: Settings) -> PixelImage {
+            var engine = ""
+            return render(s, engine: &engine)
+        }
+
+        /// Igual a `render(_:)`, informando o motor usado ("GPU", ou "CPU" com o motivo) em `engine`.
+        public func render(_ s: Settings, engine: inout String) -> PixelImage {
             let plan = Plan(self, s)
-            if plan.identity { return image }
+            if plan.identity { engine = "sem ajustes"; return image }
             let w = width, h = height
-            var out = [UInt32](repeating: 0xFF00_0000, count: w * h)
-            out.withUnsafeMutableBufferPointer { buf in
-                let base = buf.baseAddress!
-                parallel(h) { y0, y1 in plan.rows(y0, y1, base) }
+            var why = ""
+            var out: [UInt32]
+            if let gpu = GpuDevelop.rows(plan, why: &why) {
+                out = gpu
+                engine = "GPU"
+            } else {
+                engine = why.isEmpty || why == "foto pequena" ? "CPU" : "CPU · \(why)"
+                out = [UInt32](repeating: 0xFF00_0000, count: w * h)
+                out.withUnsafeMutableBufferPointer { buf in
+                    let base = buf.baseAddress!
+                    parallel(h) { y0, y1 in plan.rows(y0, y1, base) }
+                }
             }
             if plan.sharpen {
                 var l = [Float](repeating: 0, count: w * h)

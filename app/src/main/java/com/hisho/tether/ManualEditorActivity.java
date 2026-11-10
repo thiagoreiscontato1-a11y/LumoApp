@@ -58,6 +58,8 @@ public class ManualEditorActivity extends Activity{
  /** Ajustes extras alterados no editor, com o valor final (chaves Camera Raw). */
  JSONObject extraValues=new JSONObject();
  boolean settingControls=false,destroyed=false,pasteOnOpen=false;
+ /** Aberto pela Galeria para aplicar um preset nas fotos selecionadas (sem ajuste manual) e voltar. */
+ String applyPresetOnOpen=null;
  volatile boolean previewBusy=false,previewQueued=false;
  int group=0,mixColor=0;
  JSONObject selectedPreset=null; String selectedPresetName=""; boolean presetChanged=false,loading=true,saving=false;
@@ -133,7 +135,8 @@ public class ManualEditorActivity extends Activity{
 
  @Override public void onCreate(Bundle state){
   darkMode=true;setTheme(LumoTheme.appTheme(this));super.onCreate(state);palette();jobs=new Jobs(this);
-  focusId=getIntent().getStringExtra("focusId");pasteOnOpen=getIntent().getBooleanExtra("pasteOnOpen",false);String packed=getIntent().getStringExtra("jobIds");if(packed!=null)for(String id:packed.split(","))if(!id.trim().isEmpty()&&!targets.contains(id.trim()))targets.add(id.trim());if(focusId==null)focusId="";if(!focusId.isEmpty()&&!targets.contains(focusId))targets.add(0,focusId);if(focusId.isEmpty()&&!targets.isEmpty())focusId=targets.get(0);
+  focusId=getIntent().getStringExtra("focusId");pasteOnOpen=getIntent().getBooleanExtra("pasteOnOpen",false);applyPresetOnOpen=getIntent().getStringExtra("applyPreset");
+  if(applyPresetOnOpen!=null){selectedPresetName=applyPresetOnOpen.isEmpty()?"Sem preset":applyPresetOnOpen;selectedPreset=applyPresetOnOpen.isEmpty()?new JSONObject():PresetLibrary.get(this,applyPresetOnOpen);presetChanged=true;}String packed=getIntent().getStringExtra("jobIds");if(packed!=null)for(String id:packed.split(","))if(!id.trim().isEmpty()&&!targets.contains(id.trim()))targets.add(id.trim());if(focusId==null)focusId="";if(!focusId.isEmpty()&&!targets.contains(focusId))targets.add(0,focusId);if(focusId.isEmpty()&&!targets.isEmpty())focusId=targets.get(0);
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(CARD);getWindow().getDecorView().setSystemUiVisibility(darkMode?0:(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));
 
   LinearLayout root=vertical();root.setBackgroundColor(BG);root.setPadding(dp(12),dp(8),dp(12),dp(10));root.setOnApplyWindowInsetsListener((v,in)->{v.setPadding(dp(12)+in.getSystemWindowInsetLeft(),dp(8)+in.getSystemWindowInsetTop(),dp(12)+in.getSystemWindowInsetRight(),dp(10)+in.getSystemWindowInsetBottom());return in.consumeSystemWindowInsets();});setContentView(root);
@@ -155,7 +158,8 @@ public class ManualEditorActivity extends Activity{
   for(int i=0;i<GROUPS.length;i++){if(i%3==0){tabs=row();side.addView(tabs);}final int g=i;Button b=compact(GROUPS[i],v->selectGroup(g));b.setTextSize(11);b.setPadding(dp(2),0,dp(2),0);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(40),1);lp.setMargins(i%3==0?0:dp(3),dp(3),0,0);tabs.addView(b,lp);groupButtons.add(b);}
   gap(side,6);ScrollView adjustmentScroll=new ScrollView(this);side.addView(adjustmentScroll,new LinearLayout.LayoutParams(-1,0,1));
   LinearLayout panel=vertical();adjustmentScroll.addView(panel);
-  presetButton=compact("Trocar preset",v->choosePreset());panel.addView(presetButton,new LinearLayout.LayoutParams(-1,dp(44)));
+  presetButton=compact(presetChanged?selectedPresetName:"Trocar preset",v->choosePreset());panel.addView(presetButton,new LinearLayout.LayoutParams(-1,dp(44)));
+  Button savePreset=compact("Criar preset com esta edição",v->savePresetDialog());savePreset.setTextColor(LumoTheme.CYAN);LinearLayout.LayoutParams spl=new LinearLayout.LayoutParams(-1,dp(44));spl.topMargin=dp(4);panel.addView(savePreset,spl);
   controlsBox=vertical();panel.addView(controlsBox);
   gap(panel,8);panel.addView(compact("Ajuda · tour do editor",v->showEditorTour(0)),new LinearLayout.LayoutParams(-1,dp(44)));
 
@@ -345,7 +349,7 @@ public class ManualEditorActivity extends Activity{
    Bitmap full=PhotoEditor.decode(original,1200);final int fw=full.getWidth(),fh=full.getHeight();final int[] px=new int[fw*fh];full.getPixels(px,0,fw,0,0,fw,fh);full.recycle();
    JSONObject base=new JSONObject(settings.toString());base.remove("manual");base.remove("extra");base.remove("crop");JSONObject oldDelta=existing==null?new JSONObject():copyJson(existing);
    st=buildStages(px,fw,fh,base,savedCrop,existingExtra);
-   int score=jobs.quality(focusId)[0];final Stages fs=st;st=null;final Crop fc=savedCrop;handler.post(()->{if(destroyed){fs.recycle();return;}fullPixels=px;fullW=fw;fullH=fh;crop=fc;builtCrop=fc;editorSettings=base;extraValues=existingExtra;install(fs);title.setText(name.replaceFirst("(?i)\\.jpg$",""));countLabel.setText(targets.size()>1?targets.size()+" selecionadas":"1 foto");scoreLabel.setText(score>0?score+"/10":"—/10");scoreLabel.setTextColor(score>=8?GREEN:score>=5?WARN:TEXT);setCurrentFromDelta(oldDelta);selectGroup(group==CROP_GROUP?0:group);status.setText("Segure a foto para ver o original");showStage(stage);requestPreview();if(pasteOnOpen){pasteOnOpen=false;pasteAdjustments(false);}});
+   int score=jobs.quality(focusId)[0];final Stages fs=st;st=null;final Crop fc=savedCrop;handler.post(()->{if(destroyed){fs.recycle();return;}fullPixels=px;fullW=fw;fullH=fh;crop=fc;builtCrop=fc;editorSettings=base;extraValues=existingExtra;install(fs);title.setText(name.replaceFirst("(?i)\\.jpg$",""));countLabel.setText(targets.size()>1?targets.size()+" selecionadas":"1 foto");scoreLabel.setText(score>0?score+"/10":"—/10");scoreLabel.setTextColor(score>=8?GREEN:score>=5?WARN:TEXT);setCurrentFromDelta(oldDelta);selectGroup(group==CROP_GROUP?0:group);status.setText("Segure a foto para ver o original");showStage(stage);requestPreview();if(pasteOnOpen){pasteOnOpen=false;pasteAdjustments(false);}if(applyPresetOnOpen!=null){applyPresetOnOpen=null;status.setText("Aplicando "+selectedPresetName+" em "+targets.size()+" foto(s)…");saveTargets(new ArrayList<>(targets),true);}});
   }catch(Throwable e){if(st!=null)st.recycle();String msg=e instanceof OutOfMemoryError?"memória insuficiente":e.getMessage();handler.post(()->{loading=false;refreshControls();status.setText("Falha ao preparar editor · "+msg);});}finally{if(original!=null)original.delete();}});}
 
  /** Etapas do editor montadas no worker: foto recortada, fonte com o perfil criativo e as três prévias fixas. */
@@ -428,7 +432,31 @@ public class ManualEditorActivity extends Activity{
 
  // ---------------------------------------------------------------- Salvar
 
- void saveTargets(List<String> ids){if(loading||saving){toast("Aguarde a operação atual.");return;}if(ids==null||ids.isEmpty()||ids.get(0).isEmpty())return;final JSONObject chosen=deltaFromCurrent(),chosenExtra=copyJson(extraValues);saving=true;refreshControls();presetButton.setEnabled(false);status.setText("Aplicando em "+ids.size()+" foto(s)…");worker.execute(()->{int ok=0,review=0,fail=0,sentBefore=0;String lastError="";for(String id:ids){if(!DemoLicense.allowed(this))break;try{SaveResult r=saveOne(id,chosen,chosenExtra);ok++;if(r.review)review++;if(r.wasSent)sentBefore++;}catch(Exception e){fail++;lastError=e.getMessage();}}final int fOk=ok,fReview=review,fFail=fail,fSent=sentBefore;final String fErr=lastError;handler.post(()->{saving=false;refreshControls();presetButton.setEnabled(true);String msg="Concluído · "+fOk+" salva(s)"+(fReview>0?" · "+fReview+" em Revisão":"")+(fFail>0?" · "+fFail+" falha(s)":"");if(fSent>0)msg+=" · "+fSent+" já enviada(s)";status.setText(msg+(fErr.isEmpty()?"":" · "+fErr));toast(msg);});});}
+ void saveTargets(List<String> ids){saveTargets(ids,false);}
+ /** {@code thenClose}: aplicação de preset pedida pela Galeria; ao terminar, volta para a Galeria. */
+ void saveTargets(List<String> ids,boolean thenClose){if(loading||saving){toast("Aguarde a operação atual.");return;}if(ids==null||ids.isEmpty()||ids.get(0).isEmpty())return;final JSONObject chosen=deltaFromCurrent(),chosenExtra=copyJson(extraValues);saving=true;refreshControls();presetButton.setEnabled(false);status.setText("Aplicando em "+ids.size()+" foto(s)…");worker.execute(()->{int ok=0,review=0,fail=0,sentBefore=0;String lastError="";for(String id:ids){if(!DemoLicense.allowed(this))break;try{SaveResult r=saveOne(id,chosen,chosenExtra);ok++;if(r.review)review++;if(r.wasSent)sentBefore++;}catch(Exception e){fail++;lastError=e.getMessage();}}final int fOk=ok,fReview=review,fFail=fail,fSent=sentBefore;final String fErr=lastError;handler.post(()->{saving=false;refreshControls();presetButton.setEnabled(true);String msg="Concluído · "+fOk+" salva(s)"+(fReview>0?" · "+fReview+" em Revisão":"")+(fFail>0?" · "+fFail+" falha(s)":"");if(fSent>0)msg+=" · "+fSent+" já enviada(s)";status.setText(msg+(fErr.isEmpty()?"":" · "+fErr));toast(thenClose?selectedPresetName+" · "+msg:msg);if(thenClose)finish();});});}
+
+ /** Cria um preset com a edição atual: preset da foto + ajustes do editor (sem o automático e sem o recorte). */
+ void savePresetDialog(){
+  if(loading||saving){toast("Aguarde a foto carregar.");return;}
+  EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Nome do preset");name.setTextSize(15);
+  LinearLayout box=vertical();box.setPadding(dp(20),dp(4),dp(20),0);
+  TextView note=text("Guarda o preset atual com o que você mudou aqui (luz, cor, curvas, efeitos). O automático continua sendo calculado para cada foto e o recorte não entra. Depois use na Galeria: selecione as fotos → Preset.",12,MUTED,false);box.addView(note);
+  box.addView(name,new LinearLayout.LayoutParams(-1,dp(56)));
+  AlertDialog d=new AlertDialog.Builder(this).setTitle("Novo preset").setView(box).setNegativeButton("Cancelar",null).setPositiveButton("Salvar",null).create();
+  d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+   String n=name.getText().toString().trim();if(n.isEmpty()){name.setError("Dê um nome ao preset.");return;}
+   try{
+    JSONObject preset=editorSettings==null?null:editorSettings.optJSONObject("preset");
+    JSONObject made=PresetMaker.fromEdit(preset,extraValues,deltaFromCurrent());
+    boolean replaced=PresetLibrary.names(this).contains(n);PresetLibrary.put(this,n,made);
+    // A foto passa a usar o preset novo, sem ajuste por cima: o resultado na tela não muda.
+    selectedPreset=made;selectedPresetName=n;presetChanged=true;presetButton.setText(n);d.dismiss();
+    toast("Preset "+n+(replaced?" atualizado":" criado")+". Toque em Exportar novamente para salvar esta foto com ele.");loadFocus();
+   }catch(Exception e){toast("Não foi possível criar o preset: "+e.getMessage());}
+  }));
+  d.show();
+ }
  static final class SaveResult{boolean review,wasSent;SaveResult(boolean r,boolean s){review=r;wasSent=s;}}
  SaveResult saveOne(String id,JSONObject chosen,JSONObject chosenExtra)throws Exception{String[] j=jobs.editorJob(id);if(j==null)throw new IOException("Foto "+id+" não encontrada.");String name=j[1],settingsText=j[2],originalUri=j[3],editedUri=j[4],state=j[5];JSONObject settings=new JSONObject(settingsText);if(presetChanged){settings.put("preset",copyJson(selectedPreset));settings.put("presetName",selectedPresetName);}settings.put("manual",copyJson(chosen));if(chosenExtra!=null&&chosenExtra.length()>0)settings.put("extra",copyJson(chosenExtra));else settings.remove("extra");
   // O corte vale só para a foto que estava na tela; as demais do lote mantêm o próprio.

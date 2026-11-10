@@ -1,4 +1,28 @@
-# LUMO — Android 0.19.0 e iOS 0.4.0
+# LUMO — Android 0.20.0 e iOS 0.5.0
+
+**Android 0.20.0 e iOS 0.5.0 — presets próprios e seleção arrastando:**
+- **Criar preset com a edição.** No editor (Android: painel de ajustes; iPhone: aba Preset), **Criar preset com esta
+  edição** guarda o preset atual com o que foi mudado (luz, cor, curvas, HSL, gradação, efeitos, detalhe e o perfil
+  criativo). O automático continua sendo calculado para cada foto e o recorte não entra. A foto passa a usar o preset
+  novo e fica igual na tela.
+- **Exportar .xmp.** Android: Predefinição → **Exportar (.xmp)**; iPhone: Ajustes → Preset → **Exportar preset
+  selecionado**. O arquivo abre no Lightroom e no Lumo do outro aparelho (as tabelas do perfil criativo não vão no arquivo).
+- **Selecionar várias arrastando, como na galeria do celular.** No modo de seleção, arraste o dedo de lado sobre as
+  miniaturas para marcar (ou desmarcar) todas no caminho; para cima/baixo a grade continua rolando. No Android também dá
+  para segurar uma foto e, sem soltar, arrastar; perto da borda a lista rola sozinha.
+- **Selecionar todas** e **Preset**: com as fotos marcadas, **Preset** aplica um preset em todas de uma vez (substitui o
+  preset e os ajustes manuais; o recorte de cada foto fica). **Colar** continua colando os ajustes copiados.
+
+**iOS 0.5.0 — o que faltava em relação ao Android:**
+- **Curadoria que corrige em vez de recusar** (mesmas regras e números do Android 0.19.0): exposição ajustada numa prévia
+  depois do preset; Revisão só para desfocada (medida na original, região por região), rosto principal cortado na lateral
+  ou embaixo (Vision) e foto quase preta ou toda branca. Saíram olhos fechados, rosto virado e contraste baixo.
+- **Revelação na GPU (Metal)** com autoteste contra a CPU e volta automática para a CPU; chave em Ajustes → Revelação.
+  O detalhe da foto mostra o motor e os tempos.
+- **Relatório de falhas** no mesmo Sentry do Android (sinal fatal, exceção e os relatórios de falha e travamento do
+  próprio iOS pelo MetricKit). Ajustes → Relatórios de falha.
+- **Galeria online para os convidados**: Entrega → Galeria online (link, QR code, publicação automática).
+- **Bloqueio com Face ID / Touch ID**: Ajustes → Conta.
 
 **Android 0.19.0 — relatório de falhas, chave de produção e edição mais rápida:**
 - **Editor completo e histograma.**

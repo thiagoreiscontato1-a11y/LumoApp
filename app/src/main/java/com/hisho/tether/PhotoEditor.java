@@ -60,14 +60,9 @@ final class PhotoEditor {
   * Preset com os ajustes extras do editor por cima (só chaves Camera Raw conhecidas). Uma curva de pontos no
   * extra ({@code ToneCurvePV2012.0}, {@code .1}…) substitui a curva inteira do preset.
   */
- static Map<String,Double> merged(JSONObject preset,JSONObject extra){
-  Map<String,Double> m=values(preset);if(extra==null)return m;
-  for(String c:Develop.CURVES)if(extra.has(c+".0")){Iterator<String> old=new ArrayList<>(m.keySet()).iterator();while(old.hasNext()){String k=old.next();if(k.startsWith(c+"."))m.remove(k);}}
-  Iterator<String> it=extra.keys();
-  while(it.hasNext()){String k=it.next();double v=extra.optDouble(k,Double.NaN);if(Double.isNaN(v))continue;if(Develop.RANGES.containsKey(k))m.put(k,v);else if(curveKey(k))m.put(k,Math.max(0,Math.min(255,v)));}return m;
- }
+ static Map<String,Double> merged(JSONObject preset,JSONObject extra){return PresetMaker.merged(preset,extra);}
  /** Chave de ponto de curva ({@code ToneCurvePV2012Red.4}…). */
- static boolean curveKey(String k){int dot=k.lastIndexOf('.');if(dot<0)return false;String base=k.substring(0,dot),n=k.substring(dot+1);if(n.isEmpty()||n.length()>3)return false;for(char ch:n.toCharArray())if(ch<'0'||ch>'9')return false;for(String c:Develop.CURVES)if(c.equals(base))return true;return false;}
+ static boolean curveKey(String k){return PresetMaker.curveKey(k);}
 
  // ---------------------------------------------------------------- Recorte e perfil criativo
 
