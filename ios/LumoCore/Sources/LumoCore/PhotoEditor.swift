@@ -53,6 +53,10 @@ public struct EditOptions: Codable, Hashable {
     /// Demais ajustes do editor (HSL, calibração, efeitos, detalhe) em chaves Camera Raw, com o
     /// valor final de cada uma: substituem os do preset.
     public var extra: [String: Double]?
+    /// Perfil criativo do preset (tabelas guardadas em `CreativeProfile.directory`).
+    public var look: CreativeLook?
+    /// Recorte e endireitar da foto (aplicados antes da revelação).
+    public var crop: Crop?
     /// Maior lado do JPEG editado; 0 mantém o original.
     public var edge: Int = 0
     public var curation: Bool = true
@@ -72,7 +76,20 @@ public enum PhotoEditor {
     // MARK: Pipeline
 
     public static func edit(_ image: inout PixelImage, options: EditOptions) {
-        image = render(Develop.Source(image), options: options)
+        image = render(Develop.Source(prepare(image, options: options)), options: options)
+    }
+
+    /// Pixels prontos para revelar: recortados/endireitados e com o perfil criativo. Mesma ordem do Android.
+    public static func prepare(_ image: PixelImage, options: EditOptions) -> PixelImage {
+        var out = image
+        if let crop = options.crop, !crop.isIdentity { out = crop.constrained(out.width, out.height).apply(out) }
+        return CreativeProfile.apply(out, profile(options))
+    }
+
+    /// Perfil criativo do preset, com a intensidade do editor (`LookAmount` no extra) por cima.
+    public static func profile(_ options: EditOptions) -> CreativeProfile.Profile? {
+        guard let look = options.look else { return nil }
+        return CreativeProfile.resolve(look, amount: Develop.value("LookAmount", in: merged(options.preset, options.extra)))
     }
 
     public static func render(_ source: Develop.Source, options: EditOptions) -> PixelImage {
@@ -86,10 +103,22 @@ public enum PhotoEditor {
         return s
     }
 
-    /// Preset com os ajustes extras do editor por cima.
+    /// Preset com os ajustes extras do editor por cima. Uma curva de pontos no extra (`ToneCurvePV2012.0`, `.1`…)
+    /// substitui a curva inteira do preset.
     public static func merged(_ preset: [String: Double]?, _ extra: [String: Double]?) -> [String: Double]? {
         guard let extra, !extra.isEmpty else { return preset }
-        return (preset ?? [:]).merging(extra) { _, new in new }
+        var base = preset ?? [:]
+        for c in Develop.curves where extra["\(c).0"] != nil {
+            for k in base.keys where k.hasPrefix(c + ".") { base[k] = nil }
+        }
+        return base.merging(extra) { _, new in new }
+    }
+
+    /// Chave de ponto de curva (`ToneCurvePV2012Red.4`…).
+    public static func isCurveKey(_ k: String) -> Bool {
+        guard let dot = k.lastIndex(of: ".") else { return false }
+        let base = String(k[..<dot]), n = k[k.index(after: dot)...]
+        return !n.isEmpty && n.count <= 3 && n.allSatisfy(\.isNumber) && Develop.curves.contains(base)
     }
 
     /// Automático da foto, já escalado pela intensidade das opções (zero se desligado).

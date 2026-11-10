@@ -64,6 +64,8 @@ public struct PhotoRecord: Codable, Identifiable, Hashable {
     public var manual: EditControls?
     /// Ajustes extras do editor (HSL, calibração, efeitos, detalhe), como em `EditOptions.extra`.
     public var extra: [String: Double]?
+    /// Recorte e endireitar da foto (só desta foto, não vem do preset).
+    public var crop: Crop?
     public var upload: UploadStage = .none
     public var fottoGalleryID: String = ""
     public var fottoMediaID: String = ""
@@ -101,6 +103,7 @@ public struct PhotoRecord: Codable, Identifiable, Hashable {
         presetName = try c.decodeIfPresent(String.self, forKey: .presetName) ?? ""
         manual = try c.decodeIfPresent(EditControls.self, forKey: .manual)
         extra = try c.decodeIfPresent([String: Double].self, forKey: .extra)
+        crop = try c.decodeIfPresent(Crop.self, forKey: .crop)
         upload = try c.decodeIfPresent(UploadStage.self, forKey: .upload) ?? .none
         fottoGalleryID = try c.decodeIfPresent(String.self, forKey: .fottoGalleryID) ?? ""
         fottoMediaID = try c.decodeIfPresent(String.self, forKey: .fottoMediaID) ?? ""

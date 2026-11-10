@@ -355,3 +355,137 @@ final class HistogramTests: XCTestCase {
         XCTAssertEqual(m.pixels[5], src.pixels[5])
     }
 }
+
+
+/// Perfis criativos, crs:Look no XMP, recorte e curvas no extra (mesmos casos de ProfileTest.java).
+/// As tabelas abaixo foram geradas pelo codificador do teste Java (zlib + base 85 do DNG SDK), com o resultado
+/// esperado calculado pelo CreativeProfile.java: o Swift tem de chegar no mesmo número.
+final class ProfileCropTests: XCTestCase {
+    static let swap = "t9000l.l5L.t7Ja5(P+o[Ioc=.T06xr'h7M#?2(yZl7[ft'F#'4qE)J3BB9p@B`E2etiVI1u(S-l)P-/{eQ`-L@K$z8p`pI!09iCaKcZvrV7rpky1s8(L7djHIj!he/e@nU7t=L{ybpG=PcepV/V5St'xktukM^4niy2r7Tg?:`U.^)P[g4p04Y9oAEaU6SLp?B^5Uv'Q(nN(YkB#GOuh@|e=[Hds#XtB1AnZRBo%Q}y`^f!uK6v!39PrnB2c9qf2-!+OC$*`#x!fd-nAPO*5izSU0xBp*5z05!$Ho(TWl[Co6%E(TemK^jyaF31-i^WNK!z]`NlO:UP8"
+    static let adobeId = "t9000OcImwBRLy1{X$/wCGIxQPWfos6gj09TXrb0{0"
+    static let warm = "t9000{=f`:/hP1vPu3o09$|%ru0GeF!W5'Ncbk*L|MIGJ|)e#6F!*gB4s]'bxrGwgJykn`LMWiQ2FIfU`CCn^*hR514kzfRGMWiQc`ij'0vAE]-oZlTQIPQjXVyI(oI|:u0@Wzm"
+    static let gray = "'3000KZk$uzz]:0v0%/w55A12G`zvk!x.HQZlA2is?g9I'}1"
+    static let rot = "Nr000KZk$uzz]:07d@/wraz6HSQ*GgW3JkRnX9xV7l-4)+OONDgTc)9L7Yuh?yu0Ac?nsSEf0"
+    static let swapOut: [UInt32] = [0xFF6432C8, 0xFF000000, 0xFFFFFFFF, 0xFFA05A1E, 0xFF808080]
+    static let adobeIdOut: [UInt32] = [0xFFC86432, 0xFF000000, 0xFFFFFFFF, 0xFF1EA05A, 0xFF808080]
+    static let warmOut: [UInt32] = [0xFFD95F29, 0xFF390000, 0xFFFFFFEA, 0xFF549E50, 0xFF977D75]
+    static let grayOut: [UInt32] = [0xFFA0A0A0, 0xFF000000, 0xFFFFFFFF, 0xFF979797, 0xFF808080]
+    static let rotOut: [UInt32] = [0xFF6A9600, 0xFF000000, 0xFFE5E5E5, 0xFF009286, 0xFF737373]
+    static let swapHalf: [UInt32] = [0xFF964B7D, 0xFF000000, 0xFFFFFFFF, 0xFF5F7D3C, 0xFF808080]
+    static let input: [UInt32] = [0xFFC86432, 0xFF000000, 0xFFFFFFFF, 0xFF1EA05A, 0xFF808080]
+
+    func near(_ a: UInt32, _ b: UInt32, _ tol: Int = 1) -> Bool {
+        for s: UInt32 in [16, 8, 0] where abs(Int((a >> s) & 255) - Int((b >> s) & 255)) > tol { return false }
+        return true
+    }
+
+    func run(_ text: String, _ amount: Double) throws -> [UInt32] {
+        let profile: CreativeProfile.Profile
+        switch try CreativeProfile.decode(text) {
+        case .rgb(let t): profile = CreativeProfile.Profile(key: "t\(text.hashValue)/\(amount)", rgb: t, look: nil, rgbAmount: amount, lookAmount: 0, grayscale: false)
+        case .look(let t): profile = CreativeProfile.Profile(key: "l\(text.hashValue)/\(amount)", rgb: nil, look: t, rgbAmount: 0, lookAmount: amount, grayscale: false)
+        }
+        return CreativeProfile.apply(PixelImage(width: Self.input.count, height: 1, pixels: Self.input), profile).pixels
+    }
+
+    func testBase85RoundTripAndTablesMatchAndroid() throws {
+        #if canImport(Compression)
+        for (text, expected) in [(Self.swap, Self.swapOut), (Self.adobeId, Self.adobeIdOut), (Self.warm, Self.warmOut), (Self.gray, Self.grayOut), (Self.rot, Self.rotOut)] {
+            let out = try run(text, 1)
+            for i in out.indices { XCTAssertTrue(near(out[i], expected[i]), "pixel \(i): \(String(out[i], radix: 16)) ≠ \(String(expected[i], radix: 16))") }
+        }
+        let half = try run(Self.swap, 0.5)
+        for i in half.indices { XCTAssertTrue(near(half[i], Self.swapHalf[i]), "intensidade 50% pixel \(i)") }
+        XCTAssertEqual(try run(Self.swap, 0), Self.input)
+        #endif
+        XCTAssertThrowsError(try CreativeProfile.decode("@@@@@"))
+    }
+
+    func testStoreResolveAndXMPLook() throws {
+        #if canImport(Compression)
+        let md5 = "0123456789ABCDEF0123456789ABCDEF"
+        try CreativeProfile.store(md5, Self.swap)
+        XCTAssertEqual(CreativeProfile.load(md5.lowercased()), Self.swap)
+        let ref = CreativeLook(name: "Filme", rgbTable: md5, rgbAmount: 0.5)
+        XCTAssertEqual(CreativeProfile.resolve(ref, amount: 100)?.rgbAmount ?? -1, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(CreativeProfile.resolve(ref, amount: 200)?.rgbAmount ?? -1, 1, accuracy: 1e-9)
+        XCTAssertEqual(CreativeProfile.resolve(ref, amount: 0)?.active, false)
+        XCTAssertNil(CreativeProfile.resolve(CreativeLook(name: "x", rgbTable: String(repeating: "F", count: 32)), amount: 100))
+        XCTAssertThrowsError(try CreativeProfile.store("nada", Self.swap))
+
+        // Preset com crs:Look: a curva e a exposição do perfil não vazam para os ajustes.
+        let preset = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:Exposure2012="+0.30" crs:Table_\(md5)="\(Self.swap)"><crs:Look><rdf:Description crs:Name="Filme 01" crs:Amount="0.8"><crs:Parameters><rdf:Description crs:RGBTable="\(md5)" crs:RGBTableAmount="0.6" crs:Exposure2012="+2"><crs:ToneCurvePV2012><rdf:Seq><rdf:li>0, 40</rdf:li><rdf:li>255, 200</rdf:li></rdf:Seq></crs:ToneCurvePV2012></rdf:Description></crs:Parameters></rdf:Description></crs:Look><crs:Contrast2012>+15</crs:Contrast2012></rdf:Description></rdf:RDF></x:xmpmeta>
+        """
+        let parsed = try XMPPreset.parseWithLook(Data(preset.utf8))
+        XCTAssertEqual(parsed.values["Exposure2012"], 0.3)
+        XCTAssertEqual(parsed.values["Contrast2012"], 15)
+        XCTAssertNil(parsed.values["ToneCurvePV2012.0"])
+        XCTAssertEqual(parsed.values["LookAmount"] ?? 0, 80, accuracy: 1e-9)
+        XCTAssertEqual(parsed.look["RGBTable"], md5)
+        XCTAssertEqual(parsed.look["RGBTableAmount"], "0.6")
+        XCTAssertEqual(parsed.look["Name"], "Filme 01")
+        XCTAssertEqual(parsed.look["Table_" + md5], Self.swap)
+
+        // .xmp de perfil: tabela no topo, junto dos ajustes.
+        let profile = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:PresetType="Look" crs:RGBTable="\(md5)" crs:RGBTableAmount="0.75" crs:Table_\(md5)="\(Self.swap)" crs:Saturation="-10"/></rdf:RDF></x:xmpmeta>
+        """
+        let p2 = try XMPPreset.parseWithLook(Data(profile.utf8))
+        XCTAssertEqual(p2.values["Saturation"], -10)
+        XCTAssertEqual(p2.values["LookAmount"], 100)
+        XCTAssertEqual(p2.look["RGBTableAmount"], "0.75")
+
+        var o = EditOptions()
+        o.look = CreativeLook(name: "Filme", rgbTable: md5)
+        let img = PixelImage(width: Self.input.count, height: 1, pixels: Self.input)
+        XCTAssertTrue(near(PhotoEditor.prepare(img, options: o).pixels[0], Self.swapOut[0]))
+        o.extra = ["LookAmount": 0]
+        XCTAssertEqual(PhotoEditor.prepare(img, options: o).pixels, Self.input)
+        #endif
+    }
+
+    func testDefaultsAndCurveMerge() {
+        XCTAssertEqual(Develop.value("LookAmount", in: [:]), 100)
+        XCTAssertEqual(Develop.value("ColorGradeBlending", in: [:]), 100)
+        XCTAssertEqual(Develop.value("ColorGradeBlending", in: ["ColorGradeMidtoneHue": 20]), 50)
+        let preset: [String: Double] = ["ToneCurvePV2012.0": 0, "ToneCurvePV2012.1": 30, "ToneCurvePV2012.2": 128, "ToneCurvePV2012.3": 128,
+                                        "ToneCurvePV2012.4": 255, "ToneCurvePV2012.5": 230, "Exposure2012": 0.5]
+        let m = PhotoEditor.merged(preset, ["ToneCurvePV2012.0": 0, "ToneCurvePV2012.1": 0, "ToneCurvePV2012.2": 255, "ToneCurvePV2012.3": 255])!
+        XCTAssertNil(m["ToneCurvePV2012.4"], "curva do extra substitui a do preset inteira")
+        XCTAssertEqual(m["ToneCurvePV2012.3"], 255)
+        XCTAssertEqual(m["Exposure2012"], 0.5)
+        XCTAssertTrue(PhotoEditor.isCurveKey("ToneCurvePV2012Red.4"))
+        XCTAssertFalse(PhotoEditor.isCurveKey("ToneCurvePV2012Red"))
+        XCTAssertFalse(PhotoEditor.isCurveKey("Exposure2012.1"))
+    }
+
+    func testCropAndStraighten() {
+        let w = 60, h = 40
+        var img = PixelImage(width: w, height: h)
+        for y in 0..<h { for x in 0..<w { img[x, y] = 0xFF00_0000 | UInt32(x * 4) << 16 | UInt32(y * 6) << 8 | 77 } }
+        XCTAssertEqual(Crop.none.apply(img), img)
+        let half = Crop(left: 0.5, top: 0, right: 1, bottom: 0.5).apply(img)
+        XCTAssertEqual(half.width, 30); XCTAssertEqual(half.height, 20)
+        XCTAssertEqual(half[0, 0], img[30, 0]); XCTAssertEqual(half[29, 19], img[59, 19])
+        for a in [-30.0, -7.5, 3, 12, 45] {
+            let c = Crop.largest(w, h, angle: a, aspect: 0)
+            XCTAssertTrue(Crop.fits(c.left, c.top, c.right, c.bottom, w, h, a), "maior corte cabe \(a)")
+            let big = Crop(angle: a).constrained(w, h)
+            XCTAssertTrue(Crop.fits(big.left, big.top, big.right, big.bottom, w, h, a), "corte encolhido cabe \(a)")
+            let out = c.apply(img)
+            XCTAssertEqual(out.pixels.count, out.width * out.height)
+        }
+        let sq = Crop.largest(w, h, angle: 0, aspect: 1).size(w, h)
+        XCTAssertLessThanOrEqual(abs(sq.0 - sq.1), 1); XCTAssertEqual(sq.1, h)
+        let solid = PixelImage(width: w, height: h, fill: 0xFF0A_C85A)
+        XCTAssertTrue(Crop.largest(w, h, angle: 20, aspect: 0).apply(solid).pixels.allSatisfy { $0 == 0xFF0A_C85A }, "girado sem borda preta")
+        let canvas = Crop.rotated(solid, angle: 30, fill: 0xFF00_0000)
+        XCTAssertEqual(canvas[0, 0], 0xFF00_0000); XCTAssertEqual(canvas[w / 2, h / 2], 0xFF0A_C85A)
+        let q = Crop.toSource(Double(w) / 2, Double(h) / 2, w, h, 33)
+        XCTAssertEqual(q.0, Double(w) / 2, accuracy: 1e-9); XCTAssertEqual(q.1, Double(h) / 2, accuracy: 1e-9)
+        // O corte da foto é gravado e lido de volta.
+        let data = try? JSONEncoder().encode(Crop(angle: 5, left: 0.1, top: 0.2, right: 0.9, bottom: 0.8))
+        XCTAssertEqual(data.flatMap { try? JSONDecoder().decode(Crop.self, from: $0) }, Crop(angle: 5, left: 0.1, top: 0.2, right: 0.9, bottom: 0.8))
+    }
+}

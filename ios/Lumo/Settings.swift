@@ -85,6 +85,7 @@ struct LumoSettings: Codable, Equatable {
         o.autoStrength = autoStrength
         o.presetName = presetName
         o.preset = presetName.isEmpty ? nil : presets.preset(named: presetName)
+        o.look = presetName.isEmpty ? nil : presets.look(named: presetName)
         o.edge = edge
         o.curation = curation
         o.curationSensitivity = curationSensitivity
@@ -92,36 +93,46 @@ struct LumoSettings: Codable, Equatable {
     }
 }
 
-/// Biblioteca de presets XMP importados (nome → ajustes Camera Raw).
+/// Biblioteca de presets XMP importados (nome → ajustes Camera Raw) e o perfil criativo de cada um.
 struct PresetStore {
     static let key = "lumo.presets.v1"
+    static let looksKey = "lumo.presetLooks.v1"
 
     var all: [String: [String: Double]]
+    var looks: [String: CreativeLook] = [:]
 
     static func load() -> PresetStore {
         guard let data = UserDefaults.standard.data(forKey: key),
               let all = try? JSONDecoder().decode([String: [String: Double]].self, from: data) else { return PresetStore(all: [:]) }
-        return PresetStore(all: all)
+        var store = PresetStore(all: all)
+        if let data = UserDefaults.standard.data(forKey: looksKey),
+           let looks = try? JSONDecoder().decode([String: CreativeLook].self, from: data) { store.looks = looks }
+        return store
     }
+
+    func look(named name: String) -> CreativeLook? { looks[name] }
 
     var names: [String] { all.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending } }
 
     func preset(named name: String) -> [String: Double]? { all[name] }
 
-    mutating func put(_ name: String, _ values: [String: Double]) {
+    mutating func put(_ name: String, _ values: [String: Double], look: CreativeLook? = nil) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         all[trimmed] = values
+        looks[trimmed] = look
         save()
     }
 
     mutating func remove(_ name: String) {
         all[name] = nil
+        looks[name] = nil
         save()
     }
 
     func save() {
         if let data = try? JSONEncoder().encode(all) { UserDefaults.standard.set(data, forKey: Self.key) }
+        if let data = try? JSONEncoder().encode(looks) { UserDefaults.standard.set(data, forKey: Self.looksKey) }
     }
 }
 
