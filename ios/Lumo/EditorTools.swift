@@ -136,6 +136,7 @@ struct ColorWheel: View {
     var body: some View {
         GeometryReader { geo in
             let s = geo.size, r = min(s.width, s.height) / 2 - 10, c = CGPoint(x: s.width / 2, y: s.height / 2)
+            let knob = Self.knob(hue: hue, sat: sat, center: c, radius: r)
             ZStack {
                 // AngularGradient gira no sentido horário na tela; a matiz cresce no anti-horário.
                 Circle()
@@ -151,7 +152,7 @@ struct ColorWheel: View {
                     .stroke(Color.white, lineWidth: 2)
                     .background(Circle().stroke(Color.black, lineWidth: 4))
                     .frame(width: 16, height: 16)
-                    .position(x: c.x + CGFloat(cos(hue * .pi / 180) * sat / 100) * r, y: c.y - CGFloat(sin(hue * .pi / 180) * sat / 100) * r)
+                    .position(knob)
             }
             .frame(width: s.width, height: s.height)
             .contentShape(Rectangle())
@@ -170,6 +171,15 @@ struct ColorWheel: View {
         .aspectRatio(1, contentMode: .fit)
         .frame(maxWidth: 220)
         .accessibilityLabel(String(format: "Roda de cor. Matiz %.0f, saturação %.0f", hue, sat))
+    }
+
+    /// Posição do botão: ângulo = matiz (anti-horário), distância = saturação.
+    static func knob(hue: Double, sat: Double, center: CGPoint, radius: CGFloat) -> CGPoint {
+        let angle: Double = hue * Double.pi / 180
+        let dist: Double = sat / 100 * Double(radius)
+        let dx: Double = cos(angle) * dist
+        let dy: Double = sin(angle) * dist
+        return CGPoint(x: center.x + CGFloat(dx), y: center.y - CGFloat(dy))
     }
 }
 

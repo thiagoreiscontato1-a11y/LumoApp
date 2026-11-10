@@ -130,7 +130,11 @@ public struct Crop: Codable, Hashable {
         let b = px[y0 * w + x1], c = px[y1 * w + x0], d = px[y1 * w + x1]
         let w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy
         func ch(_ shift: UInt32) -> UInt32 {
-            let v = Double((a >> shift) & 255) * w00 + Double((b >> shift) & 255) * w10 + Double((c >> shift) & 255) * w01 + Double((d >> shift) & 255) * w11
+            let p0: Double = Double((a >> shift) & 255) * w00
+            let p1: Double = Double((b >> shift) & 255) * w10
+            let p2: Double = Double((c >> shift) & 255) * w01
+            let p3: Double = Double((d >> shift) & 255) * w11
+            let v: Double = p0 + p1 + p2 + p3
             return UInt32(max(0, min(255, v.rounded())))
         }
         return 0xFF00_0000 | ch(16) << 16 | ch(8) << 8 | ch(0)

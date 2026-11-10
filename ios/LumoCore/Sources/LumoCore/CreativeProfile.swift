@@ -288,14 +288,22 @@ public enum CreativeProfile {
     }
     static func lerp1(_ t: RGBTable, _ x: Double, _ ch: Int) -> Double {
         let i = max(0, min(t.divisions - 2, Int(x))), f = x - Double(i)
-        return (Double(t.samples[i * 3 + ch]) * (1 - f) + Double(t.samples[(i + 1) * 3 + ch]) * f) / 65535
+        let a: Double = Double(t.samples[i * 3 + ch]) * (1 - f)
+        let b: Double = Double(t.samples[(i + 1) * 3 + ch]) * f
+        return (a + b) / 65535
     }
     /// Interpolação tetraédrica numa grade n³ de trincas (mesma escolha de tetraedro do SDK), amostras 0–65535.
     static func tetra(_ s: [Int32], _ n: Int, _ r: Double, _ g: Double, _ b: Double) -> [Double] {
         let w = weights(n, r, g, b)
-        return (0..<3).map { c in
-            (w.w0 * Double(s[w.base + c]) + w.w1 * Double(s[w.base + w.o1 + c]) + w.w2 * Double(s[w.base + w.o2 + c]) + w.f3 * Double(s[w.base + w.o111 + c])) / 65535
+        var out = [0.0, 0.0, 0.0]
+        for c in 0..<3 {
+            let a0: Double = w.w0 * Double(s[w.base + c])
+            let a1: Double = w.w1 * Double(s[w.base + w.o1 + c])
+            let a2: Double = w.w2 * Double(s[w.base + w.o2 + c])
+            let a3: Double = w.f3 * Double(s[w.base + w.o111 + c])
+            out[c] = (a0 + a1 + a2 + a3) / 65535
         }
+        return out
     }
     struct Weights { var base: Int, o1: Int, o2: Int, o111: Int, w0: Double, w1: Double, w2: Double, f3: Double }
     @inline(__always) static func weights(_ n: Int, _ r: Double, _ g: Double, _ b: Double) -> Weights {
@@ -344,8 +352,13 @@ public enum CreativeProfile {
         for k in 0..<3 {
             let e00 = (v0 * valStep + h0 * hueStep + s0) * 3 + k, e01 = (v0 * valStep + h1 * hueStep + s0) * 3 + k
             let d = t.deltas
-            let a0 = vf0 * (hf0 * Double(d[e00]) + hf1 * Double(d[e01])) + vf1 * (hf0 * Double(d[e00 + vStep]) + hf1 * Double(d[e01 + vStep]))
-            let a1 = vf0 * (hf0 * Double(d[e00 + sStep]) + hf1 * Double(d[e01 + sStep])) + vf1 * (hf0 * Double(d[e00 + sStep + vStep]) + hf1 * Double(d[e01 + sStep + vStep]))
+            func at(_ i: Int) -> Double { Double(d[i]) }
+            let low0: Double = hf0 * at(e00) + hf1 * at(e01)
+            let high0: Double = hf0 * at(e00 + vStep) + hf1 * at(e01 + vStep)
+            let low1: Double = hf0 * at(e00 + sStep) + hf1 * at(e01 + sStep)
+            let high1: Double = hf0 * at(e00 + sStep + vStep) + hf1 * at(e01 + sStep + vStep)
+            let a0: Double = vf0 * low0 + vf1 * high0
+            let a1: Double = vf0 * low1 + vf1 * high1
             out[k] = sf0 * a0 + sf1 * a1
         }
         let hueShift = out[0] * amount, satScale = 1 + (out[1] - 1) * amount, valScale = 1 + (out[2] - 1) * amount
@@ -431,8 +444,12 @@ public enum CreativeProfile {
                         let v = px[i]
                         let wt = weights(n, Double((v >> 16) & 255) / 255, Double((v >> 8) & 255) / 255, Double(v & 255) / 255)
                         func channel(_ c: Int) -> UInt32 {
-                            let x = wt.w0 * Double(table[wt.base + c]) + wt.w1 * Double(table[wt.base + wt.o1 + c]) + wt.w2 * Double(table[wt.base + wt.o2 + c]) + wt.f3 * Double(table[wt.base + wt.o111 + c])
-                            return UInt32(max(0, min(255, (x * 255).rounded())))
+                            let a0: Double = wt.w0 * Double(table[wt.base + c])
+                            let a1: Double = wt.w1 * Double(table[wt.base + wt.o1 + c])
+                            let a2: Double = wt.w2 * Double(table[wt.base + wt.o2 + c])
+                            let a3: Double = wt.f3 * Double(table[wt.base + wt.o111 + c])
+                            let x: Double = (a0 + a1 + a2 + a3) * 255
+                            return UInt32(max(0, min(255, x.rounded())))
                         }
                         px[i] = (v & 0xFF00_0000) | channel(0) << 16 | channel(1) << 8 | channel(2)
                     }
