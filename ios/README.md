@@ -1,4 +1,4 @@
-# Lumo iOS 0.4.0
+# Lumo iOS 0.5.0
 
 Versão para iPhone/iPad do fluxo do Lumo Android:
 **Evento → Captura → Edição automática → Curadoria → Galeria/Revisão → Entrega Fotto.**
@@ -22,12 +22,17 @@ Funciona deitado (iPhone no suporte da câmera), vibra quando chega foto e mostr
 | Câmera Wi-Fi | PTP/IP (porta 15740) | `WifiPtp.java`, `PtpIpWire.java` |
 | Importação | App Fotos e Arquivos/leitor de cartão (subpastas); RAW revelado pelo iOS quando não há JPEG par | 0.15.16, `RawPreview.java` |
 | Edição | Automático, preset `.xmp` (do evento ou por foto) e editor com **prévia ao vivo** e antes/depois; copiar/colar ajustes | `PhotoEditor.java`, `ManualEditorActivity.java` |
-| Curadoria | Técnica + duplicatas + **pessoas (Vision)**: rosto cortado/encoberto, olhos fechados, rosto virado | `Curator.java`, `SmartCurator.java`, `SemanticCurator.java` |
-| Galeria | Filtros (todas, favoritas, aprovadas, revisão, não enviadas, enviadas), **favoritos**, seleção múltipla, visualizador com **deslizar e zoom** | (novo, também no Android 0.16.0) |
+| Curadoria | **Corrige em vez de recusar** (0.5.0): exposição ajustada depois do preset; Revisão só para desfocada (nitidez na original, por região), rosto principal cortado (Vision) e foto quase preta/branca | `PhotoCheck.java`, `SmartCurator.java`, `SemanticCurator.java` |
+| Revelação | CPU em todos os núcleos e **GPU (Metal)** com autoteste e volta para a CPU | `Develop.java`, `GpuDevelop.java` |
+| Presets | Importar .xmp, **criar preset com a edição**, exportar .xmp, **aplicar preset em várias fotos** | `PresetMaker.java` |
+| Galeria | Filtros (todas, favoritas, aprovadas, revisão, não enviadas, enviadas), **favoritos**, seleção múltipla **arrastando o dedo** e **Selecionar todas**, visualizador com **deslizar e zoom** | (também no Android) |
 | Modo evento | Tela sempre ligada, alarme de desconexão que toca no silencioso, perfis de trabalho | `EventAlert`, `DisconnectAlert`, `WorkProfiles` |
 | Saúde | Câmera, edição, falhas, revisão, Fotto, última foto, bateria, armazenamento | painel Saúde |
 | Entrega Fotto | Login oficial, lista completa com busca, ID manual, envio direto, confirmação em lote | `FottoApi.java`, `FottoSync.java` |
-| Outros | Manifesto da galeria online, tour inicial, link do painel Fotto | — |
+| Galeria online | Criar a galeria do evento, publicar cada foto aprovada (miniatura, tela cheia e original), link e QR code | `GalleryApi.java`, `GallerySync.java` |
+| Relatório de falhas | Sentry sem SDK: sinal fatal, exceção Objective-C e relatórios de falha/travamento do MetricKit | `CrashReporter.java` |
+| Bloqueio | Face ID / Touch ID (ou o código) ao abrir e ao voltar depois de 5 min | `LumoLock.java` |
+| Outros | Tour inicial, link do painel Fotto | — |
 
 Não portado: licença/modo demonstração de distribuição do Android e o Fotto Web embutido (o envio direto substitui).
 
@@ -71,10 +76,12 @@ API Fotto (incluindo paginação) e armazenamento por evento. O mesmo código é
 - Na aba Captura, toque em **Copiar registro** e envie o texto: ele mostra o ID USB, os recursos que o iOS
   expõe e o tempo de cada comando PTP.
 
-## Limitações conhecidas (precisam de teste no aparelho)
+## Limitações conhecidas
 
-- **Nada foi testado em iPhone físico ainda.** O CI comprova que compila e que o núcleo passa nos testes; conexão
-  com a câmera, permissões e interface precisam ser validadas com a Canon R8/SL2.
+- O app já foi usado num iPhone com a câmera e funciona bem. Os recursos da 0.5.0 (GPU, curadoria nova, galeria online,
+  bloqueio, relatório de falhas, presets e seleção arrastando) passaram no CI (compilação e testes do núcleo, incluindo
+  GPU × CPU no Mac do GitHub quando há Metal), mas ainda precisam ser conferidos no aparelho.
+- A GPU só revela com o app aberto: em segundo plano o iOS não deixa usar a GPU e a foto é revelada na CPU.
 - O envio de comandos PTP Canon pelo ImageCaptureCore (`requestSendPTPCommand`) é suportado pela Apple, mas o
   comportamento varia por modelo. Se falhar, o app entra no modo catálogo, que depende de a câmera publicar as
   novas fotos no USB.

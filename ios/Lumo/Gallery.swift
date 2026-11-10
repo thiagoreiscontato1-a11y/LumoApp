@@ -38,7 +38,14 @@ struct GallerySheet: View {
     @State private var selection = Set<String>()
     @State private var viewer: ViewerContext?
     @State private var confirmDelete = false
-    private let columns = [GridItem(.adaptive(minimum: 108), spacing: 3)]
+    /// Seleção arrastando o dedo: foto onde começou, se o arraste marca ou desmarca e a seleção de antes.
+    @State private var dragAnchor: Int?
+    @State private var dragAdding = true
+    @State private var dragBase = Set<String>()
+    @State private var dragHorizontal: Bool?
+    @State private var applying = false
+    private let spacing: CGFloat = 3
+    private let minTile: CGFloat = 108
 
     var items: [PhotoRecord] { model.recent.filter(filter.matches) }
 
@@ -51,11 +58,24 @@ struct GallerySheet: View {
                                            description: Text(filter == .favorites ? "Toque na estrela de uma foto para favoritá-la." : "As fotos do evento aparecem aqui."))
                         .frame(maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: 3) {
-                            ForEach(items) { photo in tile(photo) }
+                    if selecting {
+                        // Altura fixa: a grade não pode pular de lugar no meio de um arraste.
+                        Text(selection.isEmpty ? "Toque nas fotos ou arraste o dedo de lado sobre elas" : "Arraste de lado para marcar mais · Preset aplica em todas")
+                            .font(.caption).foregroundStyle(Lumo.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                            .padding(.horizontal, 16).padding(.bottom, 6)
+                    }
+                    GeometryReader { geo in
+                        let cols = max(3, Int((geo.size.width + spacing) / (minTile + spacing)))
+                        let side = max(1, (geo.size.width - CGFloat(cols - 1) * spacing) / CGFloat(cols))
+                        ScrollView {
+                            LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: spacing), count: cols), spacing: spacing) {
+                                ForEach(items) { photo in tile(photo) }
+                            }
+                            .padding(.bottom, selecting ? 90 : 12)
+                            .contentShape(Rectangle())
+                            .simultaneousGesture(dragSelect(cols: cols, side: side), including: selecting ? .all : .subviews)
                         }
-                        .padding(.bottom, selecting ? 90 : 12)
+                        .scrollDisabled(dragAnchor != nil)
                     }
                 }
             }
@@ -72,9 +92,11 @@ struct GallerySheet: View {
                 }
                 if selecting {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button(selection.count == items.count ? "Nenhuma" : "Todas") {
-                            selection = selection.count == items.count ? [] : Set(items.map(\.id))
+                        Button(allSelected ? "Desmarcar todas" : "Selecionar todas") {
+                            selection = allSelected ? [] : Set(items.map(\.id))
+                            Haptics.tap()
                         }
+                        .fontWeight(.semibold)
                     }
                 } else {
                     ToolbarItem(placement: .topBarTrailing) { DoneButton() }
@@ -119,6 +141,41 @@ struct GallerySheet: View {
         }
     }
 
+    private var allSelected: Bool { !items.isEmpty && items.allSatisfy { selection.contains($0.id) } }
+
+    /// Índice da foto sob o dedo (a grade tem colunas fixas, então dá para calcular sem medir cada miniatura).
+    private func index(at p: CGPoint, cols: Int, side: CGFloat) -> Int? {
+        guard !items.isEmpty else { return nil }
+        let step = side + spacing
+        let col = min(cols - 1, max(0, Int(p.x / step))), row = max(0, Int(p.y / step))
+        return min(items.count - 1, row * cols + col)
+    }
+
+    /// Como na galeria do iPhone: no modo Selecionar, arrastar o dedo de lado marca (ou desmarca) todas as fotos
+    /// entre a primeira e a que está sob o dedo; arrastar para cima/baixo continua rolando a grade.
+    private func dragSelect(cols: Int, side: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+            .onChanged { v in
+                if dragHorizontal == nil {
+                    let horizontal = abs(v.translation.width) > abs(v.translation.height)
+                    dragHorizontal = horizontal
+                    guard horizontal, let start = index(at: v.startLocation, cols: cols, side: side) else { return }
+                    dragAnchor = start
+                    dragBase = selection
+                    dragAdding = !selection.contains(items[start].id)
+                    Haptics.tap()
+                }
+                guard dragHorizontal == true, let anchor = dragAnchor, let current = index(at: v.location, cols: cols, side: side) else { return }
+                let ids = Set(items[min(anchor, current)...max(anchor, current)].map(\.id))
+                let next = dragAdding ? dragBase.union(ids) : dragBase.subtracting(ids)
+                if next != selection { selection = next }
+            }
+            .onEnded { _ in
+                dragHorizontal = nil
+                dragAnchor = nil
+            }
+    }
+
     private func tile(_ photo: PhotoRecord) -> some View {
         let selected = selection.contains(photo.id)
         return Color.clear
@@ -159,40 +216,53 @@ struct GallerySheet: View {
             }
     }
 
+    private func run(_ work: @escaping () async -> Void) {
+        applying = true
+        Task {
+            await work()
+            applying = false
+            selecting = false
+            selection.removeAll()
+        }
+    }
+
     private var selectionBar: some View {
         let ids = selection
         return HStack(spacing: 4) {
-            barButton("Favoritar", "star") { model.toggleFavorite(ids) }
+            Menu {
+                Section("Aplicar em \(ids.count) foto(s)") {
+                    ForEach(model.presets.names, id: \.self) { name in
+                        Button(name) { run { await model.applyPreset(name, to: ids) } }
+                    }
+                    Button("Preset do evento") { run { await model.applyPreset(nil, to: ids) } }
+                    Button("Sem preset") { run { await model.applyPreset("", to: ids) } }
+                }
+            } label: {
+                barLabel("Preset", "camera.filters")
+            }
+            barButton("Colar", "doc.on.clipboard") { run { await model.pasteAdjustments(to: ids) } }
+                .disabled(model.clipboard == nil)
+                .opacity(model.clipboard == nil ? 0.4 : 1)
             barButton("Aprovar", "checkmark.circle") { Task { await model.approve(ids: ids) } }
             barButton("Enviar", "icloud.and.arrow.up") {
                 model.startUpload(retryFailed: true, only: ids)
                 selecting = false
             }
             .disabled(model.currentEvent?.fottoGallery == nil || model.uploading)
-            ShareLink(items: model.editedURLs(ids)) {
-                VStack(spacing: 3) {
-                    Image(systemName: "square.and.arrow.up").font(.system(size: 18, weight: .semibold))
-                    Text("Compartilhar").font(.system(size: 10, weight: .semibold))
-                }
-                .frame(maxWidth: .infinity)
-            }
             Menu {
-                Button { Task { await model.pasteAdjustments(to: ids) } } label: { Label("Colar ajustes", systemImage: "doc.on.clipboard") }
-                    .disabled(model.clipboard == nil)
+                Button { model.toggleFavorite(ids) } label: { Label("Favoritar", systemImage: "star") }
+                ShareLink(items: model.editedURLs(ids)) { Label("Compartilhar", systemImage: "square.and.arrow.up") }
                 ShareLink(items: model.originalURLs(ids)) { Label("Compartilhar originais", systemImage: "photo.stack") }
                 Divider()
                 Button(role: .destructive) { confirmDelete = true } label: { Label("Excluir", systemImage: "trash") }
             } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: "ellipsis.circle").font(.system(size: 18, weight: .semibold))
-                    Text("Mais").font(.system(size: 10, weight: .semibold))
-                }
-                .frame(maxWidth: .infinity)
+                barLabel("Mais", "ellipsis.circle")
             }
         }
         .foregroundStyle(.white)
-        .disabled(ids.isEmpty)
+        .disabled(ids.isEmpty || applying)
         .opacity(ids.isEmpty ? 0.5 : 1)
+        .overlay { if applying { ProgressView().tint(.white) } }
         .padding(.vertical, 10)
         .padding(.horizontal, 8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -201,14 +271,16 @@ struct GallerySheet: View {
     }
 
     private func barButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon).font(.system(size: 18, weight: .semibold))
-                Text(title).font(.system(size: 10, weight: .semibold))
-            }
-            .frame(maxWidth: .infinity)
+        Button(action: action) { barLabel(title, icon) }.buttonStyle(.plain)
+    }
+
+    private func barLabel(_ title: String, _ icon: String) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 18, weight: .semibold))
+            Text(title).font(.system(size: 10, weight: .semibold))
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 

@@ -5,7 +5,7 @@ import UIKit
 /// Estado do app: evento atual, fotos, ajustes, câmera e entrega Fotto.
 @MainActor
 final class AppModel: ObservableObject {
-    static let version = "0.4.0"
+    static let version = "0.5.0"
 
     let library: EventLibrary
     let pipeline: PhotoPipeline
@@ -20,12 +20,9 @@ final class AppModel: ObservableObject {
         didSet {
             settings.save()
             capture.backfillEnabled = settings.backfill
-        capture.onDisconnect = { [weak self] message in
-            Task { @MainActor in
-                guard let self, self.settings.disconnectAlarm || self.settings.eventMode else { return }
-                Alerts.disconnect(message)
-            }
-        }
+            GpuDevelop.userEnabled = settings.gpuEnabled
+            if settings.crashReports != CrashReporter.enabled { CrashReporter.enabled = settings.crashReports }
+            if settings.onlineAuto && !oldValue.onlineAuto { kickOnline() }
         }
     }
     @Published private(set) var presets = PresetStore.load()
@@ -46,6 +43,13 @@ final class AppModel: ObservableObject {
     private var importTask: Task<Void, Never>?
     /// Modo de demonstração: foto a abrir no visualizador.
     @Published var demoOpenPhoto: String?
+
+    /// Galeria online do evento atual (nil = nenhuma) e estado da publicação.
+    @Published var onlineGallery: OnlineGallery?
+    @Published var onlineStatus = ""
+    @Published var onlinePublishing = false
+    @Published var onlineConfigured = OnlineGalleryAPI.configured
+    var onlineAgain = false
 
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -70,6 +74,16 @@ final class AppModel: ObservableObject {
             return await self.pipeline.contains(sourceKey: key, in: event)
         }
         capture.backfillEnabled = settings.backfill
+        capture.onDisconnect = { [weak self] message in
+            Task { @MainActor in
+                CrashReporter.note("câmera desconectou")
+                guard let self, self.settings.disconnectAlarm || self.settings.eventMode else { return }
+                Alerts.disconnect(message)
+            }
+        }
+        GpuDevelop.userEnabled = settings.gpuEnabled
+        GpuDevelop.warmUp()
+        onlineGallery = currentEvent.flatMap { OnlineGalleryAPI.gallery(for: $0.id) }
         Task {
             await pipeline.setOnChange { [weak self] record in
                 Task { @MainActor in self?.apply(record) }
@@ -201,6 +215,8 @@ final class AppModel: ObservableObject {
         settings.activeEventID = event.id
         // O destino Fotto é lembrado por evento; ao trocar, o envio automático fica pausado.
         settings.fottoAuto = false
+        onlineGallery = OnlineGalleryAPI.gallery(for: event.id)
+        onlineStatus = ""
         reloadPhotos()
     }
 
@@ -211,6 +227,8 @@ final class AppModel: ObservableObject {
     private func apply(_ record: PhotoRecord) {
         guard record.eventID == currentEvent?.id else { return }
         if let i = photos.firstIndex(where: { $0.id == record.id }) { photos[i] = record } else { photos.append(record) }
+        if record.stage == .approved, let g = onlineGallery, !isPublished(record, in: g) { kickOnline() }
+        if record.stage == .approved || record.stage == .review { CrashReporter.note("foto editada · \(record.timing)") }
     }
 
     func folderURL(_ sub: String) -> URL? { currentEvent.map { library.folder($0, sub) } }
@@ -446,10 +464,12 @@ final class AppModel: ObservableObject {
 
     func pasteAdjustments(to ids: Set<String>) async {
         guard let clip = clipboard else { return }
+        var count = 0
         for p in photos where ids.contains(p.id) && !p.isSent {
             await reprocess(p, manual: clip.manual, extra: .some(clip.extra), customPreset: .some(clip.customPreset))
+            count += 1
         }
-        message = "Ajustes colados em \(ids.count) foto(s)."
+        message = "Ajustes colados em \(count) foto(s)." + (count < ids.count ? " \(ids.count - count) já enviada(s) ao Fotto ficaram como estavam." : "")
     }
 
     func baseControls(for photo: PhotoRecord) -> EditControls {
@@ -496,6 +516,40 @@ final class AppModel: ObservableObject {
     func removePreset(_ name: String) {
         presets.remove(name)
         if settings.presetName == name { settings.presetName = "" }
+    }
+
+    /// Cria um preset com a edição atual (preset da foto + ajustes do editor; sem o automático e sem o recorte).
+    @discardableResult
+    func createPreset(named raw: String, options: EditOptions, manual: EditControls, extra: [String: Double]) -> String? {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { message = "Dê um nome ao preset."; return nil }
+        let values = PhotoEditor.presetValues(preset: options.preset, extra: extra, manual: manual.isNeutral ? nil : manual)
+        let replaced = presets.preset(named: name) != nil
+        presets.put(name, values, look: options.look)
+        message = "Preset “\(name)” \(replaced ? "atualizado" : "criado"). Para usar em várias fotos: Galeria → Selecionar → arraste o dedo ou toque em Todas → Preset."
+        return name
+    }
+
+    /// Arquivo .xmp do preset, para usar no Lightroom ou em outro aparelho (Android ou iPhone).
+    func presetFileURL(_ name: String) -> URL? {
+        guard let values = presets.preset(named: name) else { return nil }
+        let safe = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(safe + ".xmp")
+        try? XMPPreset.write(values, name: name).write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    /// Aplica um preset às fotos escolhidas: o preset passa a ser o da foto e os ajustes manuais saem (o recorte fica).
+    /// `name` vazio tira o preset; nil volta ao preset do evento.
+    func applyPreset(_ name: String?, to ids: Set<String>) async {
+        var count = 0, skipped = 0
+        for p in photos where ids.contains(p.id) {
+            if p.isSent { skipped += 1; continue }
+            await reprocess(p, manual: nil, extra: .some(nil), customPreset: .some(name))
+            count += 1
+        }
+        let label = name.map { $0.isEmpty ? "Sem preset" : "Preset “\($0)”" } ?? "Preset do evento"
+        message = "\(label) aplicado em \(count) foto(s)." + (skipped > 0 ? " \(skipped) já enviada(s) ao Fotto ficaram como estavam." : "")
     }
 
     // MARK: Fotto
@@ -577,6 +631,102 @@ final class AppModel: ObservableObject {
         Task {
             await uploader.reconcile(event: event, gallery: g, quiet: false)
             reloadPhotos()
+        }
+    }
+}
+
+// MARK: - Galeria online
+
+extension AppModel {
+    func isPublished(_ p: PhotoRecord, in g: OnlineGallery) -> Bool { p.onlineGalleryID == g.id && !p.onlineSignature.isEmpty }
+
+    var onlineDone: Int { onlineGallery.map { g in photos.filter { isPublished($0, in: g) }.count } ?? 0 }
+    var onlinePending: Int {
+        onlineGallery.map { g in photos.filter { $0.stage == .approved && !isPublished($0, in: g) }.count } ?? 0
+    }
+
+    func connectOnline(server raw: String, token: String) async -> String? {
+        let server = OnlineGalleryAPI.normalize(raw), key = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !server.isEmpty else { return "Informe o endereço." }
+        guard !key.isEmpty else { return "Informe a chave." }
+        do {
+            let studio = try await OnlineGalleryAPI.check(server: server, token: key)
+            OnlineGalleryAPI.server = server
+            OnlineGalleryAPI.token = key
+            onlineConfigured = true
+            onlineStatus = "Galeria conectada · \(studio)"
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func createOnlineGallery(title: String, pin: String, allowDownload: Bool) async -> String? {
+        guard let event = currentEvent else { return "Escolha um evento local primeiro." }
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return "Informe o nome da galeria." }
+        let p = pin.trimmingCharacters(in: .whitespaces)
+        if !p.isEmpty && p.count < 4 { return "A senha precisa de 4 ou mais letras/números." }
+        do {
+            let g = try await OnlineGalleryAPI.createGallery(title: t, clientKey: event.id, pin: p, allowDownload: allowDownload)
+            OnlineGalleryAPI.save(g, for: event.id)
+            onlineGallery = g
+            onlineStatus = "Galeria criada. As fotos aprovadas começam a ser publicadas."
+            kickOnline(manual: true)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func forgetOnlineGallery() {
+        guard let event = currentEvent else { return }
+        OnlineGalleryAPI.save(nil, for: event.id)
+        onlineGallery = nil
+        onlineStatus = "Galeria desligada deste evento (nada foi apagado online)."
+    }
+
+    /// Publica as fotos aprovadas que faltam. `manual` envia mesmo com o automático desligado.
+    func kickOnline(manual: Bool = false) {
+        guard OnlineGalleryAPI.configured, let event = currentEvent, let g = onlineGallery else { return }
+        guard manual || settings.onlineAuto else { return }
+        if onlinePublishing { onlineAgain = true; return }
+        onlinePublishing = true
+        let background = BackgroundTask(name: "Galeria online")
+        Task {
+            var sent = 0, failed = false
+            while currentEvent?.id == event.id, manual || settings.onlineAuto {
+                guard let next = photos.filter({ $0.stage == .approved && !isPublished($0, in: g) }).min(by: { $0.capturedAt < $1.capturedAt }) else { break }
+                let file = library.editedURL(next, in: event)
+                let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+                let revision = Int64(modified.timeIntervalSince1970 * 1000)
+                onlineStatus = "Publicando \(next.originalName) na galeria…"
+                do {
+                    _ = try await Task.detached(priority: .utility) {
+                        try await OnlineGalleryAPI.publish(galleryID: g.id, photoID: next.id, revision: revision, name: next.deliveryName,
+                                                           takenAt: next.capturedAt, file: file)
+                    }.value
+                    if var fresh = library.photo(id: next.id, in: event) {
+                        fresh.onlineGalleryID = g.id
+                        fresh.onlineSignature = String(revision)
+                        try? library.save(fresh, in: event)
+                        apply(fresh)
+                    }
+                    sent += 1
+                    onlineStatus = "Publicada \(next.originalName) · \(onlineDone) na galeria"
+                } catch {
+                    onlineStatus = "Falha na galeria online · \(error.localizedDescription)"
+                    CrashReporter.note("galeria online · falha no envio")
+                    failed = true
+                    break
+                }
+            }
+            if !failed && (sent > 0 || manual) {
+                onlineStatus = onlinePending == 0 ? "Galeria em dia · \(onlineDone) foto(s) publicadas" : "\(onlinePending) foto(s) aguardando envio"
+            }
+            onlinePublishing = false
+            background.end()
+            if onlineAgain && !failed { onlineAgain = false; kickOnline() } else { onlineAgain = false }
         }
     }
 }

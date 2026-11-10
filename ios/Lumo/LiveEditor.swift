@@ -255,6 +255,8 @@ struct LiveEditor: View {
     @State private var cropAspect = 0.0
     @State private var curveChannel = 0
     @State private var gradeRange = 1
+    @State private var naming = false
+    @State private var newPresetName = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -423,6 +425,24 @@ struct LiveEditor: View {
 
     private var presetList: some View {
         VStack(spacing: 8) {
+            Button {
+                newPresetName = ""
+                naming = true
+            } label: {
+                Label("Criar preset com esta edição", systemImage: "plus.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(Lumo.cyan, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .alert("Novo preset", isPresented: $naming) {
+                TextField("Nome do preset", text: $newPresetName)
+                Button("Cancelar", role: .cancel) {}
+                Button("Salvar") { savePreset() }
+            } message: {
+                Text("Guarda os ajustes desta edição (preset atual + o que você mudou; sem o recorte). Depois aplique em várias fotos pela Galeria.")
+            }
             presetRow("Preset do evento" + (model.settings.presetName.isEmpty ? " (nenhum)" : " (\(model.settings.presetName))"), value: nil)
             presetRow("Sem preset", value: "")
             ForEach(model.presets.names, id: \.self) { presetRow($0, value: $0) }
@@ -430,6 +450,15 @@ struct LiveEditor: View {
                 Text("Importe presets .xmp em Ajustes para usá-los aqui.").font(.caption).foregroundStyle(Lumo.tertiary)
             }
         }
+    }
+
+    /// Salva o preset e passa a foto para ele, sem ajuste manual por cima: o resultado na tela não muda.
+    private func savePreset() {
+        guard let name = model.createPreset(named: newPresetName, options: currentOptions, manual: controls, extra: extra) else { return }
+        presetChoice = name
+        controls = EditControls()
+        extra = [:]
+        Haptics.tap()
     }
 
     private func presetRow(_ title: String, value: String?) -> some View {

@@ -56,7 +56,17 @@ O testador ou cliente pode desligar o envio em **Menu → Ajuda → Relatórios 
 envio desligado, os relatórios ficam só no aparelho. Mencione o envio de relatórios técnicos na política de privacidade
 e no formulário *Data safety* da Play Store: dados de diagnóstico, crash logs, sem vínculo com a identidade.
 
-## iPhone
+## iPhone (0.5.0)
 
-Ainda não há relatório de falhas no iOS. Quando o app for distribuído pelo TestFlight, os fechamentos aparecem no Xcode
-Organizer e no App Store Connect, sem precisar de código.
+O iPhone usa o **mesmo segredo `SENTRY_DSN`**: o workflow **Lumo iOS** grava o DSN no `Info.plist` do IPA
+(`LumoSentryDSN`). Os eventos chegam com `release` `lumo-ios@0.5.0`; no Sentry, filtre pela tag **ios** ou pelo release.
+
+| Tipo | Como | Quando chega |
+|---|---|---|
+| Fechamento por erro (falha do Swift, acesso inválido, abort) | handler de sinal grava a pilha num arquivo já aberto | na próxima abertura |
+| Exceção Objective-C | `NSSetUncaughtExceptionHandler` | na próxima abertura |
+| Falha e travamento (hang) vistos pelo iOS | MetricKit (`MXCrashDiagnostic`, `MXHangDiagnostic`) | quando o iOS entrega, em geral na abertura seguinte |
+
+Uma mesma queda pode chegar duas vezes (pelo handler e pelo MetricKit); a do MetricKit tem a tag `origem: metrickit`.
+As pilhas vêm com o nome da biblioteca e o endereço. Em **Ajustes → Relatórios de falha** dá para enviar um teste,
+compartilhar o último relatório e desligar o envio. As mesmas regras de privacidade valem no iPhone.

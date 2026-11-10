@@ -10,6 +10,12 @@
 	<string>O Lumo pode salvar fotos editadas na sua biblioteca.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>O Lumo conecta à câmera pelo Wi-Fi (PTP/IP) para receber as fotos.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>O Lumo usa o Face ID para desbloquear o app quando o bloqueio está ligado em Ajustes.</string>
+	<key>LumoSentryDSN</key>
+	<string>$(LUMO_SENTRY_DSN)</string>
+	<key>LumoSigning</key>
+	<string>$(LUMO_SIGNING)</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

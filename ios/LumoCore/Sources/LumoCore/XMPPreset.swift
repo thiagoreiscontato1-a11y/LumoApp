@@ -68,6 +68,56 @@ public enum XMPPreset {
         return (result, look)
     }
 
+    /// Grava um preset no formato .xmp do Lightroom/Camera Raw (mesmo formato que `parse` lê, no iPhone e no Android).
+    /// O perfil criativo (tabelas de cor) não vai no arquivo: continua só no preset salvo no app.
+    public static func write(_ values: [String: Double], name: String, uuid: UUID = UUID()) -> String {
+        func esc(_ s: String) -> String {
+            s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
+        }
+        func number(_ v: Double, _ key: String) -> String {
+            if key == "ConvertToGrayscale" { return v >= 0.5 ? "True" : "False" }
+            if v == v.rounded(), abs(v) < 1e9 { return (v > 0 && key == "Exposure2012" ? "+" : "") + String(Int(v)) }
+            var t = String(format: "%.4f", locale: Locale(identifier: "en_US_POSIX"), v)
+            while t.hasSuffix("0") { t.removeLast() }
+            return (v > 0 && key == "Exposure2012" ? "+" : "") + t
+        }
+        var attributes = ""
+        for key in values.keys.sorted() where Develop.ranges[key] != nil && key != "LookAmount" && !PhotoEditor.isCurveKey(key) {
+            guard let v = values[key], v.isFinite, Develop.ranges[key]!.contains(v) else { continue }
+            attributes += "\n    crs:\(key)=\"\(number(v, key))\""
+        }
+        var curves = ""
+        for c in Develop.curves {
+            var points: [String] = []
+            while let x = values["\(c).\(2 * points.count)"], let y = values["\(c).\(2 * points.count + 1)"], points.count < 64 {
+                points.append("\(Int(x.rounded())), \(Int(y.rounded()))")
+            }
+            guard points.count >= 2 else { continue }
+            curves += "\n   <crs:\(c)>\n    <rdf:Seq>\n" + points.map { "     <rdf:li>\($0)</rdf:li>\n" }.joined() + "    </rdf:Seq>\n   </crs:\(c)>"
+        }
+        let title = esc(name)
+        return """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Lumo">
+         <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <rdf:Description rdf:about=""
+            xmlns:crs="\(namespace)"
+            crs:PresetType="Normal" crs:UUID="\(uuid.uuidString.replacingOccurrences(of: "-", with: ""))" crs:SupportsAmount="False"
+            crs:SupportsColor="True" crs:SupportsMonochrome="True" crs:SupportsHighDynamicRange="True" crs:SupportsNormalDynamicRange="True"
+            crs:SupportsSceneReferred="True" crs:SupportsOutputReferred="True" crs:CameraModelRestriction="" crs:Copyright="" crs:ContactInfo=""
+            crs:Version="15.0" crs:ProcessVersion="11.0" crs:HasSettings="True"\(attributes)>
+           <crs:Name>
+            <rdf:Alt>
+             <rdf:li xml:lang="x-default">\(title)</rdf:li>
+            </rdf:Alt>
+           </crs:Name>\(curves)
+          </rdf:Description>
+         </rdf:RDF>
+        </x:xmpmeta>
+
+        """
+    }
+
     static func validated(_ key: String, _ text: String) throws -> Double? {
         guard let range = Develop.ranges[key] else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

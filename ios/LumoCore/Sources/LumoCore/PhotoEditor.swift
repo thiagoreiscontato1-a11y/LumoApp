@@ -81,9 +81,18 @@ public enum PhotoEditor {
 
     /// Pixels prontos para revelar: recortados/endireitados e com o perfil criativo. Mesma ordem do Android.
     public static func prepare(_ image: PixelImage, options: EditOptions) -> PixelImage {
-        var out = image
-        if let crop = options.crop, !crop.isIdentity { out = crop.constrained(out.width, out.height).apply(out) }
-        return CreativeProfile.apply(out, profile(options))
+        withProfile(cropped(image, options: options), options: options)
+    }
+
+    /// Só o recorte/endireitar (a curadoria mede a nitidez aqui, antes do perfil e do preset).
+    public static func cropped(_ image: PixelImage, options: EditOptions) -> PixelImage {
+        guard let crop = options.crop, !crop.isIdentity else { return image }
+        return crop.constrained(image.width, image.height).apply(image)
+    }
+
+    /// Aplica o perfil criativo do preset (tabelas de cor), quando houver.
+    public static func withProfile(_ image: PixelImage, options: EditOptions) -> PixelImage {
+        CreativeProfile.apply(image, profile(options))
     }
 
     /// Perfil criativo do preset, com a intensidade do editor (`LookAmount` no extra) por cima.
@@ -112,6 +121,19 @@ public enum PhotoEditor {
             for k in base.keys where k.hasPrefix(c + ".") { base[k] = nil }
         }
         return base.merging(extra) { _, new in new }
+    }
+
+    /// Ajustes de um preset criado a partir de uma edição: o preset da foto com os ajustes do editor por cima e os
+    /// básicos = preset + delta manual. O automático fica de fora (é calculado para cada foto) e o recorte também.
+    /// Aplicar o preset novo numa foto sem ajuste manual dá o mesmo resultado que a edição de onde ele saiu.
+    public static func presetValues(preset: [String: Double]?, extra: [String: Double]?, manual: EditControls?) -> [String: Double] {
+        var values = merged(preset, extra) ?? [:]
+        let basic = presetControls(preset) + (manual ?? .zero)
+        for (k, key) in zip(EditControls.keyPaths, Develop.basicXMP) {
+            let v = basic[keyPath: k]
+            values[key] = v == 0 ? nil : v
+        }
+        return values
     }
 
     /// Chave de ponto de curva (`ToneCurvePV2012Red.4`…).
