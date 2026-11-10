@@ -9,6 +9,18 @@
   - **Histograma** no editor do Android e do iPhone, como o do Lightroom: canais R, G e B, triângulos de recorte
     (sombras à esquerda, realces à direita; brancos quando os três canais recortam) e, com um toque, a máscara de
     recorte na foto (realces sem detalhe em vermelho, sombras em azul). Mostra a etapa que está na tela.
+  - **Curva de tons** (Luz): curva de pontos em RGB, vermelho, verde e azul (toque na linha cria um ponto, arrastar
+    para fora ou toque duplo apaga) e a curva paramétrica (realces, claros, escuros, sombras e divisões).
+  - **Gradação de cores** (Cor): rodas de sombras, meios-tons, realces e global, com luminância, mistura e equilíbrio.
+  - **Corte**: endireitar de -45° a 45°, proporções (livre, original, 1:1, 4:5, 3:2, 16:9, com giro retrato/paisagem)
+    e moldura arrastável que nunca sai da foto girada. O corte vale só para a foto editada (no lote, as outras
+    mantêm o próprio) e é aplicado antes da revelação, então a vinheta fica pós-corte como no Lightroom.
+  - **Perfis criativos do Lightroom.** Presets e .xmp de perfil com tabela de cor (`RGBTable`) ou de visual
+    (`LookTable`) agora saem com o perfil: as tabelas são lidas no formato do DNG SDK da Adobe, guardadas uma vez e
+    aplicadas antes do resto da revelação (CPU e GPU), com a **intensidade do perfil** (0–200) em Cor. Perfis só
+    referenciados por nome (sem a tabela no arquivo, os "stub") continuam sem efeito. O conteúdo de `crs:Look` não
+    vaza mais para os ajustes do preset. Os ajustes que vêm dentro do próprio perfil (curva, saturação etc.)
+    ainda não são aplicados, só as tabelas.
 - **Relatório de falhas.** Quando o Lumo fecha por erro ou trava, o relatório (aparelho, versões, onde quebrou e os últimos
   passos, sem fotos, conta ou nomes de eventos) vai para o Sentry na próxima abertura. Em Menu → Ajuda →
   **Relatórios de falha** dá para compartilhar o último relatório, enviar um teste ou desligar o envio. Configuração em
